@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_', 'SUPABASE_'],
   server: {
     proxy: {
       '/api': {
