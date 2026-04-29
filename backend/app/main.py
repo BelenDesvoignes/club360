@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.database import engine, Base
 from app.models.member import Member, Membership, Credit
 from app.routes import auth
 
@@ -16,16 +15,11 @@ app.add_middleware(# 2. Configuración de CORS
     allow_headers=["*"], # Permite todos los headers
 )
 
-# 3. Crear las tablas en la base de datos (Ejecuta al arrancar)
-print("Conectando con Supabase y sincronizando tablas...")
-#Base.metadata.create_all(bind=engine)
-print("¡Tablas 'members', 'memberships' y 'credits' verificadas/creadas!")
-
-# 4. Endpoints (Tus rutas)
+# 3. Endpoints (Tus rutas)
 @app.get("/")
 def home():
     return {"mensaje": "¡Bienvenido al backend de CLUB360!"}
 
-# 5. Incluir las rutas con el prefijo /auth
+# 4. Incluir las rutas con el prefijo /auth
 # Esto hace que las rutas sean http://localhost:8000/auth/register
 app.include_router(auth.router)
