@@ -1,25 +1,37 @@
+# Importamos la conexión
+from app.database import engine, Base
+# Importamos todos los modelos para que Base.metadata los reconozca
+from app.models.user import User
+from app.models.subscription import Subscription
+from app.models.booking import Booking
+from app.models.payment import Payment
+from app.models.attendance import Attendance
+from app.models.suspension import Suspension
+from app.models.credit import Credit
+from app.routes import auth
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.models.member import Member, Membership, Credit
-from app.routes import auth
 
+# 1. Crear las tablas en la base de datos
+# Esto buscará todas las clases que hereden de "Base" y las creará en Supabase
+Base.metadata.create_all(bind=engine)
 
-# 1. Crear la instancia de FastAPI
+# 2. Instancia de FastAPI
 app = FastAPI(title="CLUB360 API")
 
-app.add_middleware(# 2. Configuración de CORS
+# 3. Configuración de CORS
+app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Permite que cualquier frontend se conecte (ideal para desarrollo)
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"], # Permite POST, GET, OPTIONS, etc.
-    allow_headers=["*"], # Permite todos los headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# 3. Endpoints (Tus rutas)
+# 4. Rutas básicas
 @app.get("/")
 def home():
-    return {"mensaje": "¡Bienvenido al backend de CLUB360!"}
+    return {"message": "Welcome to CLUB360 Backend!"}
 
-# 4. Incluir las rutas con el prefijo /auth
-# Esto hace que las rutas sean http://localhost:8000/auth/register
+# 5. Incluir Routers
 app.include_router(auth.router)
