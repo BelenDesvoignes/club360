@@ -30,6 +30,7 @@
 import { ref } from 'vue'
 import axios from 'axios'
 
+// Variables reactivas (necesarias para que Vue "escuche" los cambios)
 const usuario = ref({
   first_name: '',
   last_name: '',
@@ -47,16 +48,18 @@ const enviarRegistro = async () => {
   mensaje.value = ''
 
   try {
-   const res = await axios.post('/api/auth/register', usuario.value)
+    // Como definimos la baseURL en main.js, aquí solo ponemos la ruta relativa
+    const res = await axios.post('/auth/register', usuario.value)
 
     esError.value = false
-    mensaje.value = `¡Bienvenido ${res.data.first_name}! Ya podés iniciar sesión.`
+    mensaje.value = `¡Bienvenido ${res.data.first_name}! Registro exitoso.`
 
-    // Limpiar formulario
+    // Limpiamos el formulario tras el éxito
     usuario.value = { first_name: '', last_name: '', dni: '', email: '', password: '' }
 
   } catch (error) {
     esError.value = true
+    // Captura el mensaje de error que definimos en el backend (ej: "DNI already exists")
     mensaje.value = error.response?.data?.detail || "Error al conectar con el servidor"
   } finally {
     cargando.value = false
@@ -65,7 +68,7 @@ const enviarRegistro = async () => {
 </script>
 
 <style>
-/* Un poco de estilo para que no sea tan gris */
+/* Tus estilos actuales */
 .container { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f4f7f6; font-family: 'Segoe UI', sans-serif; }
 .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
 h1 { color: #2c3e50; margin-bottom: 0.5rem; text-align: center; }

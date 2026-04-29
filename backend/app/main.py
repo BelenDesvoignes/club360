@@ -12,12 +12,14 @@ from app.routes import auth
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# 1. Crear las tablas en la base de datos
+
+
+# 1. Instancia de FastAPI
+app = FastAPI(title="CLUB360 API")
+
+# 2. Crear las tablas en la base de datos
 # Esto buscará todas las clases que hereden de "Base" y las creará en Supabase
 Base.metadata.create_all(bind=engine)
-
-# 2. Instancia de FastAPI
-app = FastAPI(title="CLUB360 API")
 
 # 3. Configuración de CORS
 app.add_middleware(

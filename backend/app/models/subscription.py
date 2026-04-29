@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from app.database import Base
 
-class SubscriptionStatus(Base): # Opcional: usar un Enum para estados
+class Subscription(Base): # Opcional: usar un Enum para estados
     __tablename__ = "subscriptions"
 
     id = Column(Integer, primary_key=True, index=True)
