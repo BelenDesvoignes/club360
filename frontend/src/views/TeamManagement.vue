@@ -10,27 +10,27 @@
         <div class="form-grid">
           <div class="input-group">
             <label>Nombre</label>
-            <input v-model="form.first_name" type="text" placeholder="Ej: Juan" required />
+            <input v-model="form.first_name" type="text" placeholder="" required />
           </div>
           <div class="input-group">
             <label>Apellido</label>
-            <input v-model="form.last_name" type="text" placeholder="Ej: Pérez" required />
+            <input v-model="form.last_name" type="text" placeholder="" required />
           </div>
         </div>
 
         <div class="input-group">
-          <label>DNI</label>
-          <input v-model="form.dni" type="text" placeholder="Sin puntos" required />
+          <label>DNI (sin puntos)</label>
+          <input v-model="form.dni" type="text" placeholder="" required />
         </div>
 
         <div class="input-group">
-          <label>Correo Electrónico</label>
-          <input v-model="form.email" type="email" placeholder="staff@club360.com" required />
+          <label>Correo electrónico</label>
+          <input v-model="form.email" type="email" placeholder="" required />
         </div>
 
         <div class="input-group">
           <label>Contraseña</label>
-          <input v-model="form.password" type="password" placeholder="••••••••" required />
+          <input v-model="form.password" type="password" placeholder="" required />
         </div>
 
         <div class="input-group">
@@ -42,7 +42,7 @@
         </div>
 
         <button type="submit" class="btn-submit" :disabled="loading">
-          {{ loading ? 'Guardando...' : 'Crear Usuario' }}
+          {{ loading ? 'Guardando...' : 'Crear usuario' }}
         </button>
 
         <div v-if="message" :class="['alert', messageType]">
@@ -75,9 +75,11 @@ const handleSubmit = async () => {
   message.value = ''
 
   try {
-    // Usamos la URL relativa si tienes configurado el proxy,
-    // o la URL completa de tu backend de FastAPI
-    const response = await axios.post('http://127.0.0.1:8000/admin/crear-equipo', form.value)
+    // 1. Obtenemos la URL de la variable de entorno
+    // Si no existe (por ejemplo en local), usamos el localhost por defecto
+    const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+
+   const response = await axios.post(`${apiBaseUrl}/admin/crear-equipo`, form.value)
 
     message.value = '¡Miembro del equipo creado con éxito!'
     messageType.value = 'success'
