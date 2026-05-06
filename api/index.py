@@ -1,52 +1,28 @@
 import os
 import sys
-from typing import Optional
 
+# 1. Obtenemos la ruta absoluta de la carpeta donde está este archivo (api/)
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Vercel runs this file as the Serverless Function entrypoint.
-# Ensure imports work regardless of working directory.
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BACKEND_DIR = os.path.join(REPO_ROOT, "backend")
+# 2. Subimos un nivel para llegar a la raíz del proyecto
+repo_root = os.path.abspath(os.path.join(current_dir, ".."))
 
-# Make `backend/` importable so that `app.*` resolves to `backend/app/*`.
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
+# 3. Apuntamos a la carpeta 'backend'
+backend_dir = os.path.join(repo_root, "backend")
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from starlette.requests import Request
+# 4. Agregamos la carpeta 'backend' al sistema para que Python la vea primero
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
-
-_BOOT_ERROR: Optional[Exception] = None
-backend_app = None
-
+# 5. Ahora intentamos importar.
+# Como agregamos 'backend' al sys.path, Python debería encontrar 'app/main.py' adentro.
 try:
-    from app.main import app as backend_app  # type: ignore
-except Exception as exc:  # pragma: no cover
-    _BOOT_ERROR = exc
+    from app.main import app as backend_app
+except ImportError as e:
+    # Si falla, imprimimos el path para debuguear en los logs de Vercel
+    print(f"DEBUG: sys.path es {sys.path}")
+    print(f"Error importando la app: {e}")
+    raise e
 
-
-# Expose an ASGI app for Vercel.
-# In production we want endpoints under `/api/*`.
-app = FastAPI()
-
-if backend_app is not None:
-    app.mount("/", backend_app)
-else:
-    # If the backend fails to import (missing deps, syntax error, etc.),
-    # Vercel otherwise returns a blank 500 text/plain.
-    @app.api_route(
-        "/api/{path:path}",
-        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    )
-    async def _boot_failed(_request: Request, path: str):
-        message = str(_BOOT_ERROR) if _BOOT_ERROR is not None else "Unknown"
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "BOOT_FAILED",
-                "type": _BOOT_ERROR.__class__.__name__ if _BOOT_ERROR else "Unknown",
-                "message": message[:500],
-                "path": "/api/" + path,
-            },
-        )
+# Exponemos la app para Vercel
+app = backend_app
