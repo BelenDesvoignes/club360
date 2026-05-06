@@ -3,5 +3,10 @@
   "version": "1.0.0",
   "scripts": {
     "build": "cd frontend && npm install && npm run build"
+  },
+  "dependencies": {
+    "pinia": "^3.0.4",
+    "vue": "^3.x.x",
+    "axios": "^1.x.x"
   }
 }
