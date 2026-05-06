@@ -31,7 +31,7 @@ except Exception as exc:  # pragma: no cover
 app = FastAPI()
 
 if backend_app is not None:
-    app.mount("/api", backend_app)
+    app.mount("/", backend_app)
 else:
     # If the backend fails to import (missing deps, syntax error, etc.),
     # Vercel otherwise returns a blank 500 text/plain.
