@@ -11,7 +11,7 @@ from app.models.credit import Credit
 from app.routes import auth
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.routes import auth, admin
 
 
 # 1. Instancia de FastAPI
@@ -37,3 +37,4 @@ def home():
 
 # 5. Incluir Routers
 app.include_router(auth.router)
+app.include_router(admin.router)

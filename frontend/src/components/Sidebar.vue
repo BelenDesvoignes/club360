@@ -25,17 +25,21 @@
         <div v-if="auth.isEmployee" class="menu-section">
           <p class="section-title">OPERACIONES</p>
           <router-link to="/control-ingreso" @click="closeSidebar">
-            <span class="icon">🔍</span> Control QR
+            <span class="icon"></span> Control QR
           </router-link>
           <router-link to="/clientes" @click="closeSidebar">
-            <span class="icon">👥</span> Clientes
+            <span class="icon"></span> Clientes
           </router-link>
+
         </div>
 
         <div v-if="auth.isAdmin" class="menu-section">
           <p class="section-title">SISTEMA</p>
           <router-link to="/clases" @click="closeSidebar">
-            <span class="icon">⚙️</span> Configuración
+            <span class="icon"></span> Configuración
+          </router-link>
+          <router-link to="/equipo" @click="closeSidebar">
+            <span class="icon"></span> Gestion de personal
           </router-link>
         </div>
       </nav>

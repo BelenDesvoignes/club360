@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from app.models.user import UserRole
+from typing import Optional
 
 class UserRegister(BaseModel):
     first_name: str
@@ -7,6 +8,7 @@ class UserRegister(BaseModel):
     dni: str
     email: EmailStr
     password: str
+    role: Optional[UserRole] = UserRole.CLIENT
 
 class UserResponse(BaseModel):
     id_user: int
