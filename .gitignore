@@ -225,3 +225,15 @@ dist/
 .venv/
 __pycache__/
 *.pyc
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Vue / Node
+node_modules/
+dist/
+
+# Variables de entorno (¡Seguridad!)
+.env
