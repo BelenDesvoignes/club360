@@ -1,29 +1,8 @@
 <template>
   <div class="app-layout">
-    <!-- Botón Hamburguesa (solo si está logueado) -->
-    <button
-      v-if="auth.isAuthenticated"
-      @click="sidebarAbierta = !sidebarAbierta"
-      class="menu-toggle"
-    >
-      <div class="bar"></div>
-      <div class="bar"></div>
-      <div class="bar"></div>
-    </button>
+    <Sidebar v-if="auth.isAuthenticated" @toggle="handleSidebarToggle" />
 
-    <Sidebar
-      :isOpen="sidebarAbierta"
-      @toggle="sidebarAbierta = !sidebarAbierta"
-    />
-
-    <!-- Overlay para cerrar la sidebar al tocar fuera -->
-    <div
-      v-if="sidebarAbierta"
-      class="overlay"
-      @click="sidebarAbierta = false"
-    ></div>
-
-    <main :class="['main-content', { 'shifted': sidebarAbierta && auth.isAuthenticated }]">
+    <main :class="['main-content', { 'full-width': !isSidebarOpen || !auth.isAuthenticated }]">
       <router-view />
     </main>
   </div>
@@ -35,51 +14,48 @@ import Sidebar from './components/Sidebar.vue'
 import { useAuthStore } from './stores/auth'
 
 const auth = useAuthStore()
-const sidebarAbierta = ref(false)
+const isSidebarOpen = ref(false)
+
+// Actualiza el estado local para expandir/contraer el contenido
+const handleSidebarToggle = (state) => {
+  isSidebarOpen.value = state
+}
 </script>
 
 <style>
-/* Botón Hamburguesa */
-.menu-toggle {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  z-index: 999;
-  background: #1a237e;
-  border: none;
-  padding: 10px;
-  border-radius: 5px;
-  cursor: pointer;
+/* Estilos Globales */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: #f8f9fa;
+  overflow-x: hidden;
+}
+
+.app-layout {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.bar {
-  width: 25px;
-  height: 3px;
-  background-color: white;
-  border-radius: 2px;
-}
-
-.overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0,0,0,0.5);
-  z-index: 998;
+  min-height: 100vh;
+  width: 100%;
 }
 
 .main-content {
+  flex-grow: 1;
   width: 100%;
+  /* Espacio reservado para la sidebar abierta */
+  padding-left: 260px;
+  transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   min-height: 100vh;
-  transition: padding-left 0.3s ease;
 }
 
-/* Opcional: empujar el contenido si quieres que no se tape */
-/* .main-content.shifted { padding-left: 260px; } */
+/* Clase para ocupar toda la pantalla */
+.main-content.full-width {
+  padding-left: 0;
+}
 
-body { margin: 0; font-family: sans-serif; }
+/* En tablets y celulares, el contenido siempre es full width */
+@media (max-width: 1024px) {
+  .main-content {
+    padding-left: 0 !important;
+  }
+}
 </style>

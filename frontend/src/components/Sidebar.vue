@@ -1,8 +1,7 @@
 <template>
   <div>
     <button
-      v-if="auth.isAuthenticated"
-      @click="toggleSidebar"
+      @click="isOpen = !isOpen"
       class="menu-toggle"
       :class="{ 'is-active': isOpen }"
     >
@@ -11,16 +10,13 @@
       <div class="bar"></div>
     </button>
 
-    <div v-if="isOpen" class="overlay" @click="toggleSidebar"></div>
+    <div v-if="isOpen" class="overlay" @click="isOpen = false"></div>
 
     <aside :class="['sidebar', { 'is-open': isOpen }]">
       <div class="sidebar-header">
-        <router-link to="/" @click="closeOnMobile" class="logo-link">
+        <router-link to="/" @click="closeSidebar" class="logo-link">
           <h2 class="logo">CLUB<span>360</span></h2>
         </router-link>
-
-        <div class="user-badge" v-if="auth.isAuthenticated">
-        </div>
       </div>
 
       <nav class="menu-content">
@@ -28,28 +24,25 @@
 
         <div v-if="auth.isEmployee" class="menu-section">
           <p class="section-title">OPERACIONES</p>
-          <router-link to="/control-ingreso" @click="closeOnMobile">
-            <span class="icon">🔍</span> Control de Ingreso (QR)
+          <router-link to="/control-ingreso" @click="closeSidebar">
+            <span class="icon">🔍</span> Control QR
           </router-link>
-          <router-link to="/clientes" @click="closeOnMobile">
-            <span class="icon">👥</span> Gestión de Clientes
+          <router-link to="/clientes" @click="closeSidebar">
+            <span class="icon">👥</span> Clientes
           </router-link>
         </div>
 
         <div v-if="auth.isAdmin" class="menu-section">
-          <p class="section-title">ADMINISTRACIÓN</p>
-          <router-link to="/clases" @click="closeOnMobile">
-            <span class="icon">⚙️</span> Configurar Catálogo
-          </router-link>
-          <router-link to="/reportes" @click="closeOnMobile">
-            <span class="icon">📊</span> Reportes y Auditoría
+          <p class="section-title">SISTEMA</p>
+          <router-link to="/clases" @click="closeSidebar">
+            <span class="icon">⚙️</span> Configuración
           </router-link>
         </div>
       </nav>
 
       <div class="sidebar-footer">
         <button @click="handleLogout" class="logout-btn">
-          <span class="icon"</span> Cerrar Sesión
+          <span class="icon">🚪</span> Cerrar Sesión
         </button>
       </div>
     </aside>
@@ -57,7 +50,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
 
@@ -65,15 +58,12 @@ const auth = useAuthStore()
 const router = useRouter()
 const isOpen = ref(false)
 
-const toggleSidebar = () => {
-  isOpen.value = !isOpen.value
-}
+// Definimos el evento para comunicarnos con App.vue
+const emit = defineEmits(['toggle'])
 
-// Cierra la barra solo si estamos en resolución de celular/tablet
-const closeOnMobile = () => {
-  if (window.innerWidth < 1024) {
-    isOpen.value = false
-  }
+// Cerramos y emitimos el cambio
+const closeSidebar = () => {
+  isOpen.value = false
 }
 
 const handleLogout = () => {
@@ -81,10 +71,19 @@ const handleLogout = () => {
   isOpen.value = false
   router.push('/login')
 }
+
+// Avisamos a App.vue cada vez que isOpen cambie
+watch(isOpen, (val) => {
+  emit('toggle', val)
+})
+
+// Estado inicial al cargar
+onMounted(() => {
+  emit('toggle', isOpen.value)
+})
 </script>
 
 <style scoped>
-/* --- DISEÑO PARA MÓVILES (POR DEFECTO) --- */
 .menu-toggle {
   position: fixed;
   top: 15px;
@@ -92,36 +91,31 @@ const handleLogout = () => {
   z-index: 2000;
   background: #0d124a;
   border: none;
-  width: 45px;
-  height: 45px;
+  width: 42px;
+  height: 42px;
   border-radius: 8px;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  cursor: pointer;
   transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
-/* El botón se mueve con la barra cuando se abre */
 .menu-toggle.is-active {
-  left: 230px;
+  left: 210px;
   background: #ff6f00;
 }
 
-.bar {
-  width: 25px;
-  height: 3px;
-  background: white;
-  border-radius: 2px;
-}
+.bar { width: 22px; height: 2px; background: white; border-radius: 2px; }
 
 .sidebar {
   position: fixed;
   left: -280px;
   top: 0;
-  width: 280px;
+  width: 260px;
   height: 100vh;
   background: #0d124a;
   color: white;
@@ -129,48 +123,22 @@ const handleLogout = () => {
   z-index: 1500;
   display: flex;
   flex-direction: column;
-  box-shadow: 5px 0 15px rgba(0,0,0,0.3);
+  box-shadow: 4px 0 15px rgba(0,0,0,0.3);
 }
 
-.sidebar.is-open {
-  left: 0;
-}
+.sidebar.is-open { left: 0; }
 
-.sidebar-header {
-  padding: 60px 20px 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-}
-
-.logo-link {
-  text-decoration: none;
-  color: inherit;
-  display: inline-block;
-}
-
-.logo {
-  font-weight: 900;
-  letter-spacing: 2px;
-  margin: 0;
-  font-size: 1.5rem;
-  cursor: pointer;
-}
+.sidebar-header { padding: 40px 20px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.logo { font-size: 1.5rem; margin: 0; font-weight: 900; }
 .logo span { color: #ff6f00; }
 
-.user-badge { margin-top: 15px; display: flex; flex-direction: column; }
-.role {
-  background: #ff6f00;
-  font-size: 0.65rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-  width: fit-content;
-  text-transform: uppercase;
-  font-weight: bold;
-}
-.email { font-size: 0.8rem; color: #bdc3c7; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; }
+.user-badge { margin-top: 15px; }
+.role { background: #ff6f00; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.65rem; text-transform: uppercase; }
+.email { display: block; margin-top: 5px; opacity: 0.6; font-size: 0.75rem; word-break: break-all; }
 
 .menu-content { flex-grow: 1; padding: 20px; overflow-y: auto; }
 .menu-section { margin-bottom: 25px; }
-.section-title { color: #7f8c8d; font-size: 0.7rem; font-weight: bold; margin-bottom: 10px; letter-spacing: 1px; }
+.section-title { font-size: 0.65rem; color: #7f8c8d; font-weight: bold; margin-bottom: 12px; letter-spacing: 1px; }
 
 .sidebar a {
   display: flex;
@@ -181,8 +149,8 @@ const handleLogout = () => {
   font-size: 0.95rem;
   transition: 0.2s;
 }
-.sidebar a:hover { color: #ff6f00; }
-.icon { margin-right: 12px; font-size: 1.1rem; }
+.sidebar a:hover { color: #ff6f00; transform: translateX(5px); }
+.icon { margin-right: 12px; }
 
 .sidebar-footer { padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
 .logout-btn {
@@ -194,12 +162,7 @@ const handleLogout = () => {
   border-radius: 8px;
   cursor: pointer;
   font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: 0.3s;
 }
-.logout-btn:hover { background: #e74c3c; color: white; }
 
 .overlay {
   position: fixed;
@@ -208,25 +171,7 @@ const handleLogout = () => {
   z-index: 1400;
 }
 
-/* --- DISEÑO PARA PC (ESCRITORIO) --- */
 @media (min-width: 1024px) {
-  .sidebar {
-    left: 0;
-    width: 260px;
-  }
-
-  .menu-toggle, .overlay {
-    display: none;
-  }
-
-  .sidebar-header {
-    padding-top: 30px;
-  }
-
-  /* Si usas un layout con padding, este selector asegura que el contenido no se tape */
-  :deep(.main-content) {
-    margin-left: 260px;
-    width: calc(100% - 260px);
-  }
+  .overlay { display: none; }
 }
 </style>
