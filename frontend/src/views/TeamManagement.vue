@@ -75,11 +75,7 @@ const handleSubmit = async () => {
   message.value = ''
 
   try {
-    // 1. Obtenemos la URL de la variable de entorno
-    // Si no existe (por ejemplo en local), usamos el localhost por defecto
-    const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
-
-   const response = await axios.post(`${apiBaseUrl}/admin/crear-equipo`, form.value)
+    const response = await axios.post('/admin/crear-equipo', form.value)  // ← sin baseURL manual
 
     message.value = '¡Miembro del equipo creado con éxito!'
     messageType.value = 'success'
@@ -91,7 +87,7 @@ const handleSubmit = async () => {
       dni: '',
       email: '',
       password: '',
-      role: 'employee'
+      role: 'empleado'
     }
   } catch (error) {
     messageType.value = 'error'
