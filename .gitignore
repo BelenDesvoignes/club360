@@ -78,6 +78,9 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# Environment files
+.env
+
 # IPython
 profile_default/
 ipython_config.py
@@ -229,3 +232,4 @@ __pycache__/
 # Vue / Node
 node_modules/
 dist/
+
