@@ -148,13 +148,9 @@ activemq-data/
 *.sage.py
 
 # Environments
-.env
-.envrc
 .venv
-env/
 venv/
 ENV/
-env.bak/
 venv.bak/
 .venv/
 
@@ -221,7 +217,6 @@ __marimo__/
 
 node_modules/
 dist/
-.env
 .venv/
 __pycache__/
 *.pyc
@@ -234,6 +229,3 @@ __pycache__/
 # Vue / Node
 node_modules/
 dist/
-
-# Variables de entorno (¡Seguridad!)
-.env
