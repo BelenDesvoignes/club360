@@ -4,6 +4,7 @@ import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
+import ActivityManagement from '../views/ActivityManagement.vue'
 
 const routes = [
   { path: '/', component: Home },
@@ -22,7 +23,13 @@ const routes = [
     name: 'GestionEquipo',
     component: GestionEquipo,
     meta: { requiresAuth: true, role: 'admin' }
-  }
+  },
+  {
+    path: '/gestion-actividades',
+    name: 'GestionActividades',
+    component: ActivityManagement,
+    meta: { requiresAuth: true, role: 'admin' }
+  },
 
 
 ]
