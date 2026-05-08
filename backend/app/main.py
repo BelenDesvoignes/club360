@@ -8,14 +8,14 @@ from app.models.payment import Payment
 from app.models.attendance import Attendance
 from app.models.suspension import Suspension
 from app.models.credit import Credit
-from app.routes import auth
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, admin
+from app.routes import auth, admin, activities
 from app.models.activity import Activity           # Nueva
 from app.models.shift_template import ShiftTemplate # Nueva
 from app.models.shift_instance import ShiftInstance # Nueva
 from app.models.waiting_list import WaitingList
+
 
 # 1. Instancia de FastAPI
 app = FastAPI(title="CLUB360 API", root_path="/api")
@@ -41,3 +41,4 @@ def home():
 # 5. Incluir Routers
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(activities.router)
