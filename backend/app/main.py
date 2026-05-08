@@ -10,7 +10,7 @@ from app.models.suspension import Suspension
 from app.models.credit import Credit
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, admin, activities
+from app.routes import auth, admin, activities, shifts
 from app.models.activity import Activity           # Nueva
 from app.models.shift_template import ShiftTemplate # Nueva
 from app.models.shift_instance import ShiftInstance # Nueva
@@ -42,3 +42,4 @@ def home():
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(activities.router)
+app.include_router(shifts.router)
