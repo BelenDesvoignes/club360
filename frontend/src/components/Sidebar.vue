@@ -32,12 +32,12 @@
           </router-link>
 
         </div>
-
         <div v-if="auth.isAdmin" class="menu-section">
           <p class="section-title">SISTEMA</p>
-          <router-link to="/clases" @click="closeSidebar">
-            <span class="icon"></span> Configuración
+          <router-link to="/gestion-actividades" @click="closeSidebar">
+             <span class="icon"></span> Gestión de actividades
           </router-link>
+
           <router-link to="/equipo" @click="closeSidebar">
             <span class="icon"></span> Gestion de personal
           </router-link>
