@@ -8,8 +8,10 @@ class Booking(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id_user"))
-    id_session = Column(Integer) # Conecta con Clase (Session)
-    status = Column(String, default="pending") # confirmed, cancelled, pending
+    instance_id = Column(Integer, ForeignKey("shift_instances.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    status = Column(String) # "Confirmed", "Cancelled", "Attended"
+
+    instance = relationship("ShiftInstance", back_populates="bookings")
     user = relationship("User", back_populates="bookings")

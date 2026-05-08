@@ -1,14 +1,17 @@
+#abono
+
 from sqlalchemy import Column, Integer, String, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from app.database import Base
 
-class Subscription(Base): # Opcional: usar un Enum para estados
+class Subscription(Base):
     __tablename__ = "subscriptions"
-
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id_user"))
-    id_base_shift = Column(Integer) # Conecta con Turno_base
+    # CORRECCIÓN: Apuntar al template
+    template_id = Column(Integer, ForeignKey("shift_templates.id"))
     month = Column(Integer, nullable=False)
-    status = Column(String, default="active") # active, pending, expired
+    status = Column(String, default="active")
 
     user = relationship("User", back_populates="subscriptions")
+    template = relationship("ShiftTemplate", back_populates="subscriptions")

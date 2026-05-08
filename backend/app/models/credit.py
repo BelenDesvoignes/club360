@@ -5,13 +5,13 @@ from datetime import datetime
 
 class Credit(Base):
     __tablename__ = "credits"
-
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id_user"))
-    amount = Column(Float, nullable=False) # Valor de la seña/clase
-    activity_id = Column(Integer) # Debe usarse en la misma actividad
+    amount = Column(Float, nullable=False)
+    activity_id = Column(Integer, ForeignKey("activities.id")) # FK necesaria
     created_at = Column(DateTime, default=datetime.utcnow)
-    expiry_date = Column(DateTime) # Vence al mes siguiente
+    expiry_date = Column(DateTime)
     is_used = Column(Boolean, default=False)
 
     user = relationship("User", back_populates="credits")
+    activity = relationship("Activity")
