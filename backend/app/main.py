@@ -12,7 +12,10 @@ from app.routes import auth
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import auth, admin
-
+from app.models.activity import Activity           # Nueva
+from app.models.shift_template import ShiftTemplate # Nueva
+from app.models.shift_instance import ShiftInstance # Nueva
+from app.models.waiting_list import WaitingList
 
 # 1. Instancia de FastAPI
 app = FastAPI(title="CLUB360 API", root_path="/api")
