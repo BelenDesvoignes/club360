@@ -136,7 +136,7 @@ const handleLogin = async () => {
   left: 0;
   right: 0;
   height: clamp(220px, 32vh, 360px);
-  background: #1a237e;
+  background: #2d658d;
   z-index: 0;
 }
 
@@ -166,7 +166,7 @@ const handleLogin = async () => {
   font-weight: 800;
   letter-spacing: 4px;
   font-size: 28px;
-  color: #1a237e;
+  color: #5a8849;
   user-select: none;
 }
 
