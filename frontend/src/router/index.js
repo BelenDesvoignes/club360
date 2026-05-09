@@ -13,7 +13,7 @@ const routes = [
   { path: '/login', component: Login },
   { path: '/register', component: Register },
   // Rutas protegidas (puedes crear estas vistas luego)
-  { path: '/reservar', component: ClassBooking, meta: { requiresAuth: true } },
+  { path: '/reservar', component: ClassBooking },
   { path: '/reservas', component: MyBookings, meta: { requiresAuth: true } },
   // Rutas protegidas - Solo Administradores
   {

@@ -156,7 +156,6 @@ const fetchBookings = async () => {
     const token = auth.token || localStorage.getItem('token')
 
     if (!token) {
-      errorMessage.value = 'Tu sesión expiró. Por favor, inicia sesión de nuevo.'
       return
     }
 
@@ -169,7 +168,7 @@ const fetchBookings = async () => {
     bookings.value = res.data
   } catch (e) {
     console.error('Error al cargar reservas:', e)
-    errorMessage.value = e.response?.data?.detail || 'Error al cargar tus reservas'
+    bookings.value = []
   } finally {
     loading.value = false
   }
@@ -212,7 +211,6 @@ const paySeña = async (bookingId) => {
 
 onMounted(() => {
   if (!auth.isAuthenticated) {
-    errorMessage.value = 'Debes iniciar sesión para ver tus reservas'
     return
   }
   fetchBookings()

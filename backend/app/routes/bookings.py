@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
-from app.models.shift_instance import ShiftInstance
-from app.models.activity import Activity
-from app.database import get_db
-from app.schemas.bookings import BookingCreate, BookingOut, BookingListOut
-from app.models.booking import Booking
-from app.models.user import User
-from app.services import booking_service
-from app.auth_utils import get_user_id_from_token
+from ..models.shift_instance import ShiftInstance
+from ..models.activity import Activity
+from ..database import get_db
+from ..schemas.bookings import BookingCreate, BookingOut, BookingListOut
+from ..models.booking import Booking
+from ..models.user import User
+from ..services import booking_service
+from ..auth_utils import get_user_id_from_token
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
@@ -172,7 +172,7 @@ def debug_user_bookings(user_id: int, db: Session = Depends(get_db)):
 @router.get("/debug/user-info/{user_id}", tags=["debug"])
 def debug_user_info(user_id: int, db: Session = Depends(get_db)):
     """Endpoint de debug para ver info del usuario"""
-    from app.models.user import User
+    from ..models.user import User
     
     user = db.query(User).filter(User.id_user == user_id).first()
     

@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from app.database import get_db
-from app.models.activity import Activity
-from app.models.shift_template import ShiftTemplate
+from ..database import get_db
+from ..models.activity import Activity
+from ..models.shift_template import ShiftTemplate
 
 router = APIRouter(prefix="/activities", tags=["activities"])
 

@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from app.database import get_db
-from app.schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut
-from app.models.shift_template import ShiftTemplate
-from app.models.shift_instance import ShiftInstance
-from app.models.booking import Booking
-from app.models.activity import Activity
-from app.services import shift_service
+from ..database import get_db
+from ..schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut
+from ..models.shift_template import ShiftTemplate
+from ..models.shift_instance import ShiftInstance
+from ..models.booking import Booking
+from ..models.activity import Activity
+from ..services import shift_service
 from sqlalchemy import and_
 
 router = APIRouter(prefix="/shifts", tags=["shifts"])
@@ -40,43 +40,56 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
 @router.get("/instances")
 def get_instances(db: Session = Depends(get_db)):
     """Get all upcoming shift instances with booking counts and activity names."""
-    instances = db.query(ShiftInstance).filter(ShiftInstance.is_cancelled == False).all()
+    from sqlalchemy import func
     
-    result = []
-    for instance in instances:
-        template = instance.template
-        if not template:
-            continue
-        
-        activity = template.activity
-        activity_name = activity.name if activity else f"Actividad {template.activity_id}"
-        
-        # Count non-cancelled bookings
-        booked_count = (
-            db.query(Booking)
-            .filter(
-                and_(
-                    Booking.instance_id == instance.id,
-                    Booking.status != "Cancelled"
-                )
-            )
-            .count()
+    # Single query with LEFT JOIN and GROUP BY for efficiency
+    result = (
+        db.query(
+            ShiftInstance.id,
+            ShiftInstance.date,
+            ShiftInstance.is_cancelled,
+            ShiftTemplate.id.label('template_id'),
+            ShiftTemplate.activity_id,
+            ShiftTemplate.day_of_week,
+            ShiftTemplate.start_time,
+            ShiftTemplate.capacity,
+            ShiftTemplate.price,
+            Activity.name.label('activity_name'),
+            func.count(Booking.id).label('booked_count')
         )
-        
-        result.append({
-            "id": instance.id,
-            "date": instance.date,
-            "is_cancelled": instance.is_cancelled,
-            "booked_count": booked_count,
-            "activity_name": activity_name,
-            "template": {
-                "id": template.id,
-                "activity_id": template.activity_id,
-                "day_of_week": template.day_of_week,
-                "start_time": template.start_time,
-                "capacity": template.capacity,
-                "price": template.price
-            }
-        })
+        .outerjoin(ShiftTemplate, ShiftInstance.template_id == ShiftTemplate.id)
+        .outerjoin(Activity, ShiftTemplate.activity_id == Activity.id)
+        .outerjoin(
+            Booking,
+            and_(
+                Booking.instance_id == ShiftInstance.id,
+                Booking.status != "Cancelled"
+            )
+        )
+        .filter(ShiftInstance.is_cancelled == False)
+        .group_by(ShiftInstance.id, ShiftTemplate.id, Activity.id)
+        .all()
+    )
     
-    return result
+    # Format response
+    instances_dict = {}
+    for row in result:
+        instance_id = row.id
+        if instance_id not in instances_dict:
+            instances_dict[instance_id] = {
+                "id": row.id,
+                "date": str(row.date),
+                "is_cancelled": row.is_cancelled,
+                "booked_count": row.booked_count if row.booked_count else 0,
+                "activity_name": row.activity_name or f"Actividad {row.activity_id}",
+                "template": {
+                    "id": row.template_id,
+                    "activity_id": row.activity_id,
+                    "day_of_week": row.day_of_week,
+                    "start_time": row.start_time,
+                    "capacity": row.capacity,
+                    "price": float(row.price) if row.price else 100.0
+                }
+            }
+    
+    return list(instances_dict.values())

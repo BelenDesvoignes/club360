@@ -1,20 +1,20 @@
 # Importamos la conexión
-from app.database import engine, Base
+from .database import engine, Base
 # Importamos todos los modelos para que Base.metadata los reconozca
-from app.models.user import User
-from app.models.subscription import Subscription
-from app.models.booking import Booking
-from app.models.payment import Payment
-from app.models.attendance import Attendance
-from app.models.suspension import Suspension
-from app.models.credit import Credit
+from .models.user import User
+from .models.subscription import Subscription
+from .models.booking import Booking
+from .models.payment import Payment
+from .models.attendance import Attendance
+from .models.suspension import Suspension
+from .models.credit import Credit
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, admin, activities, shifts
-from app.models.activity import Activity           # Nueva
-from app.models.shift_template import ShiftTemplate # Nueva
-from app.models.shift_instance import ShiftInstance # Nueva
-from app.models.waiting_list import WaitingList
+from .routes import auth, admin, activities, shifts, bookings, credits
+from .models.activity import Activity           # Nueva
+from .models.shift_template import ShiftTemplate # Nueva
+from .models.shift_instance import ShiftInstance # Nueva
+from .models.waiting_list import WaitingList
 
 
 # 1. Instancia de FastAPI
@@ -43,3 +43,5 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(activities.router)
 app.include_router(shifts.router)
+app.include_router(bookings.router)
+app.include_router(credits.router)

@@ -93,7 +93,7 @@
       </div>
 
       <div v-if="groupedActivities.length === 0" class="empty-state">
-        No hay clases disponibles en este momento.
+        Todavía no hay clases cargadas para mostrar.
       </div>
     </div>
 
@@ -280,7 +280,7 @@ const fetchInstances = async () => {
     instances.value = res.data
   } catch (e) {
     console.error('Error al cargar clases:', e)
-    errorMessage.value = 'No se pudieron cargar las clases disponibles'
+    instances.value = []
   } finally {
     loading.value = false
   }
@@ -410,11 +410,6 @@ const joinWaitlist = async (instance) => {
 }
 
 onMounted(() => {
-  if (!auth.isAuthenticated) {
-    errorMessage.value = 'Debes iniciar sesión para hacer reservas'
-    return
-  }
-  
   fetchInstances()
   checkUserStatus()
 })

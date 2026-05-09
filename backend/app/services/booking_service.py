@@ -1,12 +1,12 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from datetime import datetime
-from app.models.booking import Booking
-from app.models.user import User
-from app.models.shift_instance import ShiftInstance
-from app.models.subscription import Subscription
-from app.models.suspension import Suspension
-from app.models.payment import Payment
+from ..models.booking import Booking
+from ..models.user import User
+from ..models.shift_instance import ShiftInstance
+from ..models.subscription import Subscription
+from ..models.suspension import Suspension
+from ..models.payment import Payment
 from fastapi import HTTPException, status
 
 
@@ -183,7 +183,7 @@ def cancel_booking(db: Session, booking_id: int, user_id: int) -> Booking:
     Cancel a booking. Only owner or admin can cancel.
     Returns the cancelled booking.
     """
-    from app.models.user import UserRole
+    from ..models.user import UserRole
     
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:

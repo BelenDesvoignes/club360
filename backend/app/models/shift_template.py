@@ -1,6 +1,6 @@
 #turno base
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Date, func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Date, func, Float
 from sqlalchemy.orm import relationship
 from app.database import Base
 
