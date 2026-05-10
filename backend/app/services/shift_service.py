@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import date, timedelta
-from app.models.shift_instance import ShiftInstance
-from app.models.shift_template import ShiftTemplate
+from ..models.shift_instance import ShiftInstance
+from ..models.shift_template import ShiftTemplate
 
 def create_instances_for_month(db: Session, template: ShiftTemplate):
     days_map = {"Lunes": 0, "Martes": 1, "Miércoles": 2, "Jueves": 3, "Viernes": 4, "Sábado": 5, "Domingo": 6}

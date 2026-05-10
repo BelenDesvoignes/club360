@@ -5,13 +5,16 @@ import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
+import MyBookings from '../views/MyBookings.vue'
+import ClassBooking from '../views/ClassBooking.vue'
 
 const routes = [
   { path: '/', component: Home },
   { path: '/login', component: Login },
   { path: '/register', component: Register },
   // Rutas protegidas (puedes crear estas vistas luego)
-  { path: '/reservas', component: { template: '<div><h1>Mis Reservas</h1></div>' }, meta: { requiresAuth: true } },
+  { path: '/reservar', component: ClassBooking },
+  { path: '/reservas', component: MyBookings, meta: { requiresAuth: true } },
   // Rutas protegidas - Solo Administradores
   {
     path: '/clases',
