@@ -1,0 +1,46 @@
+import { defineStore } from 'pinia'
+import axios from 'axios'
+
+export const useAuthStore = defineStore('auth', {
+  state: () => ({
+    token: localStorage.getItem('token') || null,
+    role: localStorage.getItem('role') || null,
+    userEmail: localStorage.getItem('email') || null
+  }),
+  getters: {
+    isAuthenticated: (state) => !!state.token,
+    isAdmin: (state) => state.role === 'admin',
+    isEmployee: (state) => state.role === 'empleado' || state.role === 'admin'
+  },
+  actions: {
+    async login(email, password) {
+      try {
+        const res = await axios.post('/auth/login', { email, password })
+
+        // Guardamos en el estado
+        this.token = res.data.access_token
+        this.role = res.data.role
+        this.userEmail = email
+
+        // Persistencia para que no se borre al refrescar la página
+        localStorage.setItem('token', this.token)
+        localStorage.setItem('role', this.role)
+        localStorage.setItem('email', email)
+
+        // Configuramos axios para que use este token en adelante
+        axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
+
+        return true
+      } catch (error) {
+        throw error.response?.data?.detail || 'Error al iniciar sesión'
+      }
+    },
+    logout() {
+      this.token = null
+      this.role = null
+      this.userEmail = null
+      localStorage.clear()
+      delete axios.defaults.headers.common['Authorization']
+    }
+  }
+})
