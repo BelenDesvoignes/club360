@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
-from app.schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut
+from app.schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut, ShiftDetailResponse
 from app.models.shift_template import ShiftTemplate
 from app.services import shift_service
 
@@ -32,3 +32,10 @@ def update_template(template_id: int, data: ShiftTemplateCreate, db: Session = D
 def delete_template(template_id: int, db: Session = Depends(get_db)):
     shift_service.delete_template_and_instances(db, template_id)
     return {"message": "Turno base y sus clases eliminadas correctamente"}
+
+@router.get("/instances/{instance_id}", response_model=ShiftDetailResponse)
+def get_shift_instance(instance_id: int, db: Session = Depends(get_db)):
+    detail = shift_service.get_shift_instance_detail(db, instance_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="El detalle del turno no existe")
+    return detail

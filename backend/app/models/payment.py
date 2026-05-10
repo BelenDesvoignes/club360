@@ -2,6 +2,9 @@ from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -14,3 +17,13 @@ class Payment(Base):
     date = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="payments")
+
+class PaymentResponse(BaseModel):
+    id: int
+    amount: float
+    status: Optional[str] = None
+    type: Optional[str] = None
+    date: datetime
+
+    class Config:
+        from_attributes = True
