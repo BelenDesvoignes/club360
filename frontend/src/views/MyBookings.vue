@@ -165,7 +165,7 @@ const fetchBookings = async () => {
       }
     })
 
-    bookings.value = res.data
+    bookings.value = res.data.filter((booking) => booking.status !== 'Cancelled')
   } catch (e) {
     console.error('Error al cargar reservas:', e)
     bookings.value = []
