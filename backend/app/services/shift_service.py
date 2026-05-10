@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from datetime import date, timedelta
 from app.models.shift_instance import ShiftInstance
@@ -58,3 +59,18 @@ def get_shift_instance_detail(db: Session, instance_id: int):
     ).filter(
         ShiftInstance.id == instance_id
     ).first()
+
+
+def validate_unique_shift(db, activity_id, day_of_week, start_time, exclude_id=None):
+    duplicate = db.query(ShiftTemplate).filter(
+        ShiftTemplate.activity_id == activity_id,
+        ShiftTemplate.day_of_week == day_of_week,
+        ShiftTemplate.start_time == start_time,
+        ShiftTemplate.id != exclude_id
+    ).first()
+
+    if duplicate:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Ya existe un turno el {day_of_week} a las {start_time}."
+        )

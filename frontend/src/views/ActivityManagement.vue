@@ -37,11 +37,23 @@
         </div>
 
         <div class="form-actions">
-          <button type="submit" class="btn-submit" :disabled="loading">
-            {{ isEditing ? 'Actualizar cambios' : 'Crear actividad' }}
+          <button type="submit" class="btn-submit" :disabled="loading || hasDuplicateShifts">
+            <span v-if="loading" class="spinner"></span>
+            
+            <span v-else>
+              {{ isEditing ? 'Actualizar cambios' : 'Crear actividad' }}
+            </span>
           </button>
-          <button v-if="isEditing" type="button" @click="cancelEdit" class="btn-cancel">Cancelar</button>
+          
+          <button v-if="isEditing" type="button" @click="cancelEdit" class="btn-cancel">
+            Cancelar
+          </button>
         </div>
+
+        <p v-if="hasDuplicateShifts" class="error-text">
+          ⚠️ Hay horarios duplicados en la lista (mismo día y hora).
+        </p>
+
       </form>
     </div>
 
@@ -71,12 +83,40 @@
     <transition name="fade">
       <div v-if="message" :class="['alert', messageType]">{{ message }}</div>
     </transition>
+
+    <transition name="fade">
+      <div v-if="showConfirmModal" class="modal-overlay">
+        <div class="modal-content">
+          <h3>¿Estás seguro?</h3>
+          <p>Esta acción eliminará la actividad y no se puede deshacer.</p>
+          <div class="modal-actions">
+            <button @click="executeDelete" class="btn-confirm-delete">Eliminar</button>
+            <button @click="showConfirmModal = false" class="btn-cancel-modal">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
+
+const dayOrder = {
+  'Lunes': 1, 'Martes': 2, 'Miércoles': 3, 'Jueves': 4, 
+  'Viernes': 5, 'Sábado': 6, 'Domingo': 7
+};
+
+const sortShifts = (shiftsArray) => {
+  if (!shiftsArray) return [];
+  return shiftsArray.slice().sort((a, b) => {
+    const orderA = dayOrder[a.day_of_week] || 99;
+    const orderB = dayOrder[b.day_of_week] || 99;
+    if (orderA !== orderB) return orderA - orderB;
+    return (a.start_time || '').localeCompare(b.start_time || '');
+  });
+};
 
 const activities = ref([])
 const loading = ref(false)
@@ -85,56 +125,86 @@ const editingId = ref(null)
 const message = ref('')
 const messageType = ref('')
 
+// Estado inicial del formulario
 const form = ref({
   name: '',
   court: '',
-  shifts: [{ day_of_week: 'Lunes', start_time: '18:00', capacity: 20 }]
+  shifts: [{ day_of_week: '', start_time: '', capacity: 20 }]
 })
 
 const fetchActivities = async () => {
   try {
     const res = await axios.get('/activities/')
-    activities.value = res.data
+    activities.value = res.data.map(act => {
+      if (act.templates) {
+        act.templates = sortShifts(act.templates);
+      }
+      return act;
+    });
   } catch (e) {
     console.error("Error al cargar actividades", e)
   }
 }
 
-const addShift = () => form.value.shifts.push({ day_of_week: 'Lunes', start_time: '18:00', capacity: 20 })
-const removeShift = (index) => form.value.shifts.splice(index, 1)
+const addShift = () => {
+  form.value.shifts.push({ day_of_week: '', start_time: '', capacity: 20 });
+};
+
+const removeShift = (index) => {
+  form.value.shifts.splice(index, 1);
+};
 
 const handleSubmit = async () => {
-  loading.value = true
+  loading.value = true;
   try {
+    const orderedShifts = sortShifts(form.value.shifts);
+
+    const payload = {
+      name: form.value.name,
+      court: form.value.court,
+      shifts: orderedShifts
+    };
+
     if (isEditing.value) {
-      await axios.put(`/activities/${editingId.value}`, form.value)
-      message.value = "Actividad actualizada correctamente"
+      await axios.put(`/activities/${editingId.value}`, payload);
+      message.value = "Cambios guardados con éxito";
+      messageType.value = "success";
+      
+      form.value.shifts = orderedShifts;
+
     } else {
-      await axios.post('/activities/', form.value)
-      message.value = "Actividad creada con éxito"
+      await axios.post('/activities/', payload);
+      message.value = "¡Actividad y clases generadas!";
+      messageType.value = "success";
+      cancelEdit(); 
     }
-    messageType.value = "success"
-    cancelEdit()
-    fetchActivities()
+    
+    await fetchActivities(); 
+
   } catch (e) {
-    messageType.value = "error"
-    message.value = "Error al procesar la solicitud"
+    messageType.value = "error";
+    message.value = e.response?.data?.detail || "Error al procesar la solicitud.";
   } finally {
-    loading.value = false
-    setTimeout(() => { message.value = '' }, 3000) // Limpiar mensaje tras 3 seg
+    loading.value = false;
+    setTimeout(() => { message.value = '' }, 4000);
   }
-}
+};
+
+const hasDuplicateShifts = computed(() => {
+  if (!form.value || !form.value.shifts || form.value.shifts.length < 2) return false;
+  const validShifts = form.value.shifts.filter(s => s.day_of_week && s.start_time);
+  const values = validShifts.map(s => `${s.day_of_week}-${s.start_time}`);
+  return new Set(values).size !== values.length;
+});
 
 const editMode = (act) => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
   isEditing.value = true
   editingId.value = act.id
-
-  // Mapeamos 'templates' de la DB al array 'shifts' que usa nuestro formulario
   form.value = {
     name: act.name,
     court: act.court,
-    shifts: act.templates ? JSON.parse(JSON.stringify(act.templates)) : []
+    shifts: act.templates ? sortShifts(JSON.parse(JSON.stringify(act.templates))) : []
   }
 }
 
@@ -144,24 +214,35 @@ const cancelEdit = () => {
   form.value = {
     name: '',
     court: '',
-    shifts: [{ day_of_week: 'Lunes', start_time: '18:00', capacity: 20 }]
+    shifts: [{ day_of_week: '', start_time: '', capacity: 20 }]
   }
 }
 
-const deleteActivity = async (id) => {
-  if (confirm('¿Estás seguro de eliminar esta actividad?')) {
-    try {
-      await axios.delete(`/activities/${id}`)
-      fetchActivities()
-      message.value = "Actividad eliminada"
-      messageType.value = "success"
-    } catch (e) {
-      message.value = "Error al eliminar"
-      messageType.value = "error"
-    }
-    setTimeout(() => { message.value = '' }, 3000)
+const showConfirmModal = ref(false);
+const idToDelete = ref(null);
+
+const deleteActivity = (id) => {
+  idToDelete.value = id;
+  showConfirmModal.value = true;
+};
+
+const executeDelete = async () => {
+  showConfirmModal.value = false; // Cerramos el modal
+  try {
+    await axios.delete(`/activities/${idToDelete.value}`);
+    await fetchActivities();
+    message.value = "Actividad eliminada con éxito";
+    messageType.value = "success";
+  } catch (e) {
+    messageType.value = "error";
+    message.value = e.response?.data?.detail || "No se pudo eliminar.";
+  } finally {
+    setTimeout(() => { message.value = '' }, 4000);
+    idToDelete.value = null;
   }
-}
+};
+
+
 
 onMounted(fetchActivities)
 </script>
@@ -228,4 +309,96 @@ input:focus { border-color: #ff6f00; }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.5s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.btn-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.error-text {
+  color: #e53e3e;
+  font-size: 0.8rem;
+  margin-top: 5px;
+}
+
+/* Overlay que cubre toda la pantalla */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(13, 18, 74, 0.7); /* El azul de tu proyecto con transparencia */
+  backdrop-filter: blur(4px); /* Efecto de desenfoque */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+/* Caja del modal */
+.modal-content {
+  background: white;
+  padding: 30px;
+  border-radius: 20px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+}
+
+.modal-content h3 {
+  color: #0d124a;
+  margin-bottom: 10px;
+}
+
+.modal-content p {
+  color: #718096;
+  margin-bottom: 25px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 15px;
+}
+
+.btn-confirm-delete {
+  flex: 1;
+  background: #dc2626; /* Rojo */
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-cancel-modal {
+  flex: 1;
+  background: #edf2f7;
+  color: #4a5568;
+  border: none;
+  padding: 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-confirm-delete:hover { background: #b91c1c; }
+.btn-cancel-modal:hover { background: #e2e8f0; }
+
 </style>
