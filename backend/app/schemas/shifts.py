@@ -27,3 +27,15 @@ class ShiftInstanceOut(ShiftInstanceBase):
 
     class Config:
         from_attributes = True
+  
+class ShiftDetailResponse(BaseModel):
+    id: int
+    activity_name: str
+    date: date
+    start_time: str
+    court: Optional[str] = None
+    capacity: int
+    is_cancelled: bool
+
+    class Config:
+        from_attributes = True           
