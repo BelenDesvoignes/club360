@@ -12,6 +12,11 @@ from ..auth_utils import get_user_id_from_token
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
 
+def _booking_status(booking: Booking) -> str:
+    # Older rows can have a NULL status; keep the API stable for the frontend.
+    return booking.status or "Pending"
+
+
 def _extract_user_id(authorization: str | None) -> int:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticado")
@@ -63,7 +68,7 @@ def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
             "id": booking.id,
             "user_id": booking.user_id,
             "instance_id": booking.instance_id,
-            "status": booking.status,
+            "status": _booking_status(booking),
             "created_at": booking.created_at,
             "activity_name": activity_name,
             "date": booking_date,
@@ -154,7 +159,7 @@ def debug_user_bookings(user_id: int, db: Session = Depends(get_db)):
             "id": booking.id,
             "user_id": booking.user_id,
             "instance_id": booking.instance_id,
-            "status": booking.status,
+            "status": _booking_status(booking),
             "created_at": booking.created_at,
             "activity_name": activity_name,
             "date": booking_date,
