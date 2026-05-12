@@ -13,6 +13,22 @@ export const useAuthStore = defineStore('auth', {
     isEmployee: (state) => state.role === 'empleado' || state.role === 'admin'
   },
   actions: {
+    hydrateFromToken() {
+      const token = localStorage.getItem('token')
+      const role = localStorage.getItem('role')
+      const userEmail = localStorage.getItem('email')
+
+      this.token = token
+      this.role = role
+      this.userEmail = userEmail
+
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+      } else {
+        delete axios.defaults.headers.common['Authorization']
+      }
+    },
+
     async login(email, password) {
       try {
         const res = await axios.post('/auth/login', { email, password })

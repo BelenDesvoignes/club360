@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.database import get_db
-from app.models.user import User, UserRole
-from app.schemas.user import UserRegister, UserResponse
-from app.auth_utils import get_password_hash
+from ..database import get_db
+from ..models.user import User, UserRole
+from ..schemas.user import UserRegister, UserResponse
+from ..auth_utils import get_password_hash
 # Asumo que tienes una función para obtener el usuario actual desde el token
 # from app.routes.auth import get_current_admin_user
 
