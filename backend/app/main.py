@@ -10,7 +10,7 @@ from .models.suspension import Suspension
 from .models.credit import Credit
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routes import auth, admin, activities, shifts, bookings, credits
+from .routes import auth, admin, activities, shifts, bookings, credits, payments
 from .models.activity import Activity           # Nueva
 from .models.shift_template import ShiftTemplate # Nueva
 from .models.shift_instance import ShiftInstance # Nueva
@@ -45,3 +45,4 @@ app.include_router(activities.router)
 app.include_router(shifts.router)
 app.include_router(bookings.router)
 app.include_router(credits.router)
+app.include_router(payments.router, prefix="/payments", tags=["payments"])
