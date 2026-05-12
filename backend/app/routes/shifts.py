@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from ..database import get_db
-from ..schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut
-from ..models.shift_template import ShiftTemplate
 from ..models.shift_instance import ShiftInstance
 from ..models.booking import Booking
 from ..models.activity import Activity
-from ..services import shift_service
 from sqlalchemy import and_
+from app.database import get_db
+from app.schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut, ShiftDetailResponse
+from app.models.shift_template import ShiftTemplate
+from app.services import shift_service
 
 router = APIRouter(prefix="/shifts", tags=["shifts"])
 
@@ -93,3 +93,9 @@ def get_instances(db: Session = Depends(get_db)):
             }
     
     return list(instances_dict.values())
+@router.get("/instances/{instance_id}", response_model=ShiftDetailResponse)
+def get_shift_instance(instance_id: int, db: Session = Depends(get_db)):
+    detail = shift_service.get_shift_instance_detail(db, instance_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="El detalle del turno no existe")
+    return detail
