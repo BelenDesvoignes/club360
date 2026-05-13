@@ -134,7 +134,7 @@ const form = ref({
 
 const fetchActivities = async () => {
   try {
-    const res = await axios.get('/activities/')
+    const res = await axios.get('/activities')
     activities.value = res.data.map(act => {
       if (act.templates) {
         act.templates = sortShifts(act.templates);
