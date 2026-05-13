@@ -66,11 +66,11 @@ def update_template_and_recreate_instances(db: Session, template_id: int, new_da
     return template
 
 def get_shift_instance_detail(db: Session, instance_id: int):
-    return db.query(
+    row = db.query(
         ShiftInstance.id,
         Activity.name.label("activity_name"),
-        Activity.court,  # <--- Ahora lo pedimos desde Activity
-        ShiftInstance.date,
+        Activity.court,
+        ShiftInstance.date, # <--- Lo obtenemos aquí
         ShiftTemplate.start_time,
         ShiftTemplate.capacity,
         ShiftInstance.is_cancelled
@@ -81,6 +81,19 @@ def get_shift_instance_detail(db: Session, instance_id: int):
     ).filter(
         ShiftInstance.id == instance_id
     ).first()
+
+    if not row:
+        return None
+
+    return {
+        "id": row.id,
+        "activity_name": row.activity_name,
+        "court": row.court,
+        "date": str(row.date),
+        "start_time": row.start_time,
+        "capacity": row.capacity,
+        "is_cancelled": row.is_cancelled
+    }
 
 
 def validate_unique_shift(db, activity_id, day_of_week, start_time, exclude_id=None):
@@ -96,3 +109,22 @@ def validate_unique_shift(db, activity_id, day_of_week, start_time, exclude_id=N
             status_code=400, 
             detail=f"Ya existe un turno el {day_of_week} a las {start_time}."
         )
+
+def delete_template_and_instances(db: Session, template_id: int):
+    instances_with_bookings = db.query(Booking.instance_id).filter(Booking.status != "Cancelled").subquery()
+    
+    db.query(ShiftInstance).filter(
+        ShiftInstance.template_id == template_id,
+        ShiftInstance.id.not_in(instances_with_bookings)
+    ).delete(synchronize_session=False)
+
+    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
+    if template:
+        try:
+            db.delete(template)
+            db.commit()
+        except Exception:
+            # Si falla por integridad (porque quedaron clases con reservas), hacemos rollback
+            db.rollback()
+            # Opcional: podrías marcar el template como inactivo en lugar de borrarlo
+            print("No se pudo borrar el template porque tiene clases con reservas históricas")

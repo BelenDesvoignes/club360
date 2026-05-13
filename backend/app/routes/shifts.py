@@ -73,8 +73,10 @@ def get_instances(db: Session = Depends(get_db)):
             "capacity": row.instance_capacity,  
             "template": {
                 "id": row.template_id,
+                "activity_id": row.activity_id,   
                 "start_time": row.start_time,
-                "base_capacity": row.template_capacity 
+                "capacity": row.template_capacity, 
+                "price": 100.0,                   
             }
         })
     

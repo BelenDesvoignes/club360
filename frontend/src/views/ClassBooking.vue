@@ -222,21 +222,18 @@ const bookingStatus = ref('pending')
 const groupedActivities = computed(() => {
   const groups = new Map()
 
-  instances.value.forEach((instance) => {
-    const groupKey = instance.activity_name 
-
-    if (!groupKey) return // Seguridad por si viene algún dato nulo
-
-    if (!groups.has(groupKey)) {
-      groups.set(groupKey, {
-        activity_id: instance.template?.id || groupKey, 
-        activity_name: groupKey, 
+  for (const instance of instances.value) {
+    const activityId = instance.template.activity_id
+    if (!groups.has(activityId)) {
+      groups.set(activityId, {
+        activity_id: activityId,
+        activity_name: instance.activity_name,
         instances: []
       })
     }
 
-    groups.get(groupKey).instances.push(instance)
-  })
+    groups.get(activityId).instances.push(instance)
+  }
 
   return Array.from(groups.values()).map((activity) => {
     activity.instances.sort((a, b) => new Date(a.date) - new Date(b.date))

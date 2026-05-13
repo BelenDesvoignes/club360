@@ -190,9 +190,15 @@ const resetFilters = () => {
 }
 
 const formatDate = (dateStr) => {
-  const options = { weekday: 'short', day: 'numeric', month: 'short' }
-  return new Date(dateStr).toLocaleDateString('es-AR', options)
-}
+  if (!dateStr) return 'Sin fecha';
+  // Forzamos que la fecha sea al mediodía antes de formatear
+  const date = new Date(dateStr + 'T12:00:00'); 
+  return date.toLocaleDateString('es-AR', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: 'numeric' 
+  });
+};
 
 const showMsg = (txt, type) => {
   message.value = txt
