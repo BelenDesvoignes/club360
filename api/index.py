@@ -10,7 +10,4 @@ if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
 from app.main import app as fastapi_app
-
-# IMPORTANTE: Si tu Swagger local dice "Servers: /api", 
-# entonces NO fuerces el root_path aquí, porque ya viene configurado en tu app.
 app = fastapi_app
