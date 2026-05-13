@@ -56,6 +56,10 @@
              <span class="icon"></span> Gestión de actividades
           </router-link>
 
+          <router-link to="/clases" @click="closeSidebar">
+         <span class="icon"></span> Gestión de clases
+         </router-link>
+
           <router-link to="/equipo" @click="closeSidebar">
             <span class="icon"></span> Gestion de personal
           </router-link>

@@ -6,19 +6,41 @@ from app.models.shift_template import ShiftTemplate
 from app.models.activity import Activity
 
 def create_instances_for_month(db: Session, template: ShiftTemplate):
-    days_map = {"Lunes": 0, "Martes": 1, "Miércoles": 2, "Jueves": 3, "Viernes": 4, "Sábado": 5, "Domingo": 6}
+    days_map = {
+        "Lunes": 0, "Martes": 1, "Miércoles": 2, "Jueves": 3, 
+        "Viernes": 4, "Sábado": 5, "Domingo": 6
+    }
     target_day = days_map.get(template.day_of_week)
-    if target_day is None: return []
+    if target_day is None: 
+        return []
 
     today = date.today()
     new_instances = []
+    
     for i in range(35):
         check_date = today + timedelta(days=i)
+        
         if check_date.weekday() == target_day:
-            db_instance = ShiftInstance(template_id=template.id, date=check_date, is_cancelled=False)
-            db.add(db_instance)
-            new_instances.append(db_instance)
-            if len(new_instances) == 4: break
+            
+            existing = db.query(ShiftInstance).filter(
+                ShiftInstance.template_id == template.id,
+                ShiftInstance.date == check_date
+            ).first()
+            
+            if not existing:
+                db_instance = ShiftInstance(
+                    template_id=template.id,
+                    date=check_date,
+                    is_cancelled=False,
+                    capacity=template.capacity 
+                )
+                db.add(db_instance)
+                new_instances.append(db_instance)
+            
+            # Limitar a 4 o 5 clases (un mes aproximado)
+            if len(new_instances) >= 5: 
+                break
+                
     db.commit()
     return new_instances
 

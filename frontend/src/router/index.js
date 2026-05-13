@@ -1,10 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '../stores/auth' // Importante para la protección
+import { useAuthStore } from '../stores/auth'
 import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
+import ShiftsManagement from '../views/ShiftsManagement.vue' // <--- 1. IMPORTAR EL NUEVO
 import MyBookings from '../views/MyBookings.vue'
 import ClassBooking from '../views/ClassBooking.vue'
 
@@ -12,13 +13,16 @@ const routes = [
   { path: '/', component: Home },
   { path: '/login', component: Login },
   { path: '/register', component: Register },
-  // Rutas protegidas (puedes crear estas vistas luego)
+  
+  // Rutas de Usuario
   { path: '/reservar', component: ClassBooking },
   { path: '/reservas', component: MyBookings, meta: { requiresAuth: true } },
-  // Rutas protegidas - Solo Administradores
+
+  // Rutas de Administrador
   {
     path: '/clases',
-    component: { template: '<div><h1>Gestión de Clases</h1></div>' },
+    name: 'GestionClases', // <--- 2. NOMBRE AGREGADO
+    component: ShiftsManagement, // <--- 3. CAMBIAR EL TEMPLATE POR EL COMPONENTE REAL
     meta: { requiresAuth: true, role: 'admin' }
   },
   {
@@ -33,8 +37,6 @@ const routes = [
     component: ActivityManagement,
     meta: { requiresAuth: true, role: 'admin' }
   },
-
-
 ]
 
 const router = createRouter({
@@ -42,17 +44,13 @@ const router = createRouter({
   routes
 })
 
-// Navigation Guard: Protege las rutas
+// Navigation Guard (Se mantiene igual, está perfecto)
 router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
-  console.log("Ruta destino:", to.path)
-  console.log("Rol requerido:", to.meta.role)
-  console.log("Rol del usuario:", auth.role)
-
+  
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     next('/login')
   } else if (to.meta.role && auth.role !== to.meta.role) {
-    console.warn("Bloqueado por falta de permisos")
     next('/')
   } else {
     next()

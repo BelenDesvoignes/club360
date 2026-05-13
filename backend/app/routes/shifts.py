@@ -39,63 +39,87 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
 
 @router.get("/instances")
 def get_instances(db: Session = Depends(get_db)):
-    """Get all upcoming shift instances with booking counts and activity names."""
     from sqlalchemy import func
     
-    # Single query with LEFT JOIN and GROUP BY for efficiency
     result = (
         db.query(
             ShiftInstance.id,
             ShiftInstance.date,
             ShiftInstance.is_cancelled,
+            ShiftInstance.capacity.label('instance_capacity'), # <--- Capacidad real de la clase
             ShiftTemplate.id.label('template_id'),
             ShiftTemplate.activity_id,
-            ShiftTemplate.day_of_week,
             ShiftTemplate.start_time,
-            ShiftTemplate.capacity,
-            ShiftTemplate.price,
+            ShiftTemplate.capacity.label('template_capacity'), # <--- Capacidad del molde (opcional)
             Activity.name.label('activity_name'),
             func.count(Booking.id).label('booked_count')
         )
         .outerjoin(ShiftTemplate, ShiftInstance.template_id == ShiftTemplate.id)
         .outerjoin(Activity, ShiftTemplate.activity_id == Activity.id)
-        .outerjoin(
-            Booking,
-            and_(
-                Booking.instance_id == ShiftInstance.id,
-                Booking.status != "Cancelled"
-            )
-        )
+        .outerjoin(Booking, and_(Booking.instance_id == ShiftInstance.id, Booking.status != "Cancelled"))
         .filter(ShiftInstance.is_cancelled == False)
         .group_by(ShiftInstance.id, ShiftTemplate.id, Activity.id)
         .all()
     )
     
-    # Format response
-    instances_dict = {}
+    instances_list = []
     for row in result:
-        instance_id = row.id
-        if instance_id not in instances_dict:
-            instances_dict[instance_id] = {
-                "id": row.id,
-                "date": str(row.date),
-                "is_cancelled": row.is_cancelled,
-                "booked_count": row.booked_count if row.booked_count else 0,
-                "activity_name": row.activity_name or f"Actividad {row.activity_id}",
-                "template": {
-                    "id": row.template_id,
-                    "activity_id": row.activity_id,
-                    "day_of_week": row.day_of_week,
-                    "start_time": row.start_time,
-                    "capacity": row.capacity,
-                    "price": float(row.price) if row.price else 100.0
-                }
+        instances_list.append({
+            "id": row.id,
+            "date": str(row.date),
+            "is_cancelled": row.is_cancelled,
+            "booked_count": row.booked_count or 0,
+            "activity_name": row.activity_name,
+            "capacity": row.instance_capacity,  
+            "template": {
+                "id": row.template_id,
+                "start_time": row.start_time,
+                "base_capacity": row.template_capacity 
             }
+        })
     
-    return list(instances_dict.values())
+    return instances_list
+
 @router.get("/instances/{instance_id}", response_model=ShiftDetailResponse)
 def get_shift_instance(instance_id: int, db: Session = Depends(get_db)):
     detail = shift_service.get_shift_instance_detail(db, instance_id)
     if not detail:
         raise HTTPException(status_code=404, detail="El detalle del turno no existe")
     return detail
+
+
+@router.patch("/instances/{instance_id}")
+def update_instance_capacity(instance_id: int, capacity: int, db: Session = Depends(get_db)):
+    instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
+    
+    if not instance:
+        raise HTTPException(status_code=404, detail="La clase específica no existe")
+    
+    booked_count = db.query(Booking).filter(
+        Booking.instance_id == instance_id, 
+        Booking.status != "Cancelled"
+    ).count()
+    
+    if capacity < booked_count:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"No puedes bajar el cupo a {capacity} porque ya hay {booked_count} personas anotadas."
+        )
+    instance.capacity = capacity
+    db.commit()
+    
+    return {"message": "Cupo de la clase actualizado", "new_capacity": instance.capacity}
+
+@router.patch("/instances/{instance_id}/cancel")
+def cancel_shift_instance(instance_id: int, db: Session = Depends(get_db)):
+    # Buscamos la instancia
+    instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
+    
+    if not instance:
+        raise HTTPException(status_code=404, detail="La clase no existe")
+    
+    # Cambiamos el estado a cancelado
+    instance.is_cancelled = True
+    db.commit()
+    
+    return {"message": "Clase cancelada exitosamente", "id": instance_id}
