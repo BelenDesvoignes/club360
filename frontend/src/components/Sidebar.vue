@@ -29,6 +29,9 @@
           <router-link to="/reservas" @click="closeSidebar">
             <span class="icon">📋</span> Mis Reservas
           </router-link>
+          <router-link to="/agregar-tarjeta" @click="closeSidebar">
+            <span class="icon">💳</span> Tarjeta
+          </router-link>
         </div>
 
         <div v-if="auth.isEmployee" class="menu-section">
@@ -39,7 +42,18 @@
 
 
         </div>
-
+        <div v-if="auth.isAdmin" class="menu-section">
+          <p class="section-title">CLIENTE</p>
+          <router-link to="/reservar" @click="closeSidebar">
+            <span class="icon">📅</span> Reservar Clase
+          </router-link>
+          <router-link to="/reservas" @click="closeSidebar">
+            <span class="icon">📋</span> Mis Reservas
+          </router-link>
+          <router-link to="/agregar-tarjeta" @click="closeSidebar">
+            <span class="icon">💳</span> Tarjeta
+          </router-link>
+        </div>
         <div v-if="auth.isAdmin" class="menu-section">
           <p class="section-title">SISTEMA</p>
           <router-link to="/gestion-actividades" @click="closeSidebar">
