@@ -329,6 +329,7 @@ async function onSubmit() {
       lastFour,
       holderName: data.holderName,
       expiry: data.expiry,
+      status: 'Activa',
       linkedAt: new Date().toISOString()
     })
 
