@@ -25,6 +25,7 @@ class User(Base):
 
 
 # RELATIONSHIPS
+    cards = relationship("Card", back_populates="user")
     #asistencias
     attendances = relationship("Attendance", back_populates="user")
     suspensions = relationship("Suspension", back_populates="user")
