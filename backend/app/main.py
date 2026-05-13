@@ -18,7 +18,7 @@ from .models.waiting_list import WaitingList
 
 
 # 1. Instancia de FastAPI
-app = FastAPI(title="CLUB360 API", root_path="/api")
+app = FastAPI(title="CLUB360 API")
 
 # 2. Crear las tablas en la base de datos
 # Esto buscará todas las clases que hereden de "Base" y las creará en Supabase
