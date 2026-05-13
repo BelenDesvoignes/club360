@@ -7,6 +7,7 @@ import GestionEquipo from '../views/TeamManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
 import MyBookings from '../views/MyBookings.vue'
 import ClassBooking from '../views/ClassBooking.vue'
+import AddCard from '../views/AddCard.vue'
 
 const routes = [
   { path: '/', component: Home },
@@ -15,6 +16,7 @@ const routes = [
   // Rutas protegidas (puedes crear estas vistas luego)
   { path: '/reservar', component: ClassBooking },
   { path: '/reservas', component: MyBookings, meta: { requiresAuth: true } },
+  { path: '/agregar-tarjeta', component: AddCard, meta: { requiresAuth: true } },
   // Rutas protegidas - Solo Administradores
   {
     path: '/clases',
