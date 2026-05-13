@@ -141,7 +141,7 @@ const enviarRegistro = async () => {
   left: 0;
   right: 0;
   height: clamp(220px, 32vh, 360px);
-  background: #1a237e;
+  background: #2d658d;
   z-index: 0;
 }
 
@@ -171,7 +171,7 @@ const enviarRegistro = async () => {
   font-weight: 800;
   letter-spacing: 4px;
   font-size: 28px;
-  color: #1a237e;
+  color: #2d658d;
   user-select: none;
 }
 
@@ -307,7 +307,7 @@ input::placeholder {
 }
 
 .back a {
-  color: #1a237e;
+  color: #2d658d;
   font-weight: 700;
   text-decoration: none;
   touch-action: manipulation;

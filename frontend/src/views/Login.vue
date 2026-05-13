@@ -6,7 +6,7 @@
       </div>
 
       <div class="card-body">
-        <h1>¡Bienvenido de Nuevo!</h1>
+        <h1>¡Bienvenido!</h1>
         <p class="subtitle">Por favor, ingresa tus datos para iniciar sesión.</p>
 
         <form @submit.prevent="handleLogin" novalidate>
@@ -79,7 +79,7 @@
         <div class="divider" aria-hidden="true"><span>o</span></div>
 
         <p class="back">
-          ¿Eres nuevo en CLUB360? <router-link to="/register">Registra tu club</router-link>
+          ¿Sos nuevo en CLUB360? <router-link to="/register">Registrate</router-link>
         </p>
         <p class="back"><router-link to="/">← Volver al inicio</router-link></p>
       </div>
