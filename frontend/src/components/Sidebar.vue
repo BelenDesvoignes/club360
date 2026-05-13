@@ -44,6 +44,16 @@
         </div>
       </nav>
 
+      <div v-if="!auth.isAdmin && !auth.isEmployee && auth.isAuthenticated" class="menu-section">
+  <p class="section-title">MI CUENTA</p>
+  <router-link to="/reservas" @click="closeSidebar">
+    <span class="icon">📅</span> Mis Reservas
+  </router-link>
+  <router-link to="/mis-pagos" @click="closeSidebar">
+    <span class="icon">💳</span> Mis Pagos
+  </router-link>
+</div>
+
       <div class="sidebar-footer">
         <button @click="handleLogout" class="logout-btn">
           <span class="icon">🚪</span> Cerrar Sesión
