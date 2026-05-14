@@ -2,6 +2,7 @@
 from .database import engine, Base
 # Importamos todos los modelos para que Base.metadata los reconozca
 from .models.user import User
+from .models.card import Card
 from .models.subscription import Subscription
 from .models.booking import Booking
 from .models.payment import Payment

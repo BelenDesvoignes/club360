@@ -100,20 +100,35 @@ const handleSubmit = async () => {
 
 <style scoped>
 .equipo-container {
-  padding: 40px 20px;
+  position: relative;
+  min-height: 100vh;
   display: flex;
   justify-content: center;
-  background-color: #f8f9fa;
-  min-height: calc(100vh - 60px);
+  align-items: flex-start; /* Alineado arriba para que se vea el fondo azul */
+  padding: 60px 20px;
+  background: #ffffff;
+  font-family: 'Segoe UI', Roboto, sans-serif;
+}
+
+/* El bloque azul de fondo característico de tu diseño */
+.equipo-container::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 300px;
+  background: #2d658d;
+  z-index: 0;
 }
 
 .form-card {
+  position: relative;
+  z-index: 1;
   background: white;
   padding: 40px;
-  border-radius: 20px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  border-radius: 18px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.15);
   width: 100%;
-  max-width: 550px;
+  max-width: 500px;
 }
 
 .form-header {
@@ -122,15 +137,15 @@ const handleSubmit = async () => {
 }
 
 .form-header h1 {
-  color: #0d124a;
-  font-size: 1.8rem;
+  color: #111827;
+  font-size: 24px;
   margin: 0;
   font-weight: 800;
 }
 
 .form-header p {
-  color: #7f8c8d;
-  font-size: 0.95rem;
+  color: #6b7280;
+  font-size: 14px;
   margin-top: 8px;
 }
 
@@ -144,75 +159,78 @@ const handleSubmit = async () => {
   margin-bottom: 18px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  text-align: left;
 }
 
 label {
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: #2c3e50;
-  margin-left: 4px;
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+  margin-left: 2px;
 }
 
 input, select {
   padding: 12px 15px;
-  border: 2px solid #edf2f7;
-  border-radius: 12px;
-  font-size: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 15px;
   transition: all 0.3s ease;
   outline: none;
+  background: #ffffff;
+  color: #111827;
 }
 
 input:focus, select:focus {
   border-color: #ff6f00;
-  background-color: #fff;
-  box-shadow: 0 0 0 4px rgba(255, 111, 0, 0.1);
+  box-shadow: 0 0 0 3px rgba(255, 111, 0, 0.1);
 }
 
 .btn-submit {
   width: 100%;
-  padding: 15px;
-  background: linear-gradient(135deg, #0d124a 0%, #1a237e 100%);
+  padding: 14px;
+  background: #ff6f00; /* Naranja corporativo */
   color: white;
   border: none;
-  border-radius: 12px;
-  font-size: 1rem;
-  font-weight: 700;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 800;
   cursor: pointer;
-  transition: all 0.3s ease;
-  margin-top: 15px;
+  transition: all 0.2s;
+  margin-top: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .btn-submit:hover:not(:disabled) {
-  background: #ff6f00;
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(255, 111, 0, 0.3);
+  opacity: 0.9;
 }
 
 .btn-submit:disabled {
-  background: #bdc3c7;
+  background: #d1d5db;
   cursor: not-allowed;
 }
 
 .alert {
   margin-top: 20px;
-  padding: 12px;
-  border-radius: 10px;
+  padding: 15px;
+  border-radius: 12px;
   text-align: center;
-  font-size: 0.9rem;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .success {
-  background-color: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background: #2d658d;
+  color: white;
 }
 
 .error {
-  background-color: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
 }
 
 /* Responsivo */
@@ -222,6 +240,9 @@ input:focus, select:focus {
   }
   .form-card {
     padding: 25px;
+  }
+  .equipo-container::before {
+    height: 200px;
   }
 }
 </style>
