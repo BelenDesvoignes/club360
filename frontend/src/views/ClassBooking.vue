@@ -305,16 +305,15 @@ const groupedActivities = computed(() => {
       groups.set(activityKey, {
         activity_id: instance.template.activity_id,
         activity_name: instance.activity_name,
-        court: '',
+        court: instance.court || '',
         templates: [instance.template],
         instances: []
       })
     }
 
     const activityGroup = groups.get(activityKey)
-    if (!activityGroup.instances.length) {
-      activityGroup.instances.push(instance)
-    }
+    // Add all instances (not just first one per activity)
+    activityGroup.instances.push(instance)
   }
 
   return Array.from(groups.values()).map((activity) => {
@@ -354,7 +353,10 @@ const activityFill = (activity) => {
 
 const fetchInstances = async () => {
   try {
-    const res = await axios.get('/shifts/instances')
+    // Add cache busting and timeout to prevent slow loads
+    const res = await axios.get('/shifts/instances', {
+      timeout: 5000
+    })
     instances.value = res.data
   } catch (e) {
     console.error('Error al cargar clases:', e)
