@@ -16,6 +16,14 @@
 
     <div v-if="loading" class="loading-spinner">Cargando clases disponibles...</div>
 
+    <div v-if="successMessage" :class="['booking-feedback', bookingStatus]">
+      <div>
+        <strong>{{ bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : 'Reserva pendiente de pago' }}</strong>
+        <p>{{ successMessage }}</p>
+      </div>
+      <button type="button" class="booking-feedback-close" @click="successMessage = ''">Cerrar</button>
+    </div>
+
     <div v-else-if="userSuspended" class="suspended-block">
       <p>No puedes hacer reservas mientras tu cuenta esté suspendida.</p>
     </div>
@@ -27,68 +35,42 @@
         class="class-card"
       >
         <div class="card-header">
-          <div class="activity-info">
-            <h3 class="activity-name">{{ activity.activity_name || `Actividad ${activity.activity_id}` }}</h3>
-            <p class="day-time">{{ activity.instances.length }} turno(s) disponibles</p>
-          </div>
-          <button type="button" class="toggle-details-btn" @click="toggleActivity(activity.activity_id)">
-            {{ expandedActivityId === activity.activity_id ? 'Ocultar turnos' : 'Ver turnos' }}
-          </button>
+          <h3 class="activity-name">{{ activity.activity_name || `Actividad ${activity.activity_id}` }}</h3>
+          <span v-if="activity.instances.length > 0" class="activity-meta">
+            {{ activity.instances.length === 1 ? '1 turno' : `${activity.instances.length} turnos` }}
+          </span>
+          <span v-else class="activity-meta disabled">Sin turnos</span>
         </div>
 
-        <div class="card-body">
-          <div class="info-row">
-            <span class="label">Actividad:</span>
-            <span class="value">{{ activity.activity_name || `Actividad ${activity.activity_id}` }}</span>
-          </div>
-          <div class="info-row">
-            <span class="label">Turnos con cupo:</span>
-            <span class="value">{{ availableSlotsCount(activity) }}</span>
-          </div>
-          <div class="capacity-bar">
+        <div class="card-modal-body">
+          <div v-if="activity.instances.length > 0" class="turns-inline">
             <div
-              class="capacity-fill"
-              :style="{ width: activityFill(activity) + '%' }"
-            ></div>
-          </div>
-          <p v-if="activityHasNoSlots(activity)" class="fully-booked-msg">Sin cupos disponibles</p>
-          <p v-else class="available-slots">Elegí el turno que quieras reservar</p>
-
-          <transition name="fade">
-            <div v-if="expandedActivityId === activity.activity_id" class="turns-list">
-              <div
-                v-for="turno in activity.instances"
-                :key="turno.id"
-                class="turn-row"
-                :class="{ full: isFullyBooked(turno) }"
-              >
-                <div class="turn-info">
-                  <strong>{{ formatDate(turno.date) }}</strong>
-                  <span>{{ turno.template.day_of_week }} - {{ turno.template.start_time }}hs</span>
-                  <small>{{ turno.booked_count }} / {{ turno.template.capacity }} cupos</small>
-                  <small class="price" v-if="turno.template.price">Precio: ${{ turno.template.price }}</small>
-                </div>
-
-                <div class="turn-actions">
-                  <button
-                    @click="selectInstanceForBooking(turno)"
-                    :disabled="bookingInProgress"
-                    class="btn-book"
-                    :class="{ disabled: isFullyBooked(turno) }"
-                  >
-                    {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? 'Sin cupos' : 'Reservar') }}
-                  </button>
-                  <button
-                    v-if="isFullyBooked(turno)"
-                    @click="joinWaitlist(turno)"
-                    class="btn-waitlist"
-                  >
-                    Lista de espera
-                  </button>
-                </div>
+              v-for="turno in activity.instances"
+              :key="turno.id"
+              class="turn-row turn-row-inline"
+            >
+              <div class="turn-info">
+                <strong>{{ turno.court || 'Sin cancha' }}</strong>
+                <span>{{ turno.template.start_time }}hs · {{ turno.template.day_of_week }}</span>
+                <small>Cupos: {{ turno.booked_count }}/{{ turno.template.capacity }}</small>
+                <small class="price">${{ turno.template.price }}</small>
+              </div>
+              <div class="turn-actions">
+                <button
+                  @click="selectInstanceForBooking(turno)"
+                  :disabled="isFullyBooked(turno) || bookingInProgress"
+                  class="btn-book"
+                  :class="{ disabled: isFullyBooked(turno) }"
+                >
+                  {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? 'Sin cupos' : 'Reservar') }}
+                </button>
               </div>
             </div>
-          </transition>
+          </div>
+
+          <div v-else class="no-turnos card-empty-inline">
+            No hay turnos disponibles para esta actividad
+          </div>
         </div>
       </div>
 
@@ -171,20 +153,6 @@
       </div>
     </transition>
 
-    <!-- Modal de éxito -->
-    <transition name="fade">
-      <div v-if="successMessage" class="modal-overlay" @click="successMessage = ''">
-        <div class="modal-content" @click.stop>
-          <div :class="['modal-icon', bookingStatus]">
-            {{ bookingStatus === 'confirmed' ? '✓' : '⏳' }}
-          </div>
-          <h2>{{ bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : 'Reserva pendiente de pago' }}</h2>
-          <p>{{ successMessage }}</p>
-          <button @click="successMessage = ''" class="btn btn-primary">Cerrar</button>
-        </div>
-      </div>
-    </transition>
-
     <!-- Modal de error -->
     <transition name="fade">
       <div v-if="errorMessage" class="modal-overlay error" @click="errorMessage = ''">
@@ -193,6 +161,65 @@
           <h2>Error en la reserva</h2>
           <p>{{ errorMessage }}</p>
           <button @click="errorMessage = ''" class="btn btn-primary">Cerrar</button>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Modal para seleccionar turno por actividad -->
+    <transition name="fade">
+      <div v-if="showTurnosModal" class="modal-overlay" @click="closeTurnosModal">
+        <div class="modal-content turnos-modal" @click.stop>
+          <button class="modal-close" @click="closeTurnosModal">✕</button>
+          
+          <h2>{{ selectedActivity?.activity_name }} - Turnos disponibles</h2>
+          
+          <div v-if="selectedActivity && selectedActivity.instances.length > 0" class="turnos-container">
+            <div
+              v-for="turno in selectedActivity.instances"
+              :key="turno.id"
+              class="turno-card"
+              :class="{ 'full': isFullyBooked(turno) }"
+            >
+              <div class="turno-header">
+                <div class="turno-date">{{ formatDate(turno.date) }}</div>
+                <div class="turno-badge" :class="isFullyBooked(turno) ? 'full' : 'available'">
+                  {{ isFullyBooked(turno) ? 'Sin cupos' : 'Disponible' }}
+                </div>
+              </div>
+
+              <div class="turno-details">
+                <div class="detail-row">
+                  <span class="detail-label">Horario:</span>
+                  <span class="detail-value">{{ turno.template.start_time }}hs</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Día:</span>
+                  <span class="detail-value">{{ turno.template.day_of_week }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Cupos:</span>
+                  <span class="detail-value">{{ turno.booked_count }} / {{ turno.template.capacity }}</span>
+                </div>
+                <div class="detail-row price-row">
+                  <span class="detail-label">Precio:</span>
+                  <span class="detail-value price">${{ turno.template.price }}</span>
+                </div>
+              </div>
+
+              <button
+                @click="selectInstanceForBooking(turno)"
+                :disabled="isFullyBooked(turno) || bookingInProgress"
+                class="btn-turno-reserve"
+                :class="{ disabled: isFullyBooked(turno) }"
+              >
+                {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? 'Sin cupos' : 'Reservar') }}
+              </button>
+            </div>
+          </div>
+
+          <div v-else class="no-turnos">
+            No hay turnos disponibles para esta actividad
+          </div>
         </div>
       </div>
     </transition>
@@ -205,8 +232,30 @@ import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
+const dayOrder = {
+  Lunes: 1,
+  Martes: 2,
+  'Miércoles': 3,
+  Jueves: 4,
+  Viernes: 5,
+  Sábado: 6,
+  Domingo: 7
+}
+
+const sortShifts = (shiftsArray) => {
+  if (!shiftsArray) return []
+
+  return shiftsArray.slice().sort((a, b) => {
+    const orderA = dayOrder[a.day_of_week] || 99
+    const orderB = dayOrder[b.day_of_week] || 99
+
+    if (orderA !== orderB) return orderA - orderB
+    return (a.start_time || '').localeCompare(b.start_time || '')
+  })
+}
+
+const activities = ref([])
 const instances = ref([])
-const expandedActivityId = ref(null)
 const loading = ref(false)
 const bookingInProgress = ref(false)
 const successMessage = ref('')
@@ -215,27 +264,61 @@ const userSuspended = ref(false)
 const isUserAbonado = ref(false)
 
 const showPaymentModal = ref(false)
+const showTurnosModal = ref(false)
+const selectedActivity = ref(null)
 const selectedInstance = ref(null)
 const paymentType = ref('seña')
 const bookingStatus = ref('pending')
 
 const groupedActivities = computed(() => {
   const groups = new Map()
+  const activityIdToKey = new Map()
+  const normalizeStr = (str) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+
+  for (const activity of activities.value) {
+    const groupKey = normalizeStr(activity.name || `actividad-${activity.id}`)
+
+    if (!groups.has(groupKey)) {
+      activityIdToKey.set(activity.id, groupKey)
+      groups.set(groupKey, {
+        activity_id: activity.id,
+        activity_name: activity.name,
+        court: activity.court,
+        templates: activity.templates ? sortShifts(JSON.parse(JSON.stringify(activity.templates))) : [],
+        instances: []
+      })
+      continue
+    }
+
+    const existing = groups.get(groupKey)
+    if ((!existing.templates || existing.templates.length === 0) && activity.templates && activity.templates.length > 0) {
+      existing.activity_id = activity.id
+      existing.activity_name = activity.name
+      existing.court = activity.court
+      existing.templates = sortShifts(JSON.parse(JSON.stringify(activity.templates)))
+    }
+  }
 
   for (const instance of instances.value) {
-    const activityId = instance.template.activity_id
-    if (!groups.has(activityId)) {
-      groups.set(activityId, {
-        activity_id: activityId,
+    const activityKey = activityIdToKey.get(instance.template.activity_id) || normalizeStr(instance.activity_name || `actividad-${instance.template.activity_id}`)
+    if (!groups.has(activityKey)) {
+      groups.set(activityKey, {
+        activity_id: instance.template.activity_id,
         activity_name: instance.activity_name,
+        court: '',
+        templates: [instance.template],
         instances: []
       })
     }
 
-    groups.get(activityId).instances.push(instance)
+    const activityGroup = groups.get(activityKey)
+    if (!activityGroup.instances.length) {
+      activityGroup.instances.push(instance)
+    }
   }
 
   return Array.from(groups.values()).map((activity) => {
+    activity.templates = sortShifts(activity.templates || [])
     activity.instances.sort((a, b) => new Date(a.date) - new Date(b.date))
     return activity
   })
@@ -256,7 +339,11 @@ const availableSlotsCount = (activity) => {
 }
 
 const activityHasNoSlots = (activity) => {
-  return availableSlotsCount(activity) === 0
+  return activity.instances.length > 0 && availableSlotsCount(activity) === 0
+}
+
+const activityHasNoFutureInstances = (activity) => {
+  return activity.instances.length === 0
 }
 
 const activityFill = (activity) => {
@@ -265,24 +352,32 @@ const activityFill = (activity) => {
   return Math.round((booked / activity.instances.length) * 100)
 }
 
-const toggleActivity = (activityId) => {
-  if (expandedActivityId.value === activityId) {
-    expandedActivityId.value = null
-  } else {
-    expandedActivityId.value = activityId
-  }
-}
-
 const fetchInstances = async () => {
-  loading.value = true
   try {
     const res = await axios.get('/shifts/instances')
     instances.value = res.data
   } catch (e) {
     console.error('Error al cargar clases:', e)
     instances.value = []
-  } finally {
-    loading.value = false
+  }
+}
+
+const fetchActivities = async () => {
+  try {
+    const res = await axios.get('/activities/')
+    // Deduplicar actividades por nombre normalizado, priorizando las que tengan templates
+    const normalizeStr = (str) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+    const seenNames = new Map()
+    res.data.forEach(activity => {
+      const key = normalizeStr(activity.name)
+      if (!seenNames.has(key) || (activity.templates && activity.templates.length > 0)) {
+        seenNames.set(key, activity)
+      }
+    })
+    activities.value = Array.from(seenNames.values())
+  } catch (e) {
+    console.error('Error al cargar actividades:', e)
+    activities.value = []
   }
 }
 
@@ -349,6 +444,16 @@ const closePaymentModal = () => {
   paymentType.value = 'seña'
 }
 
+const openTurnosModal = (activity) => {
+  selectedActivity.value = activity
+  showTurnosModal.value = true
+}
+
+const closeTurnosModal = () => {
+  showTurnosModal.value = false
+  selectedActivity.value = null
+}
+
 const confirmBooking = async () => {
   if (!selectedInstance.value) return
   
@@ -410,7 +515,11 @@ const joinWaitlist = async (instance) => {
 }
 
 onMounted(() => {
-  fetchInstances()
+  loading.value = true
+  Promise.all([fetchActivities(), fetchInstances()])
+    .finally(() => {
+      loading.value = false
+    })
   checkUserStatus()
 })
 </script>
@@ -484,110 +593,162 @@ onMounted(() => {
   padding: 60px 20px;
 }
 
+.booking-feedback {
+  max-width: 1100px;
+  margin: 0 auto 24px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.booking-feedback.confirmed {
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
+.booking-feedback.pending {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 1px solid #93c5fd;
+  color: #1d4ed8;
+}
+
+.booking-feedback p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+.booking-feedback-close {
+  border: none;
+  background: rgba(255, 255, 255, 0.65);
+  color: inherit;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.booking-feedback-close:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
 .classes-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 25px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
 }
 
 .class-card {
-  background: white;
-  border-radius: 15px;
+  background: linear-gradient(180deg, #ffffff 0%, #fff9f4 100%);
+  border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 18px 45px rgba(17, 24, 39, 0.12);
   transition: all 0.3s ease;
-  border-left: 5px solid #ff6f00;
+  border: 1px solid rgba(255, 111, 0, 0.12);
+  display: flex;
+  flex-direction: column;
 }
 
 .class-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  transform: translateY(-6px);
+  box-shadow: 0 24px 55px rgba(17, 24, 39, 0.16);
 }
 
 .card-header {
   background: linear-gradient(135deg, #ff6f00 0%, #ff8c00 100%);
   color: white;
-  padding: 20px;
+  padding: 18px 20px;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
 }
 
+.activity-name {
+  font-size: 1.1rem;
+  margin: 0;
+  font-weight: 800;
+  flex: 1;
+}
+
+.activity-meta {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 6px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.activity-meta.disabled {
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 0.8;
+}
+
 .activity-info h3 {
-  font-size: 1.3rem;
-  margin: 0 0 5px;
+  font-size: 1.2rem;
+  margin: 0 0 4px;
   font-weight: 800;
 }
 
 .day-time {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   margin: 0;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
-.toggle-details-btn {
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.12);
-  color: white;
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
+.reserve-direct-btn {
+  background: linear-gradient(135deg, #ff6f00, #ff8c00);
+  border: none;
+}
+
+.reserve-direct-btn:hover {
+  background: linear-gradient(135deg, #ff5500, #ff7500);
+  box-shadow: 0 6px 20px rgba(255, 111, 0, 0.5);
 }
 
 .card-body {
-  padding: 20px;
+  display: none;
 }
 
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 10px;
+.card-footer-actions {
+  display: none;
 }
 
-.info-row .label {
-  font-weight: 600;
-  color: #6c757d;
+.card-modal-body {
+  padding: 18px;
 }
 
-.info-row .value {
-  font-weight: 700;
-  color: #0d124a;
-}
-
-.capacity-bar {
-  height: 8px;
-  background: #e9ecef;
-  border-radius: 999px;
-  overflow: hidden;
-  margin: 15px 0;
-}
-
-.capacity-fill {
-  height: 100%;
-  background: #ff6f00;
-  transition: width 0.3s ease;
-}
-
-.fully-booked-msg {
-  color: #dc3545;
-  font-weight: 600;
-  margin: 10px 0;
-}
-
-.available-slots {
-  color: #28a745;
-  font-weight: 600;
-  margin: 10px 0;
-}
-
-.turns-list {
-  margin-top: 15px;
+.turns-inline {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+}
+
+.turn-row-inline {
+  margin: 0;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #f2e4d8;
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
+}
+
+.no-turnos.card-empty-inline {
+  margin: 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: #fff7f0;
+  border: 1px dashed #ffb37a;
+  color: #9a4a00;
+  font-weight: 600;
+  text-align: center;
 }
 
 .turn-row {
@@ -886,6 +1047,143 @@ onMounted(() => {
 .empty-state {
   text-align: center;
   padding: 60px 20px;
+}
+
+/* Turnos Modal Styles */
+.turnos-modal {
+  max-width: 600px;
+  max-height: 90vh;
+}
+
+.turnos-modal h2 {
+  margin: 0 0 25px;
+  color: #0d124a;
+  font-weight: 800;
+  font-size: 1.4rem;
+}
+
+.turnos-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  max-height: calc(90vh - 200px);
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.turno-card {
+  border: 2px solid #e9ecef;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fbfdff;
+  transition: all 0.3s ease;
+}
+
+.turno-card:hover:not(.full) {
+  border-color: #ff6f00;
+  box-shadow: 0 4px 12px rgba(255, 111, 0, 0.1);
+}
+
+.turno-card.full {
+  opacity: 0.7;
+  background: #f8f9fa;
+}
+
+.turno-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.turno-date {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0d124a;
+}
+
+.turno-badge {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.turno-badge.available {
+  background: #d4edda;
+  color: #155724;
+}
+
+.turno-badge.full {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.turno-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.detail-label {
+  color: #6c757d;
+  font-weight: 600;
+}
+
+.detail-value {
+  color: #0d124a;
+  font-weight: 700;
+}
+
+.detail-value.price {
+  color: #ff6f00;
+  font-size: 1rem;
+}
+
+.price-row {
+  grid-column: 1 / -1;
+  justify-content: space-between;
+}
+
+.btn-turno-reserve {
+  width: 100%;
+  padding: 12px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-turno-reserve:hover:not(:disabled):not(.disabled) {
+  background: #1e7e34;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+}
+
+.btn-turno-reserve:disabled,
+.btn-turno-reserve.disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.no-turnos {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+  font-size: 1rem;
 }
 
 .fade-enter-active,
