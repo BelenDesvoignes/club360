@@ -50,8 +50,8 @@
               class="turn-row turn-row-inline"
             >
               <div class="turn-info">
-                <strong>{{ turno.court || 'Sin cancha' }}</strong>
-                <span>{{ turno.template.start_time }}hs · {{ turno.template.day_of_week }}</span>
+                <strong>{{ turno.template.start_time }}hs · {{ turno.template.day_of_week }}</strong>
+                <span>{{ turno.court || 'Sin cancha' }}</span>
                 <small>Cupos: {{ turno.booked_count }}/{{ turno.template.capacity }}</small>
                 <small class="price">${{ turno.template.price }}</small>
               </div>
