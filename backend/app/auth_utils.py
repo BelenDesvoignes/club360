@@ -30,3 +30,13 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def get_user_id_from_token(token: str) -> Optional[int]:
+    """Decodifica el JWT y devuelve el campo 'id' si existe."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get('id')
+        return int(user_id) if user_id is not None else None
+    except Exception:
+        return None

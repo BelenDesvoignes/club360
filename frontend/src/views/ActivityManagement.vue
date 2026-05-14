@@ -1,82 +1,127 @@
 <template>
-  <div class="gestion-container">
-    <div class="form-card">
-      <header class="form-header">
-        <h1>{{ isEditing ? 'Editar Actividad' : 'Nueva actividad' }}</h1>
-        <p> </p>
-      </header>
-
-      <form @submit.prevent="handleSubmit" class="gestion-form">
-        <div class="form-grid">
-          <div class="input-group">
-            <label>Nombre de la actividad</label>
-            <input v-model="form.name" type="text" placeholder="Ej: Fútbol" required />
-          </div>
-          <div class="input-group">
-            <label>Cancha</label>
-            <input v-model="form.court" type="text" placeholder="Ej: Cancha 1" required />
-          </div>
+  <div class="page">
+    <div class="gestion-container">
+      <div class="card">
+        <div class="card-header">
         </div>
+        <div class="card-body">
+          <h1>{{ isEditing ? 'Editar turno' : 'Crear turno' }}</h1>
+          <p class="subtitle">Configurá los horarios de los turnos </p>
 
-        <div class="section-header">
-          <h3>Horarios semanales</h3>
-          <button type="button" @click="addShift" class="btn-add-inline">+ Agregar horario</button>
-        </div>
-
-        <div v-for="(shift, index) in form.shifts" :key="index" class="shift-row">
-          <select v-model="shift.day_of_week">
-            <option>Lunes</option><option>Martes</option><option>Miércoles</option>
-            <option>Jueves</option><option>Viernes</option><option>Sábado</option>
-            <option>Domingo</option>
-          </select>
-          <input type="time" v-model="shift.start_time" required />
-          <div class="cupo-input">
-            <input type="number" v-model="shift.capacity" placeholder="Cupo" required min="1" />
-          </div>
-          <button type="button" @click="removeShift(index)" class="btn-remove-mini" v-if="form.shifts.length > 1">✕</button>
-        </div>
-
-        <div class="form-actions">
-          <button type="submit" class="btn-submit" :disabled="loading">
-            {{ isEditing ? 'Actualizar cambios' : 'Crear actividad' }}
-          </button>
-          <button v-if="isEditing" type="button" @click="cancelEdit" class="btn-cancel">Cancelar</button>
-        </div>
-      </form>
-    </div>
-
-    <div class="list-section">
-      <h2 class="list-title">Actividades existentes</h2>
-      <div v-if="activities.length === 0" class="empty-state">No hay actividades cargadas.</div>
-
-      <div class="activities-grid">
-        <div v-for="act in activities" :key="act.id" class="activity-card">
-          <div class="card-info">
-            <h3>{{ act.name }}</h3>
-            <span class="court-badge">{{ act.court }}</span>
-            <div class="shifts-summary">
-              <p v-for="s in act.templates" :key="s.id">
-                • {{ s.day_of_week }} {{ s.start_time }}hs (Cupo: {{ s.capacity }})
-              </p>
+          <form @submit.prevent="handleSubmit" class="gestion-form">
+            <div class="field">
+              <label class="label">Actividad</label>
+              <div class="control">
+                <select v-model="form.name" required :disabled="isEditing">
+                  <option value="" disabled>Seleccioná actividad</option>
+                  <option v-for="(court, act) in activityMap" :key="act" :value="act">
+                    {{ act }}
+                  </option>
+                </select>
+              </div>
             </div>
-          </div>
-          <div class="card-actions">
-            <button @click="editMode(act)" title="Editar">✏️</button>
-            <button @click="deleteActivity(act.id)" title="Eliminar">🗑️</button>
-          </div>
+
+            <div class="form-grid-row">
+              <div class="field">
+                <label class="label">Día</label>
+                <div class="control">
+                  <select v-model="form.shifts[0].day_of_week" required>
+                    <option v-for="day in days" :key="day" :value="day">{{ day }}</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">Hora</label>
+                <div class="control">
+                  <input type="time" v-model="form.shifts[0].start_time" required />
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">Cupo</label>
+                <div class="control">
+                  <input type="number" v-model="form.shifts[0].capacity" min="1" required />
+                </div>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="primary" :disabled="loading">
+                <span v-if="loading" class="spinner"></span>
+                <span v-else>{{ isEditing ? 'ACTUALIZAR' : 'CREAR TURNO' }}</span>
+              </button>
+
+              <button v-if="isEditing" type="button" @click="cancelEdit" class="back-link">
+                Cancelar edición
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="list-section">
+        <h2 class="list-title">Turnos existentes</h2>
+        <div class="table-container">
+          <table class="activities-table">
+            <thead>
+              <tr>
+                <th>Actividad</th>
+                <th>Día</th>
+                <th>Hora</th>
+                <th>Cupo</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in flatActivities" :key="item.templateId">
+                <td><strong>{{ item.name }}</strong></td>
+                <td>{{ item.day }}</td>
+                <td>{{ item.time }}hs</td>
+                <td>{{ item.capacity }}</td>
+                <td class="actions-cell">
+                  <button @click="editMode(item)" class="icon-btn" title="Editar">✏️</button>
+                  <button @click="deleteActivity(item.templateId)" class="icon-btn" title="Eliminar">🗑️</button>
+                </td>
+              </tr>
+              <tr v-if="flatActivities.length === 0">
+                <td colspan="5" class="empty-text">No hay turnos registrados.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
 
     <transition name="fade">
-      <div v-if="message" :class="['alert', messageType]">{{ message }}</div>
+      <div v-if="message" :class="['alert-toast', messageType]">{{ message }}</div>
+    </transition>
+
+    <transition name="fade">
+      <div v-if="showConfirmModal" class="modal-overlay">
+        <div class="modal-card">
+          <h3>¿Eliminar turno?</h3>
+          <p>Esta acción no se puede deshacer.</p>
+          <div class="modal-actions">
+            <button @click="executeDelete" class="btn-confirm">Eliminar</button>
+            <button @click="showConfirmModal = false" class="btn-cancel">Cancelar</button>
+          </div>
+        </div>
+      </div>
     </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
+
+const activityMap = {
+  'Fútbol': 'Cancha 1',
+  'Vóley': 'Cancha 2',
+  'Padel': 'Cancha 3',
+  'Basquet': 'Cancha 4'
+};
+
+const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 const activities = ref([])
 const loading = ref(false)
@@ -87,145 +132,306 @@ const messageType = ref('')
 
 const form = ref({
   name: '',
-  court: '',
+  court: '', // Lo mantenemos en el estado interno para que el backend no falle
   shifts: [{ day_of_week: 'Lunes', start_time: '18:00', capacity: 20 }]
 })
 
 const fetchActivities = async () => {
   try {
     const res = await axios.get('/activities/')
-    activities.value = res.data
+    activities.value = res.data;
   } catch (e) {
-    console.error("Error al cargar actividades", e)
+    console.error("Error al cargar", e)
   }
 }
 
-const addShift = () => form.value.shifts.push({ day_of_week: 'Lunes', start_time: '18:00', capacity: 20 })
-const removeShift = (index) => form.value.shifts.splice(index, 1)
+const flatActivities = computed(() => {
+  const list = [];
+  activities.value.forEach(act => {
+    act.templates.forEach(temp => {
+      list.push({
+        id: act.id,
+        templateId: temp.id,
+        name: act.name,
+        court: act.court,
+        day: temp.day_of_week,
+        time: temp.start_time,
+        capacity: temp.capacity
+      });
+    });
+  });
+  return list;
+});
 
 const handleSubmit = async () => {
-  loading.value = true
+  loading.value = true;
   try {
+    // Aseguramos que la cancha se asigne según la actividad seleccionada antes de enviar
+    const currentCourt = activityMap[form.value.name] || form.value.court || 'General';
+
+    const payload = {
+      name: form.value.name,
+      court: currentCourt,
+      shifts: form.value.shifts
+    };
+
     if (isEditing.value) {
-      await axios.put(`/activities/${editingId.value}`, form.value)
-      message.value = "Actividad actualizada correctamente"
+      await axios.put(`/activities/${editingId.value}`, payload);
+      message.value = "Turno actualizado";
     } else {
-      await axios.post('/activities/', form.value)
-      message.value = "Actividad creada con éxito"
+      await axios.post('/activities/', payload);
+      message.value = "Turno creado con éxito";
     }
-    messageType.value = "success"
-    cancelEdit()
-    fetchActivities()
+
+    messageType.value = "success";
+    cancelEdit();
+    await fetchActivities();
   } catch (e) {
-    messageType.value = "error"
-    message.value = "Error al procesar la solicitud"
+    messageType.value = "error";
+    message.value = "Error al procesar la solicitud.";
   } finally {
-    loading.value = false
-    setTimeout(() => { message.value = '' }, 3000) // Limpiar mensaje tras 3 seg
+    loading.value = false;
+    setTimeout(() => { message.value = '' }, 3000);
   }
-}
+};
 
-const editMode = (act) => {
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-  isEditing.value = true
-  editingId.value = act.id
+const editMode = (item) => {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  isEditing.value = true;
+  editingId.value = item.id; // Este es el ID de la Actividad (Fútbol, etc.)
 
-  // Mapeamos 'templates' de la DB al array 'shifts' que usa nuestro formulario
   form.value = {
-    name: act.name,
-    court: act.court,
-    shifts: act.templates ? JSON.parse(JSON.stringify(act.templates)) : []
-  }
+    name: item.name,
+    court: item.court,
+    shifts: [{
+      id: item.templateId, // <--- CLAVE: Pasamos el ID del turno específico
+      day_of_week: item.day,
+      start_time: item.time,
+      capacity: item.capacity
+    }]
+  };
 }
 
 const cancelEdit = () => {
-  isEditing.value = false
-  editingId.value = null
+  isEditing.value = false;
+  editingId.value = null;
   form.value = {
     name: '',
     court: '',
     shifts: [{ day_of_week: 'Lunes', start_time: '18:00', capacity: 20 }]
-  }
+  };
 }
 
-const deleteActivity = async (id) => {
-  if (confirm('¿Estás seguro de eliminar esta actividad?')) {
-    try {
-      await axios.delete(`/activities/${id}`)
-      fetchActivities()
-      message.value = "Actividad eliminada"
-      messageType.value = "success"
-    } catch (e) {
-      message.value = "Error al eliminar"
-      messageType.value = "error"
-    }
-    setTimeout(() => { message.value = '' }, 3000)
+const showConfirmModal = ref(false);
+const idToDelete = ref(null);
+
+const deleteActivity = (id) => {
+  idToDelete.value = id;
+  showConfirmModal.value = true;
+};
+
+const executeDelete = async () => {
+  showConfirmModal.value = false;
+  try {
+    // CAMBIO: Ahora llamamos a la ruta de templates con el ID del turno
+    await axios.delete(`/activities/templates/${idToDelete.value}`);
+
+    await fetchActivities();
+    message.value = "Eliminado correctamente";
+    messageType.value = "success";
+  } catch (e) {
+    messageType.value = "error";
+    // Si el backend tira el error 400 de las reservas, lo mostramos:
+    message.value = e.response?.data?.detail || "No se pudo eliminar el turno.";
+  } finally {
+    setTimeout(() => { message.value = '' }, 3000);
   }
-}
+};
 
 onMounted(fetchActivities)
 </script>
 
 <style scoped>
-.gestion-container { padding: 20px; background-color: #f8f9fa; min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 40px; }
+.page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+  background: #ffffff;
+  font-family: 'Segoe UI', Roboto, sans-serif;
+}
 
-/* Estilo Formulario */
-.form-card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); width: 100%; max-width: 600px; }
-.form-header { text-align: center; margin-bottom: 20px; }
-.form-header h1 { color: #0d124a; font-size: 1.6rem; font-weight: 800; margin: 0; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
-.input-group { display: flex; flex-direction: column; gap: 5px; }
-label { font-weight: 700; font-size: 0.85rem; color: #2c3e50; }
-input, select { padding: 12px; border: 2px solid #edf2f7; border-radius: 10px; outline: none; transition: 0.3s; }
-input:focus { border-color: #ff6f00; }
+.page::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 300px;
+  background: #2d658d;
+  z-index: 0;
+}
 
-.section-header { display: flex; justify-content: space-between; align-items: center; margin: 20px 0 10px; }
-.btn-add-inline { background: #ff6f00; color: white; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 600; }
+.gestion-container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 1000px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  align-items: center;
+}
 
-.shift-row { display: grid; grid-template-columns: 2fr 1.5fr 1fr 0.5fr; gap: 10px; margin-bottom: 10px; align-items: center; }
-.btn-remove-mini { background: #fee2e2; color: #dc2626; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-weight: bold; }
+.card {
+  width: 100%;
+  max-width: 450px;
+  background: #ffffff;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.15);
+}
 
-/* Estilo Listado de Cards */
-.list-section { width: 100%; max-width: 900px; }
-.list-title { color: #0d124a; font-size: 1.4rem; margin-bottom: 20px; font-weight: 800; text-align: center; }
-.activities-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-.activity-card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); display: flex; justify-content: space-between; border-left: 5px solid #ff6f00; transition: transform 0.2s; }
-.activity-card:hover { transform: translateY(-3px); }
+.card-header { height: 80px; background: #ffffff; display: flex; align-items: center; justify-content: center; }
+.brand { font-weight: 800; letter-spacing: 4px; font-size: 22px; color: #5a8849; }
+.card-body { padding: 0 30px 30px; text-align: center; }
 
-.court-badge { background: #edf2f7; color: #4a5568; padding: 3px 10px; border-radius: 6px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; display: inline-block; margin-top: 5px; }
-.shifts-summary { margin-top: 15px; font-size: 0.85rem; color: #718096; line-height: 1.4; }
-.card-actions button {
-  background: white;
-  border: 1px solid #edf2f7;
-  padding: 8px;
+h1 { margin: 0 0 8px; font-size: 24px; color: #111827; }
+.subtitle { margin: 0 0 20px; color: #6b7280; font-size: 14px; }
+
+.field { display: block; text-align: left; margin-bottom: 15px; }
+.label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+.control {
+  display: flex;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+select, input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #111827;
+  font-size: 15px;
+}
+
+select:disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.form-grid-row {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1fr;
+  gap: 10px;
+}
+
+.primary {
+  width: 100%;
+  padding: 14px;
+  background: #ff6f00;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: transform 0.2s;
+}
+
+.primary:hover { transform: translateY(-2px); opacity: 0.9; }
+
+/* Estilo mejorado para el botón de cancelar */
+.back-link {
+  display: block;
+  width: 100%; /* Mismo ancho que el botón primario */
+  margin-top: 12px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #4b5563; /* Gris oscuro */
+  background: #f3f4f6; /* Gris muy clarito de fondo */
+  border: 1px solid #d1d5db;
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s ease; /* Transición suave */
-  box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+  text-transform: uppercase; /* Para que combine con 'ACTUALIZAR' */
+  transition: all 0.2s ease;
+}
 
-  /* ESTO ES LO NUEVO: Vuelve gris el emoji */
+.back-link:hover {
+  background: #e5e7eb;
+  color: #1f2937;
+  border-color: #9ca3af;
+}
+.list-section { width: 100%; background: white; padding: 30px; border-radius: 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+.list-title { color: #111827; margin-bottom: 20px; font-size: 20px; font-weight: 800; }
+
+.table-container { overflow-x: auto; }
+.activities-table { width: 100%; border-collapse: collapse; text-align: left; }
+.activities-table th {
+  padding: 12px;
+  border-bottom: 2px solid #f3f4f6;
+  color: #6b7280;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.activities-table td { padding: 15px 12px; border-bottom: 1px solid #f9fafb; color: #374151; font-size: 14px; }
+
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
   filter: grayscale(1);
-  opacity: 0.7; /* Lo hace un poquito más sutil */
+  opacity: 0.4;
+  font-size: 18px;
+  transition: transform 0.2s;
 }
 
-/* Y esto para cuando pasás el mouse por arriba */
-.card-actions button:hover {
-  background: #f8f9fa;
+.icon-btn:hover {
   transform: scale(1.1);
-
+  filter: grayscale(1);
+  opacity: 0.4;
 }
-.form-actions { display: flex; gap: 10px; margin-top: 25px; }
-.btn-submit { flex: 2; padding: 14px; background: #0d124a; color: white; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.3s; }
-.btn-submit:hover { background: #ff6f00; box-shadow: 0 4px 15px rgba(255, 111, 0, 0.3); }
-.btn-cancel { flex: 1; background: #e2e8f0; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; }
 
-.empty-state { text-align: center; color: #a0aec0; padding: 40px; font-style: italic; }
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(45, 101, 141, 0.8);
+  backdrop-filter: blur(4px);
+  display: flex; justify-content: center; align-items: center; z-index: 100;
+}
 
-/* Alertas */
-.alert { position: fixed; bottom: 30px; right: 30px; padding: 15px 30px; border-radius: 12px; z-index: 1000; font-weight: 600; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
-.success { background: #def7ec; color: #03543f; border-bottom: 4px solid #31c48d; }
-.error { background: #fde8e8; color: #9b1c1c; border-bottom: 4px solid #f98080; }
+.modal-card {
+  background: white;
+  padding: 30px;
+  border-radius: 18px;
+  width: 90%;
+  max-width: 350px;
+  text-align: center;
+}
 
-.fade-enter-active, .fade-leave-active { transition: opacity 0.5s; }
+.modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+.btn-confirm { flex: 1; background: #ff6f00; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+.btn-cancel { flex: 1; background: #e5e7eb; color: #374151; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+
+.alert-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 15px 25px;
+  border-radius: 12px;
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+.success { background: #2d658d; }
+.error { background: #c0392b; }
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>

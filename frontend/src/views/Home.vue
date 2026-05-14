@@ -4,7 +4,7 @@
       <div class="hero-content">
         <h1 class="main-logo">CLUB<span>360</span></h1>
         <div class="auth-buttons-vertical">
-          <router-link to="/login" class="btn-full-orange">Iniciar Sesión</router-link>
+          <router-link to="/login" class="btn-full-orange">Iniciar sesión</router-link>
           <router-link to="/register" class="btn-full-white">Registrarse</router-link>
         </div>
       </div>
@@ -21,35 +21,7 @@
       </header>
 
       <section class="content-section">
-        <h2 class="section-title">Acciones principales</h2>
-        <div class="grid-acciones">
-          <div class="card-item" @click="$router.push('/turnos')">
-            <div class="icon-box bg-orange">📅</div>
-            <div class="card-info">
-              <h3>Turnos</h3>
-              <p>Reserva tu lugar ahora</p>
-            </div>
-            <span class="arrow">→</span>
-          </div>
-
-          <div class="card-item" @click="$router.push('/reservas')">
-            <div class="icon-box bg-blue">📝</div>
-            <div class="card-info">
-              <h3>Mis Reservas</h3>
-              <p>Gestiona tus clases</p>
-            </div>
-            <span class="arrow">→</span>
-          </div>
-
-          <div class="card-item" @click="$router.push('/abonos')">
-            <div class="icon-box bg-green">💳</div>
-            <div class="card-info">
-              <h3>Mi Abono</h3>
-              <p>Estado de cuenta</p>
-            </div>
-            <span class="arrow">→</span>
-          </div>
-        </div>
+        <h2 class="section-title">Pensar que poner aca </h2>
 
 
       </section>
@@ -76,7 +48,7 @@ const auth = useAuthStore()
   justify-content: center;
   align-items: center;
   /* Degradado diagonal exacto de la imagen */
-  background: linear-gradient(135deg, #0d124a 0%, #0d124a 60%, #ff6f00 100%);
+  background: linear-gradient(135deg, #123956 0%, #2d658d 60%, #ff6f00 100%);
   color: white;
   text-align: center;
 }
@@ -129,7 +101,7 @@ const auth = useAuthStore()
 
 /* --- ESTILOS DASHBOARD --- */
 .dashboard-banner {
-  background-color: #0d124a;
+  background-color: #2d658d;
   padding: 60px 40px 100px 40px;
   color: white;
   display: flex;
