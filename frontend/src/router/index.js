@@ -15,12 +15,7 @@ const routes = [
   // Rutas protegidas (puedes crear estas vistas luego)
   
   // Rutas de socio: 
-  { 
-    path: '/reservas', 
-    name: 'UserReservations',
-    component: UserReservations, 
-    meta: { requiresAuth: true } 
-  },
+ 
   { 
     path: '/mis-pagos', 
     name: 'UserPayments',
