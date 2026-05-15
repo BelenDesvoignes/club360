@@ -63,6 +63,13 @@
       </div>
     </div>
 
+    <PaymentModal
+      v-model="showGatewayModal"
+      :amount="pendingPaymentAmount"
+      :payeeName="pendingPayeeName"
+      @result="onGatewayResult"
+    />
+
     <!-- Modal de confirmación de cancelación -->
     <transition name="fade">
       <div v-if="showCancelModal" class="modal-overlay" @click="showCancelModal = false">
@@ -108,6 +115,7 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
+import PaymentModal from '../components/PaymentModal.vue'
 
 const auth = useAuthStore()
 const bookings = ref([])
@@ -116,6 +124,11 @@ const successMessage = ref('')
 const errorMessage = ref('')
 const showCancelModal = ref(false)
 const bookingToCancel = ref(null)
+
+const showGatewayModal = ref(false)
+const pendingPaymentAmount = ref(0)
+const pendingBookingId = ref(null)
+const pendingPayeeName = ref('Reserva')
 
 const formatDate = (dateStr) => {
   if (!dateStr) return 'Sin fecha'
@@ -205,8 +218,58 @@ const confirmCancel = async () => {
 }
 
 const paySeña = async (bookingId) => {
-  // TODO: Implementar flujo de pago
-  errorMessage.value = 'El sistema de pago está en desarrollo. Por favor, contacta al soporte.'
+  const booking = bookings.value.find((b) => b.id === bookingId)
+  if (!booking) return
+
+  const price = Number(booking.price || 0)
+  if (!Number.isFinite(price) || price <= 0) {
+    errorMessage.value = 'No se pudo determinar el precio de la reserva.'
+    return
+  }
+
+  pendingBookingId.value = bookingId
+  pendingPaymentAmount.value = price * 0.5
+  pendingPayeeName.value = booking.activity_name || 'Reserva'
+  showGatewayModal.value = true
+}
+
+async function onGatewayResult(result) {
+  if (!result) return
+
+  if (result.status !== 'Aprobado') {
+    if (result.status === 'Cancelado') {
+      errorMessage.value = 'Pago cancelado.'
+      return
+    }
+    errorMessage.value = 'Pago rechazado.'
+    return
+  }
+
+  try {
+    auth.hydrateFromToken()
+    const token = auth.token || localStorage.getItem('token')
+
+    if (!token) {
+      errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+      return
+    }
+
+    await axios.post(
+      '/payments/me/complete-booking',
+      { amount: pendingPaymentAmount.value, booking_id: pendingBookingId.value },
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+
+    successMessage.value = 'Pago exitoso. Tu reserva quedó confirmada.'
+    pendingBookingId.value = null
+    pendingPaymentAmount.value = 0
+
+    setTimeout(() => {
+      fetchBookings()
+    }, 800)
+  } catch (e) {
+    errorMessage.value = e.response?.data?.detail || 'Error al confirmar el pago'
+  }
 }
 
 onMounted(() => {

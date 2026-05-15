@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
 from app.services import payment_service
-from app.schemas.payment import PaymentResponse
+from app.schemas.payment import PaymentCompleteBookingRequest, PaymentResponse
 from app.auth_utils import get_user_id_from_token
 
 router = APIRouter()
@@ -31,13 +31,18 @@ def get_user_payments(user_id: int, db: Session = Depends(get_db)):
 
 @router.post("/me/complete-booking", response_model=PaymentResponse)
 def complete_booking_payment(
-    amount: float = Body(..., embed=True),
+    payload: PaymentCompleteBookingRequest,
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
     user_id = _extract_user_id(authorization)
 
-    if amount is None or amount <= 0:
+    if payload.amount is None or payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Monto inválido")
 
-    return payment_service.complete_latest_booking_payment(db, user_id, float(amount))
+    return payment_service.complete_booking_payment(
+        db,
+        user_id,
+        float(payload.amount),
+        booking_id=payload.booking_id,
+    )
