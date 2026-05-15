@@ -18,9 +18,8 @@ export const gatewayService = {
     // Simulamos latencia de red
     await new Promise((resolve) => setTimeout(resolve, 450))
 
-    if (!token) {
-      return { status: 'declined', reason: 'invalid_token' }
-    }
+    // Mock/demo: no requerimos token real.
+    // El token puede no existir (ej: localStorage borrado) y aun así permitimos el flujo.
 
     const numericAmount = Number(amount)
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {

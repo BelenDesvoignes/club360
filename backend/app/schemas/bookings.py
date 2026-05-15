@@ -25,6 +25,7 @@ class BookingListOut(BaseModel):
     date: Optional[dt_date] = None
     day_of_week: Optional[str] = None
     start_time: Optional[str] = None
+    price: Optional[float] = None
 
     class Config:
         from_attributes = True

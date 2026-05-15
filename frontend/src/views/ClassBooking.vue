@@ -503,7 +503,7 @@ async function finalizeBookingWithPayment() {
   if (pendingPaymentAmount.value > 0) {
     await axios.post(
       '/payments/me/complete-booking',
-      { amount: pendingPaymentAmount.value },
+      { amount: pendingPaymentAmount.value, booking_id: res.data.id },
       { headers: { Authorization: `Bearer ${token}` } }
     )
   }
