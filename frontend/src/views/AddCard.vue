@@ -52,6 +52,7 @@
                 inputmode="numeric"
                 autocomplete="cc-number"
                 placeholder="1234 5678 9012 3456"
+                maxlength="19"
                 :class="{ invalid: showError('cardNumber') }"
                 @input="handleCardNumberInput"
                 @blur="touched.cardNumber = true"
@@ -211,7 +212,8 @@ function digitsOnly(value) {
 }
 
 function formatCardNumber(value) {
-  const digits = digitsOnly(value).slice(0, 19)
+  // Mock/demo: requerimos 16 dígitos (4x4)
+  const digits = digitsOnly(value).slice(0, 16)
   return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
 }
 
@@ -282,10 +284,8 @@ const errors = computed(() => {
   const numberDigits = digitsOnly(form.cardNumber)
   if (!numberDigits) {
     next.cardNumber = 'Ingresá el número de tarjeta.'
-  } else if (numberDigits.length < 13 || numberDigits.length > 19) {
-    next.cardNumber = 'El número debe tener entre 13 y 19 dígitos.'
-  } else if (!luhnIsValid(numberDigits)) {
-    next.cardNumber = 'El número de tarjeta no es válido.'
+  } else if (numberDigits.length !== 16) {
+    next.cardNumber = 'El número debe tener 16 dígitos.'
   }
 
   if (!form.holderName) {
