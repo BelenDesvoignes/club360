@@ -1,11 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
 from app.services import payment_service
 from app.schemas.payment import PaymentResponse
+from app.auth_utils import get_user_id_from_token
 
 router = APIRouter()
+
+
+def _extract_user_id(authorization: str | None) -> int:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticado")
+
+    token = authorization.removeprefix("Bearer ").strip()
+    user_id = get_user_id_from_token(token)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+    return user_id
 
 @router.get("/user/{user_id}", response_model=List[PaymentResponse])
 def get_user_payments(user_id: int, db: Session = Depends(get_db)):
@@ -15,3 +27,17 @@ def get_user_payments(user_id: int, db: Session = Depends(get_db)):
     payments = payment_service.get_payments_by_user(db, user_id)
     # Si no hay pagos, devolvemos una lista vacía (es un resultado válido)
     return payments
+
+
+@router.post("/me/complete-booking", response_model=PaymentResponse)
+def complete_booking_payment(
+    amount: float = Body(..., embed=True),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    user_id = _extract_user_id(authorization)
+
+    if amount is None or amount <= 0:
+        raise HTTPException(status_code=400, detail="Monto inválido")
+
+    return payment_service.complete_latest_booking_payment(db, user_id, float(amount))

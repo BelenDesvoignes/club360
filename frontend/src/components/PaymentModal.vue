@@ -35,10 +35,7 @@
                 <div class="meta-label">Titular</div>
                 <div class="meta-value">{{ linkedCard.holderName }}</div>
               </div>
-              <div class="meta-col right">
-                <div class="meta-label">Token</div>
-                <div class="meta-value token">{{ shortToken }}</div>
-              </div>
+              
             </div>
 
             <p v-if="isCardExpired" class="inline-error">
@@ -81,6 +78,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import axios from 'axios'
 import { gatewayService } from '../utils/gatewayService'
 
 const props = defineProps({
@@ -105,12 +103,42 @@ const storageKey = computed(() => {
 })
 
 function loadLinkedCard() {
-  try {
-    const raw = localStorage.getItem(storageKey.value)
-    linkedCard.value = raw ? JSON.parse(raw) : null
-  } catch {
-    linkedCard.value = null
-  }
+  return axios
+    .get('/cards/me')
+    .then((res) => {
+      const card = res.data
+      if (!card) {
+        linkedCard.value = null
+        return
+      }
+
+      let token = ''
+      try {
+        const raw = localStorage.getItem(storageKey.value)
+        const stored = raw ? JSON.parse(raw) : null
+        token = stored?.token || ''
+      } catch {
+        token = ''
+      }
+
+      linkedCard.value = {
+        token,
+        lastFour: card.last_four,
+        holderName: card.card_holder,
+        expiry: card.expiry_date,
+        status: card.status || 'Activa',
+        linkedAt: card.created_at
+      }
+    })
+    .catch((err) => {
+      if (err?.response?.status === 401) {
+        auth.logout()
+        router.push('/login')
+        linkedCard.value = null
+        return
+      }
+      linkedCard.value = null
+    })
 }
 
 function expiryIsValid(mmYY) {
