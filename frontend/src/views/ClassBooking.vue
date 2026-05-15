@@ -81,7 +81,7 @@
 
     <!-- Modal para confirmar reserva y pago -->
     <transition name="fade">
-      <div v-if="showPaymentModal" class="modal-overlay" @click="closePaymentModal">
+      <div v-if="showPaymentModal" class="modal-overlay" @click.self="closePaymentModal">
         <div class="modal-content payment-modal" @click.stop>
           <button class="modal-close" @click="closePaymentModal">✕</button>
           
@@ -145,10 +145,31 @@
 
           <div class="modal-actions">
             <button @click="closePaymentModal" class="btn btn-secondary">Cancelar</button>
-            <button @click="confirmBooking" :disabled="bookingInProgress" class="btn btn-primary">
+            <button @click="confirmBooking" :disabled="bookingInProgress || !confirmReady" class="btn btn-primary">
               {{ bookingInProgress ? 'Procesando...' : 'Confirmar Reserva' }}
             </button>
           </div>
+        </div>
+      </div>
+    </transition>
+
+    <PaymentModal
+      v-model="showGatewayModal"
+      :amount="pendingPaymentAmount"
+      :payeeName="selectedInstance?.activity_name || 'Reserva'"
+      @result="onGatewayResult"
+    />
+
+    <!-- Modal de éxito -->
+    <transition name="fade">
+      <div v-if="successMessage" class="modal-overlay" @click="successMessage = ''">
+        <div class="modal-content" @click.stop>
+          <div :class="['modal-icon', bookingStatus]">
+            {{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '✓' : '⏳' }}
+          </div>
+          <h2>{{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : 'Reserva pendiente de pago' }}</h2>
+          <p>{{ successMessage }}</p>
+          <button @click="successMessage = ''" class="btn btn-primary">Cerrar</button>
         </div>
       </div>
     </transition>
@@ -230,6 +251,7 @@
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
+import PaymentModal from '../components/PaymentModal.vue'
 
 const auth = useAuthStore()
 const dayOrder = {
@@ -269,6 +291,16 @@ const selectedActivity = ref(null)
 const selectedInstance = ref(null)
 const paymentType = ref('seña')
 const bookingStatus = ref('pending')
+
+const confirmReady = ref(false)
+const showGatewayModal = ref(false)
+const pendingPaymentAmount = ref(0)
+
+function computeAmountToPay() {
+  const price = Number(selectedInstance.value?.template?.price || 0)
+  if (!Number.isFinite(price) || price <= 0) return 0
+  return paymentType.value === 'full' ? price : price * 0.5
+}
 
 const groupedActivities = computed(() => {
   const groups = new Map()
@@ -419,8 +451,12 @@ const selectInstanceForBooking = (instance) => {
   
   // Check if user is abonado for this activity
   checkAbonado(instance.template.activity_id)
-  
+
+  confirmReady.value = false
   showPaymentModal.value = true
+  setTimeout(() => {
+    confirmReady.value = true
+  }, 300)
 }
 
 const checkAbonado = async (activity_id) => {
@@ -444,6 +480,63 @@ const closePaymentModal = () => {
   showPaymentModal.value = false
   selectedInstance.value = null
   paymentType.value = 'seña'
+  confirmReady.value = false
+}
+
+async function finalizeBookingWithPayment() {
+  auth.hydrateFromToken()
+  const token = auth.token || localStorage.getItem('token')
+
+  if (!token) {
+    errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+    return
+  }
+
+  const res = await axios.post('/bookings/', {
+    instance_id: selectedInstance.value.id
+  }, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  })
+
+  if (pendingPaymentAmount.value > 0) {
+    await axios.post(
+      '/payments/me/complete-booking',
+      { amount: pendingPaymentAmount.value },
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+  }
+
+  bookingStatus.value = 'completed'
+  successMessage.value = `¡Tu reserva fue confirmada y el pago fue exitoso! Número de reserva: ${res.data.id}`
+  closePaymentModal()
+
+  setTimeout(() => {
+    fetchInstances()
+  }, 1500)
+}
+
+function onGatewayResult(result) {
+  if (!result) return
+  if (result.status === 'Aprobado') {
+    finalizeBookingWithPayment().catch((e) => {
+      const detail = e.response?.data?.detail || 'Error al procesar la reserva'
+      errorMessage.value = detail
+    })
+    return
+  }
+
+  // Si el usuario cancela o se rechaza, volvemos al modal de confirmación.
+  showPaymentModal.value = true
+  confirmReady.value = true
+
+  if (result.status === 'Cancelado') {
+    errorMessage.value = 'Pago cancelado.'
+    return
+  }
+
+  errorMessage.value = 'Pago rechazado.'
 }
 
 const openTurnosModal = (activity) => {
@@ -458,7 +551,7 @@ const closeTurnosModal = () => {
 
 const confirmBooking = async () => {
   if (!selectedInstance.value) return
-  
+
   bookingInProgress.value = true
 
   try {
@@ -470,26 +563,44 @@ const confirmBooking = async () => {
       return
     }
 
-    const res = await axios.post('/bookings/', {
-      instance_id: selectedInstance.value.id
-    }, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
+    const price = Number(selectedInstance.value?.template?.price || 0)
+    if (!Number.isFinite(price) || price <= 0) {
+      errorMessage.value = 'No se pudo determinar el precio de la clase.'
+      return
+    }
 
-    bookingStatus.value = res.data.status === 'Confirmed' ? 'confirmed' : 'pending'
-    successMessage.value = 
-      res.data.status === 'Confirmed'
-        ? `¡Tu reserva ha sido confirmada! Número de reserva: ${res.data.id}`
-        : `Tu reserva está pendiente de pago. Número de reserva: ${res.data.id}. Por favor, realiza el pago en nuestro sistema.`
+    // Abonado: reserva directa.
+    if (isUserAbonado.value) {
+      const res = await axios.post('/bookings/', {
+        instance_id: selectedInstance.value.id
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
 
-    closePaymentModal()
+      bookingStatus.value = res.data.status === 'Confirmed' ? 'completed' : 'pending'
+      successMessage.value =
+        bookingStatus.value === 'completed'
+          ? `¡Tu reserva ha sido confirmada! Número de reserva: ${res.data.id}`
+          : `Tu reserva está pendiente. Número de reserva: ${res.data.id}.`
 
-    // Recargar instancias
-    setTimeout(() => {
-      fetchInstances()
-    }, 1500)
+      closePaymentModal()
+      setTimeout(() => {
+        fetchInstances()
+      }, 1500)
+      return
+    }
+
+    // No abonado: abrir PaymentModal (requiere apretar "Pagar").
+    pendingPaymentAmount.value = computeAmountToPay()
+    if (!pendingPaymentAmount.value) {
+      errorMessage.value = 'No se pudo determinar el monto a pagar.'
+      return
+    }
+
+    showPaymentModal.value = false
+    showGatewayModal.value = true
   } catch (e) {
     const detail = e.response?.data?.detail || 'Error al procesar la reserva'
     errorMessage.value = detail
