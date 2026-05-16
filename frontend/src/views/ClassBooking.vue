@@ -16,9 +16,9 @@
 
     <div v-if="loading" class="loading-spinner">Cargando clases disponibles...</div>
 
-    <div v-if="successMessage" :class="['booking-feedback', bookingStatus]">
+      <div v-if="successMessage" :class="['booking-feedback', bookingStatus]">
       <div>
-        <strong>{{ bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : 'Reserva pendiente de pago' }}</strong>
+        <strong>{{ bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : bookingStatus === 'cancelled' ? 'Reserva cancelada' : 'Reserva pendiente de pago' }}</strong>
         <p>{{ successMessage }}</p>
       </div>
       <button type="button" class="booking-feedback-close" @click="successMessage = ''">Cerrar</button>
@@ -165,9 +165,9 @@
       <div v-if="successMessage" class="modal-overlay" @click="successMessage = ''">
         <div class="modal-content" @click.stop>
           <div :class="['modal-icon', bookingStatus]">
-            {{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '✓' : '⏳' }}
+            {{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '✓' : bookingStatus === 'cancelled' ? '⨯' : '⏳' }}
           </div>
-          <h2>{{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : 'Reserva pendiente de pago' }}</h2>
+          <h2>{{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : bookingStatus === 'cancelled' ? 'Reserva cancelada' : 'Reserva pendiente de pago' }}</h2>
           <p>{{ successMessage }}</p>
           <button @click="successMessage = ''" class="btn btn-primary">Cerrar</button>
         </div>
@@ -527,12 +527,9 @@ function onGatewayResult(result) {
     return
   }
 
-  // Si el usuario cancela o se rechaza, volvemos al modal de confirmación.
-  showPaymentModal.value = true
-  confirmReady.value = true
-
   if (result.status === 'Cancelado') {
-    errorMessage.value = 'Pago cancelado.'
+    showGatewayModal.value = false
+    closePaymentModal()
     return
   }
 
@@ -642,7 +639,7 @@ onMounted(() => {
   padding: 40px 20px;
   max-width: 1200px;
   margin: 0 auto;
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  background: linear-gradient(135deg, rgba(45, 101, 141, 0.08) 0%, rgba(90, 136, 73, 0.08) 52%, rgba(255, 111, 0, 0.08) 100%);
   min-height: 100vh;
 }
 
@@ -653,14 +650,14 @@ onMounted(() => {
 
 .booking-header h1 {
   font-size: 2.5rem;
-  color: #0d124a;
+  color: #2d658d;
   font-weight: 800;
   margin: 0 0 10px;
 }
 
 .booking-header p {
   font-size: 1.1rem;
-  color: #6c757d;
+  color: #5a8849;
   margin: 0;
 }
 
@@ -719,15 +716,21 @@ onMounted(() => {
 }
 
 .booking-feedback.confirmed {
-  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
-  border: 1px solid #86efac;
-  color: #166534;
+  background: linear-gradient(135deg, #eff6ff, #e8f3ec);
+  border: 1px solid rgba(45, 101, 141, 0.22);
+  color: #2d658d;
 }
 
 .booking-feedback.pending {
-  background: linear-gradient(135deg, #eff6ff, #dbeafe);
-  border: 1px solid #93c5fd;
-  color: #1d4ed8;
+  background: linear-gradient(135deg, #fff7f0, #fff0e0);
+  border: 1px solid rgba(255, 111, 0, 0.22);
+  color: #ff6f00;
+}
+
+.booking-feedback.cancelled {
+  background: linear-gradient(135deg, #fff7ed, #fef3c7);
+  border: 1px solid rgba(255, 111, 0, 0.28);
+  color: #b45309;
 }
 
 .booking-feedback p {
@@ -762,7 +765,7 @@ onMounted(() => {
   overflow: hidden;
   box-shadow: 0 18px 45px rgba(17, 24, 39, 0.12);
   transition: all 0.3s ease;
-  border: 1px solid rgba(255, 111, 0, 0.12);
+  border: 1px solid rgba(45, 101, 141, 0.12);
   display: flex;
   flex-direction: column;
 }
@@ -773,7 +776,7 @@ onMounted(() => {
 }
 
 .card-header {
-  background: linear-gradient(135deg, #ff6f00 0%, #ff8c00 100%);
+  background: linear-gradient(135deg, #2d658d 0%, #5a8849 60%, #ff6f00 100%);
   color: white;
   padding: 18px 20px;
   display: flex;
@@ -818,13 +821,13 @@ onMounted(() => {
 }
 
 .reserve-direct-btn {
-  background: linear-gradient(135deg, #ff6f00, #ff8c00);
+  background: linear-gradient(135deg, #2d658d, #5a8849, #ff6f00);
   border: none;
 }
 
 .reserve-direct-btn:hover {
-  background: linear-gradient(135deg, #ff5500, #ff7500);
-  box-shadow: 0 6px 20px rgba(255, 111, 0, 0.5);
+  background: linear-gradient(135deg, #24506f, #4d733d, #e65f00);
+  box-shadow: 0 6px 20px rgba(45, 101, 141, 0.35);
 }
 
 .card-body {
@@ -849,7 +852,7 @@ onMounted(() => {
   margin: 0;
   padding: 16px;
   background: #ffffff;
-  border: 1px solid #f2e4d8;
+  border: 1px solid rgba(90, 136, 73, 0.18);
   box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
 }
 
@@ -857,9 +860,9 @@ onMounted(() => {
   margin: 0;
   padding: 16px;
   border-radius: 14px;
-  background: #fff7f0;
-  border: 1px dashed #ffb37a;
-  color: #9a4a00;
+  background: linear-gradient(135deg, #eff6ff, #fff7f0);
+  border: 1px dashed rgba(45, 101, 141, 0.35);
+  color: #2d658d;
   font-weight: 600;
   text-align: center;
 }
@@ -912,7 +915,7 @@ onMounted(() => {
 
 .btn-book {
   padding: 10px 16px;
-  background: #28a745;
+  background: linear-gradient(135deg, #5a8849, #2d658d);
   color: white;
   border: none;
   border-radius: 6px;
@@ -922,7 +925,7 @@ onMounted(() => {
 }
 
 .btn-book:hover:not(:disabled) {
-  background: #1e7e34;
+  background: linear-gradient(135deg, #4c763e, #24506f);
   transform: scale(1.05);
 }
 
@@ -1078,8 +1081,8 @@ onMounted(() => {
 }
 
 .payment-warning {
-  background: #fff3cd;
-  color: #856404;
+  background: #fff7ed;
+  color: #b45309;
   padding: 10px;
   border-radius: 6px;
   font-size: 0.9rem;
@@ -1146,15 +1149,19 @@ onMounted(() => {
 }
 
 .modal-icon.confirmed {
-  color: #28a745;
+  color: #5a8849;
 }
 
 .modal-icon.pending {
-  color: #ffc107;
+  color: #ff6f00;
 }
 
 .modal-icon.error {
   color: #dc3545;
+}
+
+.modal-icon.cancelled {
+  color: #ff6f00;
 }
 
 .empty-state {
@@ -1270,7 +1277,7 @@ onMounted(() => {
 .btn-turno-reserve {
   width: 100%;
   padding: 12px;
-  background: #28a745;
+  background: linear-gradient(135deg, #5a8849, #2d658d);
   color: white;
   border: none;
   border-radius: 8px;
@@ -1280,9 +1287,9 @@ onMounted(() => {
 }
 
 .btn-turno-reserve:hover:not(:disabled):not(.disabled) {
-  background: #1e7e34;
+  background: linear-gradient(135deg, #4c763e, #24506f);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+  box-shadow: 0 4px 12px rgba(45, 101, 141, 0.28);
 }
 
 .btn-turno-reserve:disabled,
