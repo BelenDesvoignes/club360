@@ -12,6 +12,7 @@ class ShiftTemplate(Base):
     start_time = Column(String)  # "17:00"
     capacity = Column(Integer)
     price = Column(Float, default=100.0)  # Precio de la clase en $
+    is_active = Column(Boolean, default=True, server_default='true', nullable=False)
 
     activity = relationship("Activity", back_populates="templates")
     instances = relationship("ShiftInstance", back_populates="template")

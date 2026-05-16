@@ -96,17 +96,37 @@
     </transition>
 
     <transition name="fade">
-      <div v-if="showConfirmModal" class="modal-overlay">
-        <div class="modal-card">
-          <h3>¿Eliminar turno?</h3>
-          <p>Esta acción no se puede deshacer.</p>
-          <div class="modal-actions">
-            <button @click="executeDelete" class="btn-confirm">Eliminar</button>
-            <button @click="showConfirmModal = false" class="btn-cancel">Cancelar</button>
-          </div>
+  <div v-if="showConfirmModal" class="modal-overlay">
+    <div class="modal-card">
+      <template v-if="checkingBookings">
+        <p style="color:#6b7280; font-size:14px;">Verificando reservas...</p>
+      </template>
+      <template v-else-if="hasConfirmedBookings">
+        <h3>Este turno tiene reservas confirmadas</h3>
+        <p>¿Qué querés hacer con las reservas existentes?</p>
+        <div class="modal-actions" style="flex-direction: column;">
+          <button @click="executeDelete(false)" class="btn-confirm">
+            No cancelar reservas
+          </button>
+          <button @click="executeDelete(true)" class="btn-danger">
+            Cancelar reservas y eliminar
+          </button>
+          <button @click="showConfirmModal = false" class="btn-cancel">
+            Cancelar operación
+          </button>
         </div>
-      </div>
-    </transition>
+      </template>
+      <template v-else>
+  <h3>¿Eliminar turno?</h3>
+  <p>Este turno no tiene reservas confirmadas.</p>
+  <div class="modal-actions">
+    <button @click="executeDelete(false)" class="btn-confirm">Eliminar turno</button>
+    <button @click="showConfirmModal = false" class="btn-cancel">Cancelar</button>
+  </div>
+</template>
+    </div>
+  </div>
+</transition>
   </div>
 </template>
 
@@ -117,8 +137,8 @@ import axios from 'axios'
 const activityMap = {
   'Fútbol': 'Cancha 1',
   'Vóley': 'Cancha 2',
-  'Padel': 'Cancha 3',
-  'Basquet': 'Cancha 4'
+  'Pádel': 'Cancha 3', // Asegúrate de la tilde
+  'Básquet': 'Cancha 4' // Asegúrate de la tilde
 };
 
 const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -166,8 +186,10 @@ const flatActivities = computed(() => {
 const handleSubmit = async () => {
   loading.value = true;
   try {
-    // Aseguramos que la cancha se asigne según la actividad seleccionada antes de enviar
-    const currentCourt = activityMap[form.value.name] || form.value.court || 'General';
+    // Si es un string (Cancha 1), lo usamos. Si es un objeto, sacamos .court
+    const currentCourt = typeof activityMap[form.value.name] === 'object'
+      ? activityMap[form.value.name].court
+      : activityMap[form.value.name];
 
     const payload = {
       name: form.value.name,
@@ -179,6 +201,7 @@ const handleSubmit = async () => {
       await axios.put(`/activities/${editingId.value}`, payload);
       message.value = "Turno actualizado";
     } else {
+      // USAMOS LA RUTA RAIZ: El backend inteligente hará el resto
       await axios.post('/activities/', payload);
       message.value = "Turno creado con éxito";
     }
@@ -187,8 +210,9 @@ const handleSubmit = async () => {
     cancelEdit();
     await fetchActivities();
   } catch (e) {
+    console.error(e);
     messageType.value = "error";
-    message.value = "Error al procesar la solicitud.";
+    message.value = e.response?.data?.detail || "Error al procesar la solicitud.";
   } finally {
     loading.value = false;
     setTimeout(() => { message.value = '' }, 3000);
@@ -224,24 +248,38 @@ const cancelEdit = () => {
 
 const showConfirmModal = ref(false);
 const idToDelete = ref(null);
+const hasConfirmedBookings = ref(false);
+const checkingBookings = ref(false);
 
-const deleteActivity = (id) => {
+const deleteActivity = async (id) => {
   idToDelete.value = id;
   showConfirmModal.value = true;
+  checkingBookings.value = true;
+  hasConfirmedBookings.value = false;
+
+  try {
+    const res = await axios.get(`/activities/templates/${id}/check-bookings`);
+    hasConfirmedBookings.value = res.data.has_confirmed_bookings;
+  } catch (e) {
+    message.value = "Error al verificar reservas.";
+    messageType.value = "error";
+    showConfirmModal.value = false;
+  } finally {
+    checkingBookings.value = false;
+  }
 };
 
-const executeDelete = async () => {
+const executeDelete = async (cancelBookings) => {
   showConfirmModal.value = false;
   try {
-    // CAMBIO: Ahora llamamos a la ruta de templates con el ID del turno
-    await axios.delete(`/activities/templates/${idToDelete.value}`);
-
+    await axios.delete(`/activities/templates/${idToDelete.value}`, {
+      params: { cancel_bookings: cancelBookings }
+    });
     await fetchActivities();
     message.value = "Eliminado correctamente";
     messageType.value = "success";
   } catch (e) {
     messageType.value = "error";
-    // Si el backend tira el error 400 de las reservas, lo mostramos:
     message.value = e.response?.data?.detail || "No se pudo eliminar el turno.";
   } finally {
     setTimeout(() => { message.value = '' }, 3000);
@@ -434,4 +472,18 @@ select:disabled {
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.btn-danger {
+  flex: 1;
+  background: #c0392b;
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+
 </style>

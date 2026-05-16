@@ -11,7 +11,8 @@ class Booking(Base):
     instance_id = Column(Integer, ForeignKey("shift_instances.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    status = Column(String) # "Confirmed", "Cancelled", "Attended"
+    status = Column(String, default="Pending")
+ # "Confirmed", "Cancelled", "Pending"
 
     instance = relationship("ShiftInstance", back_populates="bookings")
     user = relationship("User", back_populates="bookings")
