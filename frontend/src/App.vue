@@ -24,10 +24,22 @@ const handleSidebarToggle = (state) => {
 
 <style>
 /* Estilos Globales */
+html,
+body,
+#app {
+  height: 100%;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   background-color: #f8f9fa;
   overflow-x: hidden;
 }

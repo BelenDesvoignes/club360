@@ -8,6 +8,8 @@ class Activity(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     court = Column(String) #cancha
-    is_active = Column(Boolean, default=True) #para borrado logico
+    is_active = Column(Boolean, default=True, server_default='true', nullable=False) #para borrado logico
 
     templates = relationship("ShiftTemplate", back_populates="activity")
+
+

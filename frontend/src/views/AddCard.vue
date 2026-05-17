@@ -52,6 +52,7 @@
                 inputmode="numeric"
                 autocomplete="cc-number"
                 placeholder="1234 5678 9012 3456"
+                maxlength="19"
                 :class="{ invalid: showError('cardNumber') }"
                 @input="handleCardNumberInput"
                 @blur="touched.cardNumber = true"
@@ -121,10 +122,13 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
 import { gatewayService } from '../utils/gatewayService'
 
 const auth = useAuthStore()
+const router = useRouter()
 
 const isSubmitting = ref(false)
 const submitError = ref('')
@@ -152,12 +156,42 @@ const storageKey = computed(() => {
 const linkedCard = ref(null)
 
 function loadLinkedCard() {
-  try {
-    const raw = localStorage.getItem(storageKey.value)
-    linkedCard.value = raw ? JSON.parse(raw) : null
-  } catch {
-    linkedCard.value = null
-  }
+  return axios
+    .get('/cards/me')
+    .then((res) => {
+      const card = res.data
+      if (!card) {
+        linkedCard.value = null
+        return
+      }
+
+      let token = ''
+      try {
+        const raw = localStorage.getItem(storageKey.value)
+        const stored = raw ? JSON.parse(raw) : null
+        token = stored?.token || ''
+      } catch {
+        token = ''
+      }
+
+      linkedCard.value = {
+        token,
+        lastFour: card.last_four,
+        holderName: card.card_holder,
+        expiry: card.expiry_date,
+        status: card.status || 'Activa',
+        linkedAt: card.created_at
+      }
+    })
+    .catch((err) => {
+      if (err?.response?.status === 401) {
+        submitError.value = 'Tu sesión expiró. Volvé a iniciar sesión.'
+        auth.logout()
+        router.push('/login')
+        return
+      }
+      linkedCard.value = null
+    })
 }
 
 function saveLinkedCard(card) {
@@ -165,12 +199,21 @@ function saveLinkedCard(card) {
   linkedCard.value = card
 }
 
+function detectBrand(cardDigits) {
+  const d = String(cardDigits || '')
+  if (d.startsWith('4')) return 'Visa'
+  if (/^5[1-5]/.test(d)) return 'Mastercard'
+  if (/^3[47]/.test(d)) return 'Amex'
+  return null
+}
+
 function digitsOnly(value) {
   return (value || '').replace(/\D/g, '')
 }
 
 function formatCardNumber(value) {
-  const digits = digitsOnly(value).slice(0, 19)
+  // Mock/demo: requerimos 16 dígitos (4x4)
+  const digits = digitsOnly(value).slice(0, 16)
   return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
 }
 
@@ -241,10 +284,8 @@ const errors = computed(() => {
   const numberDigits = digitsOnly(form.cardNumber)
   if (!numberDigits) {
     next.cardNumber = 'Ingresá el número de tarjeta.'
-  } else if (numberDigits.length < 13 || numberDigits.length > 19) {
-    next.cardNumber = 'El número debe tener entre 13 y 19 dígitos.'
-  } else if (!luhnIsValid(numberDigits)) {
-    next.cardNumber = 'El número de tarjeta no es válido.'
+  } else if (numberDigits.length !== 16) {
+    next.cardNumber = 'El número debe tener 16 dígitos.'
   }
 
   if (!form.holderName) {
@@ -324,13 +365,21 @@ async function onSubmit() {
     const res = await gatewayService.tokenize(data)
 
     const lastFour = data.cardNumber.slice(-4)
+    const apiRes = await axios.put('/cards/me', {
+      card_holder: data.holderName,
+      last_four: lastFour,
+      expiry_date: data.expiry,
+      brand: detectBrand(data.cardNumber)
+    })
+
+    // Guardamos token simulado local (en un gateway real, el token vendría del backend).
     saveLinkedCard({
       token: res.token,
-      lastFour,
-      holderName: data.holderName,
-      expiry: data.expiry,
-      status: 'Activa',
-      linkedAt: new Date().toISOString()
+      lastFour: apiRes.data.last_four,
+      holderName: apiRes.data.card_holder,
+      expiry: apiRes.data.expiry_date,
+      status: apiRes.data.status || 'Activa',
+      linkedAt: apiRes.data.created_at
     })
 
     // Limpieza visual: nunca persistimos CVV/PAN completos en estado
@@ -339,7 +388,29 @@ async function onSubmit() {
 
     submitOk.value = true
   } catch (e) {
+    if (e?.response?.status === 401) {
+      submitError.value = 'Tu sesión expiró. Volvé a iniciar sesión.'
+      auth.logout()
+      router.push('/login')
+      return
+    }
     submitError.value = 'No se pudo vincular la tarjeta. Intentá nuevamente.'
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+async function onDelete() {
+  submitError.value = ''
+  submitOk.value = false
+  isSubmitting.value = true
+  try {
+    await axios.delete('/cards/me')
+    localStorage.removeItem(storageKey.value)
+    linkedCard.value = null
+    submitOk.value = true
+  } catch {
+    submitError.value = 'No se pudo eliminar la tarjeta. Intentá nuevamente.'
   } finally {
     isSubmitting.value = false
   }
@@ -512,6 +583,22 @@ onMounted(() => {
   background: #5a8849;
   cursor: pointer;
   transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.secondary {
+  border: 1px solid rgba(13, 18, 74, 0.22);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0d124a;
+  background: white;
+  cursor: pointer;
+}
+
+.secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .primary:hover {

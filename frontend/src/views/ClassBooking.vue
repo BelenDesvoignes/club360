@@ -16,9 +16,9 @@
 
     <div v-if="loading" class="loading-spinner">Cargando clases disponibles...</div>
 
-    <div v-if="successMessage" :class="['booking-feedback', bookingStatus]">
+      <div v-if="successMessage" :class="['booking-feedback', bookingStatus]">
       <div>
-        <strong>{{ bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : 'Reserva pendiente de pago' }}</strong>
+        <strong>{{ bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : bookingStatus === 'cancelled' ? 'Reserva cancelada' : 'Reserva pendiente de pago' }}</strong>
         <p>{{ successMessage }}</p>
       </div>
       <button type="button" class="booking-feedback-close" @click="successMessage = ''">Cerrar</button>
@@ -50,8 +50,8 @@
               class="turn-row turn-row-inline"
             >
               <div class="turn-info">
-                <strong>{{ turno.court || 'Sin cancha' }}</strong>
-                <span>{{ turno.template.start_time }}hs · {{ turno.template.day_of_week }}</span>
+                <strong>{{ turno.template.start_time }}hs · {{ turno.template.day_of_week }}</strong>
+                <span>{{ turno.court || 'Sin cancha' }}</span>
                 <small>Cupos: {{ turno.booked_count }}/{{ turno.template.capacity }}</small>
                 <small class="price">${{ turno.template.price }}</small>
               </div>
@@ -81,7 +81,7 @@
 
     <!-- Modal para confirmar reserva y pago -->
     <transition name="fade">
-      <div v-if="showPaymentModal" class="modal-overlay" @click="closePaymentModal">
+      <div v-if="showPaymentModal" class="modal-overlay" @click.self="closePaymentModal">
         <div class="modal-content payment-modal" @click.stop>
           <button class="modal-close" @click="closePaymentModal">✕</button>
           
@@ -145,10 +145,31 @@
 
           <div class="modal-actions">
             <button @click="closePaymentModal" class="btn btn-secondary">Cancelar</button>
-            <button @click="confirmBooking" :disabled="bookingInProgress" class="btn btn-primary">
+            <button @click="confirmBooking" :disabled="bookingInProgress || !confirmReady" class="btn btn-primary">
               {{ bookingInProgress ? 'Procesando...' : 'Confirmar Reserva' }}
             </button>
           </div>
+        </div>
+      </div>
+    </transition>
+
+    <PaymentModal
+      v-model="showGatewayModal"
+      :amount="pendingPaymentAmount"
+      :payeeName="selectedInstance?.activity_name || 'Reserva'"
+      @result="onGatewayResult"
+    />
+
+    <!-- Modal de éxito -->
+    <transition name="fade">
+      <div v-if="successMessage" class="modal-overlay" @click="successMessage = ''">
+        <div class="modal-content" @click.stop>
+          <div :class="['modal-icon', bookingStatus]">
+            {{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '✓' : bookingStatus === 'cancelled' ? '⨯' : '⏳' }}
+          </div>
+          <h2>{{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : bookingStatus === 'cancelled' ? 'Reserva cancelada' : 'Reserva pendiente de pago' }}</h2>
+          <p>{{ successMessage }}</p>
+          <button @click="successMessage = ''" class="btn btn-primary">Cerrar</button>
         </div>
       </div>
     </transition>
@@ -230,6 +251,7 @@
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
+import PaymentModal from '../components/PaymentModal.vue'
 
 const auth = useAuthStore()
 const dayOrder = {
@@ -270,6 +292,16 @@ const selectedInstance = ref(null)
 const paymentType = ref('seña')
 const bookingStatus = ref('pending')
 
+const confirmReady = ref(false)
+const showGatewayModal = ref(false)
+const pendingPaymentAmount = ref(0)
+
+function computeAmountToPay() {
+  const price = Number(selectedInstance.value?.template?.price || 0)
+  if (!Number.isFinite(price) || price <= 0) return 0
+  return paymentType.value === 'full' ? price : price * 0.5
+}
+
 const groupedActivities = computed(() => {
   const groups = new Map()
   const activityIdToKey = new Map()
@@ -305,16 +337,15 @@ const groupedActivities = computed(() => {
       groups.set(activityKey, {
         activity_id: instance.template.activity_id,
         activity_name: instance.activity_name,
-        court: '',
+        court: instance.court || '',
         templates: [instance.template],
         instances: []
       })
     }
 
     const activityGroup = groups.get(activityKey)
-    if (!activityGroup.instances.length) {
-      activityGroup.instances.push(instance)
-    }
+    // Add all instances (not just first one per activity)
+    activityGroup.instances.push(instance)
   }
 
   return Array.from(groups.values()).map((activity) => {
@@ -354,7 +385,10 @@ const activityFill = (activity) => {
 
 const fetchInstances = async () => {
   try {
-    const res = await axios.get('/shifts/instances')
+    // Add cache busting and timeout to prevent slow loads
+    const res = await axios.get('/shifts/instances', {
+      timeout: 5000
+    })
     instances.value = res.data
   } catch (e) {
     console.error('Error al cargar clases:', e)
@@ -417,8 +451,12 @@ const selectInstanceForBooking = (instance) => {
   
   // Check if user is abonado for this activity
   checkAbonado(instance.template.activity_id)
-  
+
+  confirmReady.value = false
   showPaymentModal.value = true
+  setTimeout(() => {
+    confirmReady.value = true
+  }, 300)
 }
 
 const checkAbonado = async (activity_id) => {
@@ -442,6 +480,60 @@ const closePaymentModal = () => {
   showPaymentModal.value = false
   selectedInstance.value = null
   paymentType.value = 'seña'
+  confirmReady.value = false
+}
+
+async function finalizeBookingWithPayment() {
+  auth.hydrateFromToken()
+  const token = auth.token || localStorage.getItem('token')
+
+  if (!token) {
+    errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+    return
+  }
+
+  const res = await axios.post('/bookings/', {
+    instance_id: selectedInstance.value.id
+  }, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  })
+
+  if (pendingPaymentAmount.value > 0) {
+    await axios.post(
+      '/payments/me/complete-booking',
+      { amount: pendingPaymentAmount.value, booking_id: res.data.id },
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+  }
+
+  bookingStatus.value = 'completed'
+  successMessage.value = `¡Tu reserva fue confirmada y el pago fue exitoso! Número de reserva: ${res.data.id}`
+  closePaymentModal()
+
+  setTimeout(() => {
+    fetchInstances()
+  }, 1500)
+}
+
+function onGatewayResult(result) {
+  if (!result) return
+  if (result.status === 'Aprobado') {
+    finalizeBookingWithPayment().catch((e) => {
+      const detail = e.response?.data?.detail || 'Error al procesar la reserva'
+      errorMessage.value = detail
+    })
+    return
+  }
+
+  if (result.status === 'Cancelado') {
+    showGatewayModal.value = false
+    closePaymentModal()
+    return
+  }
+
+  errorMessage.value = 'Pago rechazado.'
 }
 
 const openTurnosModal = (activity) => {
@@ -456,7 +548,7 @@ const closeTurnosModal = () => {
 
 const confirmBooking = async () => {
   if (!selectedInstance.value) return
-  
+
   bookingInProgress.value = true
 
   try {
@@ -468,26 +560,44 @@ const confirmBooking = async () => {
       return
     }
 
-    const res = await axios.post('/bookings/', {
-      instance_id: selectedInstance.value.id
-    }, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
+    const price = Number(selectedInstance.value?.template?.price || 0)
+    if (!Number.isFinite(price) || price <= 0) {
+      errorMessage.value = 'No se pudo determinar el precio de la clase.'
+      return
+    }
 
-    bookingStatus.value = res.data.status === 'Confirmed' ? 'confirmed' : 'pending'
-    successMessage.value = 
-      res.data.status === 'Confirmed'
-        ? `¡Tu reserva ha sido confirmada! Número de reserva: ${res.data.id}`
-        : `Tu reserva está pendiente de pago. Número de reserva: ${res.data.id}. Por favor, realiza el pago en nuestro sistema.`
+    // Abonado: reserva directa.
+    if (isUserAbonado.value) {
+      const res = await axios.post('/bookings/', {
+        instance_id: selectedInstance.value.id
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
 
-    closePaymentModal()
+      bookingStatus.value = res.data.status === 'Confirmed' ? 'completed' : 'pending'
+      successMessage.value =
+        bookingStatus.value === 'completed'
+          ? `¡Tu reserva ha sido confirmada! Número de reserva: ${res.data.id}`
+          : `Tu reserva está pendiente. Número de reserva: ${res.data.id}.`
 
-    // Recargar instancias
-    setTimeout(() => {
-      fetchInstances()
-    }, 1500)
+      closePaymentModal()
+      setTimeout(() => {
+        fetchInstances()
+      }, 1500)
+      return
+    }
+
+    // No abonado: abrir PaymentModal (requiere apretar "Pagar").
+    pendingPaymentAmount.value = computeAmountToPay()
+    if (!pendingPaymentAmount.value) {
+      errorMessage.value = 'No se pudo determinar el monto a pagar.'
+      return
+    }
+
+    showPaymentModal.value = false
+    showGatewayModal.value = true
   } catch (e) {
     const detail = e.response?.data?.detail || 'Error al procesar la reserva'
     errorMessage.value = detail
@@ -529,7 +639,7 @@ onMounted(() => {
   padding: 40px 20px;
   max-width: 1200px;
   margin: 0 auto;
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  background: linear-gradient(135deg, rgba(45, 101, 141, 0.08) 0%, rgba(90, 136, 73, 0.08) 52%, rgba(255, 111, 0, 0.08) 100%);
   min-height: 100vh;
 }
 
@@ -540,14 +650,14 @@ onMounted(() => {
 
 .booking-header h1 {
   font-size: 2.5rem;
-  color: #0d124a;
+  color: #2d658d;
   font-weight: 800;
   margin: 0 0 10px;
 }
 
 .booking-header p {
   font-size: 1.1rem;
-  color: #6c757d;
+  color: #5a8849;
   margin: 0;
 }
 
@@ -606,15 +716,21 @@ onMounted(() => {
 }
 
 .booking-feedback.confirmed {
-  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
-  border: 1px solid #86efac;
-  color: #166534;
+  background: linear-gradient(135deg, #eff6ff, #e8f3ec);
+  border: 1px solid rgba(45, 101, 141, 0.22);
+  color: #2d658d;
 }
 
 .booking-feedback.pending {
-  background: linear-gradient(135deg, #eff6ff, #dbeafe);
-  border: 1px solid #93c5fd;
-  color: #1d4ed8;
+  background: linear-gradient(135deg, #fff7f0, #fff0e0);
+  border: 1px solid rgba(255, 111, 0, 0.22);
+  color: #ff6f00;
+}
+
+.booking-feedback.cancelled {
+  background: linear-gradient(135deg, #fff7ed, #fef3c7);
+  border: 1px solid rgba(255, 111, 0, 0.28);
+  color: #b45309;
 }
 
 .booking-feedback p {
@@ -649,7 +765,7 @@ onMounted(() => {
   overflow: hidden;
   box-shadow: 0 18px 45px rgba(17, 24, 39, 0.12);
   transition: all 0.3s ease;
-  border: 1px solid rgba(255, 111, 0, 0.12);
+  border: 1px solid rgba(45, 101, 141, 0.12);
   display: flex;
   flex-direction: column;
 }
@@ -660,7 +776,7 @@ onMounted(() => {
 }
 
 .card-header {
-  background: linear-gradient(135deg, #ff6f00 0%, #ff8c00 100%);
+  background: linear-gradient(135deg, #2d658d 0%, #5a8849 60%, #ff6f00 100%);
   color: white;
   padding: 18px 20px;
   display: flex;
@@ -705,13 +821,13 @@ onMounted(() => {
 }
 
 .reserve-direct-btn {
-  background: linear-gradient(135deg, #ff6f00, #ff8c00);
+  background: linear-gradient(135deg, #2d658d, #5a8849, #ff6f00);
   border: none;
 }
 
 .reserve-direct-btn:hover {
-  background: linear-gradient(135deg, #ff5500, #ff7500);
-  box-shadow: 0 6px 20px rgba(255, 111, 0, 0.5);
+  background: linear-gradient(135deg, #24506f, #4d733d, #e65f00);
+  box-shadow: 0 6px 20px rgba(45, 101, 141, 0.35);
 }
 
 .card-body {
@@ -736,7 +852,7 @@ onMounted(() => {
   margin: 0;
   padding: 16px;
   background: #ffffff;
-  border: 1px solid #f2e4d8;
+  border: 1px solid rgba(90, 136, 73, 0.18);
   box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
 }
 
@@ -744,9 +860,9 @@ onMounted(() => {
   margin: 0;
   padding: 16px;
   border-radius: 14px;
-  background: #fff7f0;
-  border: 1px dashed #ffb37a;
-  color: #9a4a00;
+  background: linear-gradient(135deg, #eff6ff, #fff7f0);
+  border: 1px dashed rgba(45, 101, 141, 0.35);
+  color: #2d658d;
   font-weight: 600;
   text-align: center;
 }
@@ -799,7 +915,7 @@ onMounted(() => {
 
 .btn-book {
   padding: 10px 16px;
-  background: #28a745;
+  background: linear-gradient(135deg, #5a8849, #2d658d);
   color: white;
   border: none;
   border-radius: 6px;
@@ -809,7 +925,7 @@ onMounted(() => {
 }
 
 .btn-book:hover:not(:disabled) {
-  background: #1e7e34;
+  background: linear-gradient(135deg, #4c763e, #24506f);
   transform: scale(1.05);
 }
 
@@ -965,8 +1081,8 @@ onMounted(() => {
 }
 
 .payment-warning {
-  background: #fff3cd;
-  color: #856404;
+  background: #fff7ed;
+  color: #b45309;
   padding: 10px;
   border-radius: 6px;
   font-size: 0.9rem;
@@ -1033,15 +1149,19 @@ onMounted(() => {
 }
 
 .modal-icon.confirmed {
-  color: #28a745;
+  color: #5a8849;
 }
 
 .modal-icon.pending {
-  color: #ffc107;
+  color: #ff6f00;
 }
 
 .modal-icon.error {
   color: #dc3545;
+}
+
+.modal-icon.cancelled {
+  color: #ff6f00;
 }
 
 .empty-state {
@@ -1157,7 +1277,7 @@ onMounted(() => {
 .btn-turno-reserve {
   width: 100%;
   padding: 12px;
-  background: #28a745;
+  background: linear-gradient(135deg, #5a8849, #2d658d);
   color: white;
   border: none;
   border-radius: 8px;
@@ -1167,9 +1287,9 @@ onMounted(() => {
 }
 
 .btn-turno-reserve:hover:not(:disabled):not(.disabled) {
-  background: #1e7e34;
+  background: linear-gradient(135deg, #4c763e, #24506f);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+  box-shadow: 0 4px 12px rgba(45, 101, 141, 0.28);
 }
 
 .btn-turno-reserve:disabled,
