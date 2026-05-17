@@ -5,6 +5,8 @@ import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
+import ShiftsManagement from '../views/ShiftsManagement.vue' // <--- 1. IMPORTAR EL NUEVO
+
 
 // TUS IMPORTS (Mantenemos solo Pagos)
 import UserPayments from '../views/UserPayments.vue'
@@ -33,7 +35,8 @@ const routes = [
   // RUTAS DE ADMINISTRADOR
   {
     path: '/clases',
-    component: { template: '<div><h1>Gestión de Clases</h1></div>' },
+    name: 'GestionClases',
+    component: ShiftsManagement, 
     meta: { requiresAuth: true, role: 'admin' }
   },
   {

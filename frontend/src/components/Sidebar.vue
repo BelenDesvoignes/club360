@@ -62,6 +62,9 @@
           <router-link to="/gestion-actividades" @click="closeSidebar">
              <span class="icon">⚙️</span> Gestión de Actividades
           </router-link>
+          <router-link to="/clases" @click="closeSidebar">
+             <span class="icon">⚙️</span> Gestión de Clases
+          </router-link>
           <router-link to="/equipo" @click="closeSidebar">
             <span class="icon">👥</span> Gestión de Personal
           </router-link>
