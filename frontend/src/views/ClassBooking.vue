@@ -146,7 +146,7 @@
               />
               <label for="payment-monthly">
                 <strong>Pagar mensualidad (Abono)</strong>
-                <span>${{ (selectedInstance?.template.price * 4).toFixed(2) }}</span>
+                <span>${{ (Number(selectedInstance?.template?.price || 0) * countRemainingMonthlyOccurrences(selectedInstance?.template?.day_of_week)).toFixed(2) }}</span>
               </label>
             </div>
 
@@ -318,10 +318,43 @@ const confirmReady = ref(false)
 const showGatewayModal = ref(false)
 const pendingPaymentAmount = ref(0)
 
+const weekdayToJsIndex = {
+  Domingo: 0,
+  Lunes: 1,
+  Martes: 2,
+  'Miércoles': 3,
+  Miercoles: 3,
+  Jueves: 4,
+  Viernes: 5,
+  Sábado: 6,
+  Sabado: 6,
+}
+
+const countRemainingMonthlyOccurrences = (dayOfWeek) => {
+  if (!dayOfWeek) return 0
+
+  const targetDay = weekdayToJsIndex[dayOfWeek]
+  if (targetDay === undefined) return 0
+
+  const today = new Date()
+  const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+  let count = 0
+
+  for (const cursor = new Date(today); cursor <= endOfMonth; cursor.setDate(cursor.getDate() + 1)) {
+    if (cursor.getDay() === targetDay) {
+      count += 1
+    }
+  }
+
+  return count
+}
+
 function computeAmountToPay() {
   const price = Number(selectedInstance.value?.template?.price || 0)
   if (!Number.isFinite(price) || price <= 0) return 0
-  if (paymentType.value === 'monthly') return price * 4
+  if (paymentType.value === 'monthly') {
+    return price * countRemainingMonthlyOccurrences(selectedInstance.value?.template?.day_of_week)
+  }
   return paymentType.value === 'full' ? price : price * 0.5
 }
 

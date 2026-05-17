@@ -136,12 +136,32 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
             detail="Ya tienes un abono activo para este horario este mes.",
         )
 
-    monthly_price = float(template.price or 0) * 4
+    valid_to = last_day_of_month(today)
+
+    instances_created = ensure_shift_instances_until(db, template, start=today, until=valid_to)
+
+    instances = (
+        db.query(ShiftInstance)
+        .filter(
+            and_(
+                ShiftInstance.template_id == template_id,
+                ShiftInstance.date >= today,
+                ShiftInstance.date <= valid_to,
+                ShiftInstance.is_cancelled == False,
+            )
+        )
+        .order_by(ShiftInstance.date.asc())
+        .all()
+    )
+
+    if not instances:
+        raise HTTPException(status_code=400, detail="No hay turnos disponibles para calcular el abono mensual.")
+
+    monthly_price = float(template.price or 0) * len(instances)
     if monthly_price <= 0:
         raise HTTPException(status_code=400, detail="No se pudo determinar el precio mensual")
 
     purchase_dt = datetime.utcnow()
-    valid_to = last_day_of_month(today)
 
     subscription = Subscription(
         user_id=user_id,
@@ -165,22 +185,6 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
         db.add(subscription)
         db.add(payment)
         db.flush()  # get subscription.id
-
-        instances_created = ensure_shift_instances_until(db, template, start=today, until=valid_to)
-
-        instances = (
-            db.query(ShiftInstance)
-            .filter(
-                and_(
-                    ShiftInstance.template_id == template_id,
-                    ShiftInstance.date >= today,
-                    ShiftInstance.date <= valid_to,
-                    ShiftInstance.is_cancelled == False,
-                )
-            )
-            .order_by(ShiftInstance.date.asc())
-            .all()
-        )
 
         bookings_created = 0
         skipped_existing = 0
