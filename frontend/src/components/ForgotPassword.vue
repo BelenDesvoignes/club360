@@ -122,7 +122,7 @@ async function solicitarCodigo() {
   error.value = ''
   cargando.value = true
   try {
-    await axios.post('/api/auth/forgot-password', { email: email.value })
+    await axios.post('/auth/forgot-password', { email: email.value })
     digitos.value = ['', '', '', '', '', '']
     paso.value = 2
   } catch (e) {
@@ -136,7 +136,7 @@ async function verificarCodigo() {
   error.value = ''
   cargando.value = true
   try {
-    await axios.post('/api/auth/verify-reset-code', {
+    await axios.post('/auth/verify-reset-code', {
       email: email.value,
       code: codigoString.value
     })
@@ -162,7 +162,7 @@ async function resetearPassword() {
   }
   cargando.value = true
   try {
-    await axios.post('/api/auth/reset-password', {
+    await axios.post('/auth/reset-password', {
       email: email.value,
       code: codigoString.value,
       new_password: nuevaPassword.value
