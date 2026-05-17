@@ -86,11 +86,13 @@ def get_instances(db: Session = Depends(get_db)):
             ShiftInstance.id,
             ShiftInstance.date,
             ShiftInstance.is_cancelled,
-            ShiftInstance.capacity.label('instance_capacity'), # <--- Capacidad real de la clase
+            ShiftInstance.capacity.label('instance_capacity'), # Capacidad real de la clase
             ShiftTemplate.id.label('template_id'),
             ShiftTemplate.activity_id,
+            ShiftTemplate.day_of_week,  # <--- AGREGADO: Hacía falta en el JSON de respuesta
             ShiftTemplate.start_time,
-            ShiftTemplate.capacity.label('template_capacity'), # <--- Capacidad del molde (opcional)
+            ShiftTemplate.capacity.label('template_capacity'), # Capacidad del molde
+            ShiftTemplate.price,       # <--- AGREGADO: Hacía falta en el JSON de respuesta
             Activity.name.label('activity_name'),
             Activity.court.label('court'),
             func.coalesce(booking_count_sq.c.count, 0).label('booked_count')
@@ -99,7 +101,7 @@ def get_instances(db: Session = Depends(get_db)):
         .join(Activity, ShiftTemplate.activity_id == Activity.id)
         .outerjoin(booking_count_sq, ShiftInstance.id == booking_count_sq.c.instance_id)
         .filter(Activity.is_active == True)
-        .filter(ShiftTemplate.is_active == True)  # ← esto también
+        .filter(ShiftTemplate.is_active == True)
         .filter(ShiftInstance.date >= date.today())
         .filter(ShiftInstance.is_cancelled == False)
         .order_by(Activity.name.asc(), ShiftInstance.date.asc())
@@ -119,17 +121,20 @@ def get_instances(db: Session = Depends(get_db)):
                 "booked_count": row.booked_count if row.booked_count else 0,
                 "activity_name": row.activity_name or f"Actividad {row.activity_id}",
                 "court": row.court or "",
+                # Aquí se mapea la propiedad real del input en tu frontend de clases:
+                "capacity": row.instance_capacity, 
                 "template": {
                     "id": row.template_id,
                     "activity_id": row.activity_id,
-                    "day_of_week": row.day_of_week,
+                    "day_of_week": row.day_of_week, # Ya no romperá aquí
                     "start_time": row.start_time,
-                    "capacity": row.capacity,
-                    "price": float(row.price) if row.price else 100.0
+                    "capacity": row.template_capacity, # Corregido al alias correcto
+                    "price": float(row.price) if row.price else 100.0 # Ya no romperá aquí
                 }
             })
 
     return instances_list
+
 @router.get("/instances/{instance_id}", response_model=ShiftDetailResponse)
 def get_shift_instance(instance_id: int, db: Session = Depends(get_db)):
     detail = shift_service.get_shift_instance_detail(db, instance_id)
@@ -162,13 +167,11 @@ def update_instance_capacity(instance_id: int, capacity: int, db: Session = Depe
 
 @router.patch("/instances/{instance_id}/cancel")
 def cancel_shift_instance(instance_id: int, db: Session = Depends(get_db)):
-    # Buscamos la instancia
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
     
     if not instance:
         raise HTTPException(status_code=404, detail="La clase no existe")
     
-    # Cambiamos el estado a cancelado
     instance.is_cancelled = True
     db.commit()
     
