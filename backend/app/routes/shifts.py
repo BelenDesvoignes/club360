@@ -50,7 +50,6 @@ def get_instances(db: Session = Depends(get_db)):
         .all()
     )
 
-    # Batch check for templates without future instances
     template_ids = [t.id for t in active_templates]
     templates_with_instances = (
         db.query(ShiftTemplate.id)
@@ -70,7 +69,6 @@ def get_instances(db: Session = Depends(get_db)):
     for template in templates_to_backfill:
         shift_service.create_instances_for_month(db, template)
 
-    # Optimized query: use subquery for booking count instead of LEFT JOIN
     booking_count_sq = (
         db.query(
             Booking.instance_id,
@@ -86,13 +84,13 @@ def get_instances(db: Session = Depends(get_db)):
             ShiftInstance.id,
             ShiftInstance.date,
             ShiftInstance.is_cancelled,
-            ShiftInstance.capacity.label('instance_capacity'), # Capacidad real de la clase
+            ShiftInstance.capacity.label('instance_capacity'),
             ShiftTemplate.id.label('template_id'),
             ShiftTemplate.activity_id,
-            ShiftTemplate.day_of_week,  # <--- AGREGADO: Hacía falta en el JSON de respuesta
+            ShiftTemplate.day_of_week,
             ShiftTemplate.start_time,
-            ShiftTemplate.capacity.label('template_capacity'), # Capacidad del molde
-            ShiftTemplate.price,       # <--- AGREGADO: Hacía falta en el JSON de respuesta
+            ShiftTemplate.capacity.label('template_capacity'),
+            ShiftTemplate.price,
             Activity.name.label('activity_name'),
             Activity.court.label('court'),
             func.coalesce(booking_count_sq.c.count, 0).label('booked_count')
@@ -104,34 +102,29 @@ def get_instances(db: Session = Depends(get_db)):
         .filter(ShiftTemplate.is_active == True)
         .filter(ShiftInstance.date >= date.today())
         .filter(ShiftInstance.is_cancelled == False)
-        .order_by(Activity.name.asc(), ShiftInstance.date.asc())
+        .order_by(ShiftInstance.date.asc(), ShiftTemplate.start_time.asc())
         .all()
     )
 
-    # Return all instances, grouped by template (first instance per template)
-    seen_templates = set()
     instances_list = []
     for row in result:
-        if row.template_id not in seen_templates:
-            seen_templates.add(row.template_id)
-            instances_list.append({
-                "id": row.id,
-                "date": str(row.date),
-                "is_cancelled": row.is_cancelled,
-                "booked_count": row.booked_count if row.booked_count else 0,
-                "activity_name": row.activity_name or f"Actividad {row.activity_id}",
-                "court": row.court or "",
-                # Aquí se mapea la propiedad real del input en tu frontend de clases:
-                "capacity": row.instance_capacity, 
-                "template": {
-                    "id": row.template_id,
-                    "activity_id": row.activity_id,
-                    "day_of_week": row.day_of_week, # Ya no romperá aquí
-                    "start_time": row.start_time,
-                    "capacity": row.template_capacity, # Corregido al alias correcto
-                    "price": float(row.price) if row.price else 100.0 # Ya no romperá aquí
-                }
-            })
+        instances_list.append({
+            "id": row.id,
+            "date": str(row.date),
+            "is_cancelled": row.is_cancelled,
+            "booked_count": row.booked_count if row.booked_count else 0,
+            "activity_name": row.activity_name or f"Actividad {row.activity_id}",
+            "court": row.court or "",
+            "capacity": row.instance_capacity, 
+            "template": {
+                "id": row.template_id,
+                "activity_id": row.activity_id,
+                "day_of_week": row.day_of_week,
+                "start_time": row.start_time,
+                "capacity": row.template_capacity,
+                "price": float(row.price) if row.price else 100.0
+            }
+        })
 
     return instances_list
 

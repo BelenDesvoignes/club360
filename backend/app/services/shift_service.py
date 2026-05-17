@@ -22,7 +22,7 @@ def create_instances_for_month(db: Session, template: ShiftTemplate):
         
         if check_date.weekday() == target_day:
             found_dates.append(check_date)
-            if len(found_dates) == 4:  # ← 4 en lugar de 1
+            if len(found_dates) == 4:
                 break
 
     if not found_dates:
@@ -35,7 +35,12 @@ def create_instances_for_month(db: Session, template: ShiftTemplate):
 
     new_instances = []
     for instance_date in found_dates:
-        db_instance = ShiftInstance(template_id=template.id, date=instance_date, is_cancelled=False)
+        db_instance = ShiftInstance(
+            template_id=template.id, 
+            date=instance_date, 
+            capacity=template.capacity, 
+            is_cancelled=False
+        )
         db.add(db_instance)
         new_instances.append(db_instance)
 

@@ -2,7 +2,8 @@
   <div class="page">
     <div class="gestion-container">
       <header class="page-header">
-        <h1>Gestión de Clases</h1>
+        <h1>Gestión de Clases Próximas</h1>
+        <p>Administra instancias específicas y cupos por fecha</p>
       </header>
 
       <!-- Filtros -->
@@ -16,8 +17,20 @@
             </option>
           </select>
         </div>
+        
+        <!-- NUEVO: Filtro por Día de la Semana -->
         <div class="filter-group">
-          <label>Buscar por fecha</label>
+          <label>Filtrar por Día</label>
+          <select v-model="filterDay">
+            <option value="">Todos los días</option>
+            <option v-for="day in daysOfWeek" :key="day" :value="day">
+              {{ day }}
+            </option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Buscar por fecha exacta</label>
           <input type="date" v-model="filterDate" />
         </div>
         <button @click="resetFilters" class="btn-clear">Limpiar</button>
@@ -31,6 +44,7 @@
           <thead>
             <tr>
               <th>Fecha</th>
+              <th>Día</th> <!-- NUEVO: Columna para orientar visualmente al usuario -->
               <th>Actividad</th>
               <th>Horario</th>
               <th>Ocupación</th>
@@ -41,6 +55,8 @@
           <tbody>
             <tr v-for="shift in filteredShifts" :key="shift.id" :class="{ 'row-cancelled': shift.is_cancelled }">
               <td>{{ formatDate(shift.date) }}</td>
+              <!-- NUEVO: Muestra el día de la semana correspondiente -->
+              <td class="day-cell">{{ shift.template.day_of_week }}</td>
               <td>
                 <span class="activity-name">{{ shift.activity_name }}</span>
               </td>
@@ -57,12 +73,29 @@
                   v-model.number="shift.capacity"
                   class="inline-input"
                   :min="shift.booked_count"
+                  :disabled="savingId === shift.id"
                 />
               </td>
               <td class="actions-cell">
-                <!-- CORREGIDO: Ahora usan .icon-btn como tu estándar -->
-                <button @click="updateShift(shift)" class="icon-btn" title="Guardar cambios">💾</button>
-                <button @click="confirmCancel(shift)" class="icon-btn" title="Cancelar clase">🚫</button>
+                <button 
+                  @click="updateShift(shift)" 
+                  class="icon-btn" 
+                  :class="{ 'is-loading': savingId === shift.id }"
+                  :disabled="savingId === shift.id"
+                  title="Guardar cambios"
+                >
+                  <span v-if="savingId === shift.id" class="mini-spinner"></span>
+                  <span v-else>💾</span>
+                </button>
+                
+                <button 
+                  @click="confirmCancel(shift)" 
+                  class="icon-btn" 
+                  :disabled="savingId === shift.id"
+                  title="Cancelar clase"
+                >
+                  🚫
+                </button>
               </td>
             </tr>
           </tbody>
@@ -78,17 +111,32 @@
         <div v-if="message" :class="['alert-toast', messageType]">{{ message }}</div>
       </transition>
 
-      <!-- MODAL ESTÁNDAR -->
       <transition name="fade">
         <div v-if="showConfirmModal" class="modal-overlay">
-          <div class="modal-card">
+          
+          <div v-if="instanceToDelete && instanceToDelete.booked_count > 0" class="modal-card alert-card">
+            <h3>⚠️ No se puede eliminar</h3>
+            <p>
+              La clase de <strong>{{ instanceToDelete.activity_name }}</strong> del día 
+              <strong>{{ formatDate(instanceToDelete.date) }}</strong> tiene 
+              <strong>{{ instanceToDelete.booked_count }}</strong> reserva(s) activa(s).
+            </p>
+            <p class="modal-subtext">No podés borrar una clase que ya tiene alumnos anotados.</p>
+            <div class="modal-actions">
+              <button @click="showConfirmModal = false" class="btn-cancel width-100">
+                Volver
+              </button>
+            </div>
+          </div>
+
+          <div v-else class="modal-card">
             <h3>Cancelar clase</h3>
             <p v-if="instanceToDelete">
               Estás por cancelar la clase de <strong>{{ instanceToDelete.activity_name }}</strong> <br>
-              del día <strong>{{ instanceToDelete.date }}</strong>.
+              del día <strong>{{ formatDate(instanceToDelete.date) }}</strong>.
             </p>
             <div class="modal-actions">
-              <button @click="executeCancel" class="btn-danger">
+              <button @click="executeCancel" class="btn-confirm">
                 Confirmar
               </button>
               <button @click="showConfirmModal = false" class="btn-cancel">
@@ -96,6 +144,7 @@
               </button>
             </div>
           </div>
+
         </div>
       </transition>
 
@@ -105,22 +154,31 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import axios from 'axios'
+import axios from 'axios' 
 
 const shifts = ref([])
 const loading = ref(false)
 const message = ref('')
 const messageType = ref('')
+const savingId = ref(null)
 
 // Filtros
 const filterActivity = ref('')
 const filterDate = ref('')
+const filterDay = ref('') // NUEVO: Estado reactivo para el filtro de día
+
+// NUEVO: Listado estático de días para el select de filtros
+const daysOfWeek = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
 const fetchShifts = async () => {
   loading.value = true
   try {
     const res = await axios.get('/shifts/instances')
-    shifts.value = res.data.sort((a, b) => new Date(a.date) - new Date(b.date))
+    // Fallback de seguridad por si hay instancias viejas sin capacity en la base de datos
+    shifts.value = res.data.map(shift => ({
+      ...shift,
+      capacity: shift.capacity ?? shift.template.capacity
+    })).sort((a, b) => new Date(a.date) - new Date(b.date))
   } catch (e) {
     showMsg("Error al cargar las clases", "error")
   } finally {
@@ -133,22 +191,36 @@ const uniqueActivities = computed(() => {
   return [...new Set(names)]
 })
 
+// MODIFICADO: Ahora contempla la combinación del filtro por Día de la semana
 const filteredShifts = computed(() => {
   return shifts.value.filter(s => {
     const matchAct = !filterActivity.value || s.activity_name === filterActivity.value
     const matchDate = !filterDate.value || s.date === filterDate.value
-    return matchAct && matchDate
+    const matchDay = !filterDay.value || s.template.day_of_week === filterDay.value // NUEVA CONDICIÓN
+    return matchAct && matchDate && matchDay
   })
 })
 
 const updateShift = async (shift) => {
+  savingId.value = shift.id
   try {
-    await axios.patch(`/shifts/instances/${shift.id}?capacity=${shift.capacity}`)
+    const res = await axios.patch(`/shifts/instances/${shift.id}?capacity=${shift.capacity}`)
+    
+    const index = shifts.value.findIndex(s => s.id === shift.id)
+    if (index !== -1) {
+      if (res.data && res.data.new_capacity !== undefined) {
+        shifts.value[index].capacity = res.data.new_capacity
+      } else {
+        shifts.value[index].capacity = shift.capacity
+      }
+    }
     showMsg("Cupo actualizado correctamente", "success")
-    fetchShifts() 
   } catch (e) {
     const errorMsg = e.response?.data?.detail || "Error al actualizar"
     showMsg(errorMsg, "error")
+    fetchShifts()
+  } finally {
+    savingId.value = null
   }
 }
 
@@ -169,7 +241,11 @@ const executeCancel = async () => {
     await axios.patch(`/shifts/instances/${id}/cancel`)
     showMsg("Clase cancelada con éxito", "success")
     showConfirmModal.value = false
-    await fetchShifts()
+    
+    const index = shifts.value.findIndex(s => s.id === id)
+    if (index !== -1) {
+      shifts.value[index].is_cancelled = true
+    }
   } catch (e) {
     const errorMsg = e.response?.data?.detail || "No se pudo cancelar la clase."
     showMsg(errorMsg, "error")
@@ -181,6 +257,7 @@ const executeCancel = async () => {
 const resetFilters = () => {
   filterActivity.value = ''
   filterDate.value = ''
+  filterDay.value = '' // NUEVO: Limpia el filtro de día
 }
 
 const formatDate = (dateStr) => {
@@ -232,7 +309,7 @@ onMounted(fetchShifts)
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 1000px;
+  max-width: 1100px; /* Expandido levemente para alojar cómodamente el nuevo filtro */
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -240,7 +317,6 @@ onMounted(fetchShifts)
   align-items: center;
 }
 
-/* Encabezado Principal */
 .page-header {
   text-align: center;
   margin-bottom: 10px;
@@ -298,18 +374,13 @@ input, select {
   box-sizing: border-box;
 }
 
-select:disabled {
-  color: #9ca3af;
-  cursor: not-allowed;
-}
-
 .btn-clear {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ff6f00; 
-  color: #ffffff;    
-  border: 1px solid #d1d5db;
+  background: #fff8f5; 
+  color: #ff6f00;    
+  border: 1px solid #ffbc99;
   padding: 10px 16px;
   border-radius: 10px;
   font-weight: 700;
@@ -322,13 +393,13 @@ select:disabled {
 }
 
 .btn-clear:hover {
-  background: #e5e7eb;
-  color: #1f2937;
-  border-color: #9ca3af;
+  background: #ff6f00;
+  color: white;
+  border-color: #ff6f00;
 }
 
 /* ==========================================
-   TABLA DE CLASES (List Section Style)
+   TABLA DE CLASES
    ========================================== */
 .table-container { 
   width: 100%;
@@ -362,6 +433,11 @@ select:disabled {
   font-size: 14px;
 }
 
+.day-cell {
+  font-weight: 600;
+  color: #4b5563;
+}
+
 .activity-name {
   font-weight: 700;
   color: #111827;
@@ -376,13 +452,18 @@ select:disabled {
   background: transparent;
 }
 
+.inline-input:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
 .row-cancelled {
   opacity: 0.4;
   text-decoration: line-through;
   background: #fff5f5;
 }
 
-/* Barra de Ocupación */
 .occupancy-bar { 
   width: 110px; 
   height: 10px; 
@@ -411,13 +492,12 @@ select:disabled {
   width: 100%;
 }
 
-/* Acciones de la Tabla (Estilo Unificado) */
 .actions-cell {
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
-/* CORREGIDO: Estilo exacto tomado de tu ActivityManagement estándar */
 .icon-btn {
   background: none;
   border: none;
@@ -425,14 +505,46 @@ select:disabled {
   filter: grayscale(1);
   opacity: 0.4;
   font-size: 18px;
-  transition: transform 0.2s;
+  transition: transform 0.2s, opacity 0.2s;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
 }
 
-.icon-btn:hover {
+.icon-btn:hover:not(:disabled) {
   transform: scale(1.1);
-  filter: grayscale(0); /* Permite ver el color real del emoji al hacer hover */
-  opacity: 1;           /* Destaca el botón activo */
+  filter: grayscale(0);
+  opacity: 1;
+}
+
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.2;
+}
+
+.icon-btn.is-loading {
+  filter: grayscale(0) !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.mini-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ff6f00;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  box-sizing: border-box;
+  animation: rotation 0.6s linear infinite;
+}
+
+@keyframes rotation {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* ==========================================
@@ -476,20 +588,21 @@ select:disabled {
   margin-top: 20px; 
 }
 
-.btn-danger {
-  flex: 1;
-  background: #ff6f00;
-  color: white;
-  border: none;
-  padding: 12px;
-  border-radius: 10px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: opacity 0.2s;
+.btn-confirm { 
+  flex: 1; 
+  background: #ff6f00; 
+  color: white; 
+  border: none; 
+  padding: 12px; 
+  border-radius: 10px; 
+  font-weight: 700; 
+  cursor: pointer; 
+  transition: transform 0.2s, opacity 0.2s;
 }
 
-.btn-danger:hover {
+.btn-confirm:hover {
   opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 .btn-cancel {
@@ -509,7 +622,7 @@ select:disabled {
 }
 
 /* ==========================================
-   ALERTAS / TOASTS (Clase unificada con el estándar)
+   ALERTAS / TOASTS
    ========================================== */
 .alert-toast {
   position: fixed;
@@ -533,7 +646,6 @@ select:disabled {
   font-weight: 600;
 }
 
-/* Animaciones */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>
