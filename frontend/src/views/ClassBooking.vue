@@ -136,6 +136,28 @@
               </label>
             </div>
 
+            <div class="option">
+              <input
+                type="radio"
+                id="payment-monthly"
+                v-model="paymentType"
+                value="monthly"
+                :disabled="!isSubscriptionWindowOpen"
+              />
+              <label for="payment-monthly">
+                <strong>Pagar mensualidad (Abono)</strong>
+                <span>${{ (selectedInstance?.template.price * 4).toFixed(2) }}</span>
+              </label>
+            </div>
+
+            <p v-if="paymentType === 'monthly'" class="payment-note">
+              El abono se paga al 100% y asegura cupo automático en este horario durante el mes.
+            </p>
+
+            <p v-if="!isSubscriptionWindowOpen" class="payment-warning">
+              ⚠️ El abono mensual solo puede pagarse entre el día 1 y el 30.
+            </p>
+
             <p class="payment-warning">⚠️ Sin pagar ahora, la reserva quedará pendiente de pago y podrá cancelarse.</p>
           </div>
 
@@ -299,8 +321,14 @@ const pendingPaymentAmount = ref(0)
 function computeAmountToPay() {
   const price = Number(selectedInstance.value?.template?.price || 0)
   if (!Number.isFinite(price) || price <= 0) return 0
+  if (paymentType.value === 'monthly') return price * 4
   return paymentType.value === 'full' ? price : price * 0.5
 }
+
+const isSubscriptionWindowOpen = computed(() => {
+  const day = new Date().getDate()
+  return day >= 1 && day <= 30
+})
 
 const groupedActivities = computed(() => {
   const groups = new Map()
@@ -422,15 +450,13 @@ const checkUserStatus = async () => {
     
     if (!token) return
     
-    // Get user info via debug endpoint (TODO: crear endpoint público de /me)
-    const res = await axios.get('/bookings/debug/auth', {
+    const res = await axios.get('/subscriptions/me/status', {
       headers: {
-        'Authorization': `Bearer ${token}`
+        Authorization: `Bearer ${token}`
       }
     })
-    
-    // For now, assume not suspended (TODO: verificar con endpoint de usuario)
-    userSuspended.value = false
+
+    userSuspended.value = Boolean(res.data?.suspended)
   } catch (e) {
     console.error('Error al verificar estado:', e)
   }
@@ -449,8 +475,8 @@ const selectInstanceForBooking = (instance) => {
       ?.activity_name
   }
   
-  // Check if user is abonado for this activity
-  checkAbonado(instance.template.activity_id)
+  // Check if user is abonado for this template (day+hour)
+  checkAbonado(instance.template.id)
 
   confirmReady.value = false
   showPaymentModal.value = true
@@ -459,7 +485,7 @@ const selectInstanceForBooking = (instance) => {
   }, 300)
 }
 
-const checkAbonado = async (activity_id) => {
+const checkAbonado = async (template_id) => {
   try {
     auth.hydrateFromToken()
     const token = auth.token || localStorage.getItem('token')
@@ -469,11 +495,55 @@ const checkAbonado = async (activity_id) => {
       return
     }
     
-    // TODO: crear endpoint para verificar si es abonado
-    isUserAbonado.value = false
+    if (!token) {
+      isUserAbonado.value = false
+      return
+    }
+
+    const res = await axios.get('/subscriptions/me/active', {
+      params: { template_id },
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+
+    isUserAbonado.value = Boolean(res.data?.active)
   } catch (e) {
     isUserAbonado.value = false
   }
+}
+
+async function finalizeSubscriptionPurchase() {
+  auth.hydrateFromToken()
+  const token = auth.token || localStorage.getItem('token')
+
+  if (!token) {
+    errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+    return
+  }
+
+  const templateId = selectedInstance.value?.template?.id
+  if (!templateId) {
+    errorMessage.value = 'No se pudo determinar el horario (template) para el abono.'
+    return
+  }
+
+  const res = await axios.post(
+    '/subscriptions/purchase',
+    { template_id: templateId },
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
+
+  bookingStatus.value = 'completed'
+  successMessage.value = `¡Abono mensual comprado! Reservas creadas: ${res.data.bookings_created}. ` +
+    `Saltadas (sin cupo): ${res.data.skipped_full}. Ya existentes: ${res.data.skipped_existing}. Vigencia hasta: ${res.data.valid_to}.`
+
+  closePaymentModal()
+  showGatewayModal.value = false
+
+  setTimeout(() => {
+    fetchInstances()
+  }, 800)
 }
 
 const closePaymentModal = () => {
@@ -520,8 +590,12 @@ async function finalizeBookingWithPayment() {
 function onGatewayResult(result) {
   if (!result) return
   if (result.status === 'Aprobado') {
-    finalizeBookingWithPayment().catch((e) => {
-      const detail = e.response?.data?.detail || 'Error al procesar la reserva'
+    const afterApproved = paymentType.value === 'monthly'
+      ? finalizeSubscriptionPurchase
+      : finalizeBookingWithPayment
+
+    afterApproved().catch((e) => {
+      const detail = e.response?.data?.detail || 'Error al procesar la operación'
       errorMessage.value = detail
     })
     return
