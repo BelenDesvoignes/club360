@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from app.database import get_db
-from app.models.activity import Activity
-from app.models.shift_template import ShiftTemplate
-from app.models.shift_instance import ShiftInstance
-from app.models.booking import Booking
-from app.services import shift_service
+from ..database import get_db
+from ..models.activity import Activity
+from ..models.shift_template import ShiftTemplate
+from ..models.shift_instance import ShiftInstance
+from ..models.booking import Booking
+from ..services import shift_service
 
 router = APIRouter(prefix="/activities", tags=["activities"])
 

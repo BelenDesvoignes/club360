@@ -1,9 +1,9 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from datetime import date, timedelta
-from app.models.shift_instance import ShiftInstance
-from app.models.shift_template import ShiftTemplate
-from app.models.activity import Activity
+from ..models.shift_instance import ShiftInstance
+from ..models.shift_template import ShiftTemplate
+from ..models.activity import Activity
 
 def create_instances_for_month(db: Session, template: ShiftTemplate):
     days_map = {

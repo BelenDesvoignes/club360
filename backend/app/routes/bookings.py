@@ -196,7 +196,7 @@ def debug_user_info(user_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{booking_id}/cancel", response_model=dict)
 def cancel_booking(booking_id: int, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    from app.models.user import UserRole
+    from ..models.user import UserRole
     
     user_id = _extract_user_id(authorization)
 

@@ -6,10 +6,10 @@ from ..models.shift_instance import ShiftInstance
 from ..models.booking import Booking
 from ..models.activity import Activity
 from sqlalchemy import and_
-from app.database import get_db
-from app.schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut, ShiftDetailResponse
-from app.models.shift_template import ShiftTemplate
-from app.services import shift_service
+from ..database import get_db
+from ..schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut, ShiftDetailResponse
+from ..models.shift_template import ShiftTemplate
+from ..services import shift_service
 
 router = APIRouter(prefix="/shifts", tags=["shifts"])
 

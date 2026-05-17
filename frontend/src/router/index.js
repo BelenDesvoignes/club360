@@ -4,6 +4,7 @@ import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
+import GestionClientes from '../views/ClientManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
 import ShiftsManagement from '../views/ShiftsManagement.vue' // <--- 1. IMPORTAR EL NUEVO
 
@@ -46,6 +47,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin' }
   },
   {
+    path: '/clientes',
+    name: 'GestionClientes',
+    component: GestionClientes,
+    meta: { requiresAuth: true, role: ['admin', 'empleado'] }
+  },
+  {
     path: '/gestion-actividades',
     name: 'GestionActividades',
     component: ActivityManagement,
@@ -63,11 +70,33 @@ router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     next('/login')
-  } else if (to.meta.role && auth.role !== to.meta.role) {
-    next('/')
-  } else {
-    next()
+    return
   }
+
+  if (to.meta.role) {
+    const required = to.meta.role
+    if (Array.isArray(required)) {
+      if (!required.includes(auth.role)) {
+        next('/')
+        return
+      }
+    } else {
+      // Support special keyword 'employee' to allow empleado OR admin
+      if (required === 'employee') {
+        if (!auth.isEmployee) {
+          next('/')
+          return
+        }
+      } else {
+        if (auth.role !== required) {
+          next('/')
+          return
+        }
+      }
+    }
+  }
+
+  next()
 })
 
 export default router

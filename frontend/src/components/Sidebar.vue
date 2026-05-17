@@ -68,6 +68,9 @@
           <router-link to="/equipo" @click="closeSidebar">
             <span class="icon">👥</span> Gestión de Personal
           </router-link>
+          <router-link to="/clientes" @click="closeSidebar">
+            <span class="icon">👥</span> Gestión de Clientes
+          </router-link>
         </div>
       </nav>
 

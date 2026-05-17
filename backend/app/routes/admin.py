@@ -44,3 +44,35 @@ def crear_miembro_equipo(user_in: UserRegister, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/crear-cliente", response_model=UserResponse)
+def crear_cliente(user_in: UserRegister, db: Session = Depends(get_db)):
+    # Permite a admin/empleado crear cuentas de clientes y fuerza el rol CLIENT
+    user_exists = db.query(User).filter(
+        (User.email == user_in.email) | (User.dni == user_in.dni)
+    ).first()
+
+    if user_exists:
+        raise HTTPException(
+            status_code=400,
+            detail="El usuario con este Email o DNI ya existe."
+        )
+
+    new_user = User(
+        first_name=user_in.first_name,
+        last_name=user_in.last_name,
+        dni=user_in.dni,
+        email=user_in.email,
+        hashed_password=get_password_hash(user_in.password),
+        role=UserRole.CLIENT
+    )
+
+    try:
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
