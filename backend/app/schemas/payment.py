@@ -2,6 +2,11 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
 
+
+class PaymentCompleteBookingRequest(BaseModel):
+    amount: float
+    booking_id: Optional[int] = None
+
 class PaymentResponse(BaseModel):
     id: int
     amount: float

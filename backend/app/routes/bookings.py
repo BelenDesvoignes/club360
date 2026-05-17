@@ -56,11 +56,13 @@ def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
         day_of_week = None
         start_time = None
         booking_date = None
+        price = None
 
         if instance:
             booking_date = instance.date
             day_of_week = instance.template.day_of_week if instance.template else None
             start_time = instance.template.start_time if instance.template else None
+            price = float(instance.template.price) if instance.template and instance.template.price is not None else None
             if instance.template and instance.template.activity:
                 activity_name = instance.template.activity.name
 
@@ -74,6 +76,7 @@ def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
             "date": booking_date,
             "day_of_week": day_of_week,
             "start_time": start_time,
+            "price": price,
         })
 
     return result

@@ -2,6 +2,7 @@
 from .database import engine, Base
 # Importamos todos los modelos para que Base.metadata los reconozca
 from .models.user import User
+from .models.card import Card
 from .models.subscription import Subscription
 from .models.booking import Booking
 from .models.payment import Payment
@@ -10,12 +11,11 @@ from .models.suspension import Suspension
 from .models.credit import Credit
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routes import auth, admin, activities, shifts, bookings, credits, payments
+from .routes import auth, admin, activities, shifts, bookings, credits, payments, cards
 from .models.activity import Activity           # Nueva
 from .models.shift_template import ShiftTemplate # Nueva
 from .models.shift_instance import ShiftInstance # Nueva
 from .models.waiting_list import WaitingList
-
 
 # 1. Instancia de FastAPI
 app = FastAPI(title="CLUB360 API", root_path="/api")
@@ -46,3 +46,4 @@ app.include_router(shifts.router)
 app.include_router(bookings.router)
 app.include_router(credits.router)
 app.include_router(payments.router, prefix="/payments", tags=["payments"])
+app.include_router(cards.router)

@@ -6,7 +6,7 @@
       </div>
 
       <div class="card-body">
-        <h1>¡Bienvenido de Nuevo!</h1>
+        <h1>¡Bienvenido!</h1>
         <p class="subtitle">Por favor, ingresa tus datos para iniciar sesión.</p>
 
         <form @submit.prevent="handleLogin" novalidate>
@@ -67,19 +67,21 @@
             </div>
           </label>
 
-          <a class="forgot" href="#" @click.prevent>¿Olvidaste tu contraseña?</a>
-
+          <a class="forgot" href="#" @click.prevent="mostrarRecupero = true">
+              ¿Olvidaste tu contraseña?
+          </a>
           <button class="primary" type="submit" :disabled="cargando">
             {{ cargando ? 'Validando...' : 'Iniciar Sesión' }}
           </button>
         </form>
+        <ForgotPassword v-if="mostrarRecupero" @close="mostrarRecupero = false" />
 
         <div v-if="error" class="alert error" role="alert">{{ error }}</div>
 
         <div class="divider" aria-hidden="true"><span>o</span></div>
 
         <p class="back">
-          ¿Eres nuevo en CLUB360? <router-link to="/register">Registra tu club</router-link>
+          ¿Sos nuevo en CLUB360? <router-link to="/register">Registrate</router-link>
         </p>
         <p class="back"><router-link to="/">← Volver al inicio</router-link></p>
       </div>
@@ -91,6 +93,9 @@
 import { ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
+import ForgotPassword from '../components/ForgotPassword.vue'
+
+const mostrarRecupero = ref(false)
 
 const auth = useAuthStore()
 const router = useRouter()

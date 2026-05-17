@@ -1,28 +1,42 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import { useAuthStore } from '../stores/auth' 
 import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
 import ShiftsManagement from '../views/ShiftsManagement.vue' // <--- 1. IMPORTAR EL NUEVO
+
+
+// TUS IMPORTS (Mantenemos solo Pagos)
+import UserPayments from '../views/UserPayments.vue'
+
+// IMPORTS DE DEV (Lo que trajeron tus compañeros)
 import MyBookings from '../views/MyBookings.vue'
 import ClassBooking from '../views/ClassBooking.vue'
+import AddCard from '../views/AddCard.vue'
 
 const routes = [
   { path: '/', component: Home },
   { path: '/login', component: Login },
   { path: '/register', component: Register },
-  
-  // Rutas de Usuario
+
+  // RUTAS DE SOCIO (Combinadas)
   { path: '/reservar', component: ClassBooking },
   { path: '/reservas', component: MyBookings, meta: { requiresAuth: true } },
+  { path: '/agregar-tarjeta', component: AddCard, meta: { requiresAuth: true } },
+  { 
+    path: '/mis-pagos', 
+    name: 'UserPayments',
+    component: UserPayments, 
+    meta: { requiresAuth: true } 
+  },
 
-  // Rutas de Administrador
+  // RUTAS DE ADMINISTRADOR
   {
     path: '/clases',
-    name: 'GestionClases', // <--- 2. NOMBRE AGREGADO
-    component: ShiftsManagement, // <--- 3. CAMBIAR EL TEMPLATE POR EL COMPONENTE REAL
+    name: 'GestionClases',
+    component: ShiftsManagement, 
     meta: { requiresAuth: true, role: 'admin' }
   },
   {
@@ -44,10 +58,9 @@ const router = createRouter({
   routes
 })
 
-// Navigation Guard (Se mantiene igual, está perfecto)
+// Navigation Guard
 router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
-  
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     next('/login')
   } else if (to.meta.role && auth.role !== to.meta.role) {
