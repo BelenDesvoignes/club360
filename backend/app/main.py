@@ -17,7 +17,6 @@ from .models.shift_template import ShiftTemplate # Nueva
 from .models.shift_instance import ShiftInstance # Nueva
 from .models.waiting_list import WaitingList
 
-
 # 1. Instancia de FastAPI
 app = FastAPI(title="CLUB360 API", root_path="/api")
 

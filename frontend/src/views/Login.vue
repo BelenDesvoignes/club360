@@ -67,12 +67,14 @@
             </div>
           </label>
 
-          <a class="forgot" href="#" @click.prevent>¿Olvidaste tu contraseña?</a>
-
+          <a class="forgot" href="#" @click.prevent="mostrarRecupero = true">
+              ¿Olvidaste tu contraseña?
+          </a>
           <button class="primary" type="submit" :disabled="cargando">
             {{ cargando ? 'Validando...' : 'Iniciar Sesión' }}
           </button>
         </form>
+        <ForgotPassword v-if="mostrarRecupero" @close="mostrarRecupero = false" />
 
         <div v-if="error" class="alert error" role="alert">{{ error }}</div>
 
@@ -91,6 +93,9 @@
 import { ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
+import ForgotPassword from '../components/ForgotPassword.vue'
+
+const mostrarRecupero = ref(false)
 
 const auth = useAuthStore()
 const router = useRouter()
