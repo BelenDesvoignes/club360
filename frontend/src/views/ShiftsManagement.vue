@@ -260,13 +260,27 @@ const resetFilters = () => {
 }
 
 const formatDate = (dateStr) => {
-  if (!dateStr) return 'Sin fecha'
-  const date = new Date(dateStr + 'T12:00:00') 
+  const date = parseLocalDate(dateStr)
+  if (!date) return 'Sin fecha'
   return date.toLocaleDateString('es-AR', { 
     day: '2-digit', 
     month: '2-digit', 
     year: 'numeric' 
   })
+}
+
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return null
+  const rawDate = String(dateStr).split('T')[0]
+  const [year, month, day] = rawDate.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    const fallbackDate = new Date(dateStr)
+    return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate
+  }
+
+  const localDate = new Date(year, month - 1, day)
+  return Number.isNaN(localDate.getTime()) ? null : localDate
 }
 
 const showMsg = (txt, type) => {
