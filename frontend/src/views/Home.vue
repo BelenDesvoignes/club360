@@ -47,8 +47,7 @@ const auth = useAuthStore()
   display: flex;
   justify-content: center;
   align-items: center;
-  /* Degradado diagonal exacto de la imagen */
-  background: linear-gradient(135deg, #123956 0%, #2d658d 60%, #ff6f00 100%);
+  background: #2d658d;
   color: white;
   text-align: center;
 }
