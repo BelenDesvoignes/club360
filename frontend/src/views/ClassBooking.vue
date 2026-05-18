@@ -1,9 +1,77 @@
 <template>
   <div class="booking-container">
     <header class="booking-header">
-      <h1>Reservar Clase</h1>
-      <p>Selecciona una clase y confirma tu reserva</p>
+      <div class="booking-header-main">
+        <div class="booking-header-left">
+          <h1>{{ selectedSportId ? 'Reservar Turno' : 'Reservar' }}</h1>
+          <div class="booking-stepline">
+            <span class="step-pill">Paso {{ selectedSportId ? '2' : '1' }}</span>
+            <span class="step-text">{{ selectedSportId ? 'Elegí el tipo de reserva y horario' : 'Elegí el deporte' }}</span>
+          </div>
+        </div>
+
+        <div v-if="selectedSportId" class="booking-stepper" aria-label="Progreso de reserva">
+          <div class="stepper-node done">
+            <span class="node-dot">1</span>
+            <span class="node-label">Deporte</span>
+          </div>
+          <div class="stepper-line"></div>
+          <div class="stepper-node current">
+            <span class="node-dot">2</span>
+            <span class="node-label">Horario</span>
+          </div>
+          <div class="stepper-line"></div>
+          <div class="stepper-node">
+            <span class="node-dot">3</span>
+            <span class="node-label">Confirmar</span>
+          </div>
+        </div>
+      </div>
     </header>
+
+    <!-- Paso 1: elegir deporte -->
+    <div v-if="!selectedSportId && !loading && !userSuspended" class="sports-step">
+      <div class="sports-grid">
+        <button
+          v-for="sport in sports"
+          :key="sport.activity_id"
+          type="button"
+          class="sport-tile"
+          :style="sportHeroStyle(sport.activity_name)"
+          @click="selectSport(sport.activity_id)"
+        >
+          <div class="sport-tile-overlay">
+            <div class="sport-tile-copy">
+              <div class="sport-tile-title">{{ sport.activity_name || `Deporte ${sport.activity_id}` }}</div>
+              <div class="sport-tile-sub">Ver horarios disponibles y reservar turnos</div>
+            </div>
+            <div class="sport-tile-action">Ver horarios y reservar</div>
+          </div>
+        </button>
+      </div>
+
+      <div v-if="sports.length === 0" class="empty-state">
+        Todavía no hay deportes cargados para mostrar.
+      </div>
+    </div>
+
+    <!-- Paso 2: tipo de reserva + filtro por día (solo si ya eligió deporte) -->
+    <div v-if="selectedSportId && !userSuspended" class="reservation-controls">
+      <div class="reserve-type">
+        <button type="button" :class="{active: reservationType === 'class'}" @click="reservationType = 'class'">Reserva Única</button>
+        <button type="button" :class="{active: reservationType === 'subscription'}" @click="reservationType = 'subscription'">Reservar Abono</button>
+      </div>
+
+      <div class="day-filter">
+        <label>Filtrar por día</label>
+        <select v-model="selectedWeekday">
+          <option value="all">Todos</option>
+          <option v-for="(label, idx) in weekDays" :key="idx" :value="label">{{ label }}</option>
+        </select>
+      </div>
+
+      <button type="button" class="change-sport" @click="clearSport">Cambiar deporte</button>
+    </div>
 
     <!-- Advertencia si está suspendido -->
     <div v-if="userSuspended" class="suspension-warning">
@@ -28,49 +96,75 @@
       <p>No puedes hacer reservas mientras tu cuenta esté suspendida.</p>
     </div>
 
-    <div v-else class="classes-grid">
+    <div v-else-if="selectedSportId" class="classes-grid">
       <div
-        v-for="activity in groupedActivities"
+        v-for="activity in visibleActivities"
         :key="`${activity.activity_id}`"
-        class="class-card"
+        class="activity-shell"
       >
-        <div class="card-header">
-          <h3 class="activity-name">{{ activity.activity_name || `Actividad ${activity.activity_id}` }}</h3>
-          <span v-if="activity.instances.length > 0" class="activity-meta">
-            {{ activity.instances.length === 1 ? '1 turno' : `${activity.instances.length} turnos` }}
-          </span>
-          <span v-else class="activity-meta disabled">Sin turnos</span>
+        <div class="activity-hero" :style="sportHeroStyle(activity.activity_name)">
+          <div class="activity-hero-overlay">
+            <div class="activity-hero-title">{{ activity.activity_name || `Actividad ${activity.activity_id}` }}</div>
+            <div class="activity-hero-sub">
+              {{ reservationType === 'subscription' ? 'Horarios recurrentes disponibles' : (activity.instances.length === 1 ? '1 turno disponible' : `${activity.instances.length} turnos disponibles`) }}
+            </div>
+          </div>
+          <div class="activity-hero-chip">
+            {{ reservationType === 'subscription' ? `${activity.templates?.length || 0} horarios` : `${activity.instances.length} turnos` }}
+          </div>
         </div>
 
-        <div class="card-modal-body">
-          <div v-if="activity.instances.length > 0" class="turns-inline">
-            <div
-              v-for="turno in activity.instances"
-              :key="turno.id"
-              class="turn-row turn-row-inline"
-            >
-              <div class="turn-info">
-                <strong>{{ turno.template.start_time }}hs · {{ turno.template.day_of_week }}</strong>
-                <span>{{ turno.court || 'Sin cancha' }}</span>
-                <small>Cupos: {{ turno.booked_count }}/{{ turno.template.capacity }}</small>
-                <small class="price">${{ turno.template.price }}</small>
-              </div>
-              <div class="turn-actions">
-                <button
-                  @click="selectInstanceForBooking(turno)"
-                  :disabled="isFullyBooked(turno) || bookingInProgress"
-                  class="btn-book"
-                  :class="{ disabled: isFullyBooked(turno) }"
-                >
-                  {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? 'Sin cupos' : 'Reservar') }}
+        <div class="activity-body">
+          <template v-if="reservationType === 'subscription'">
+            <div v-if="activity.templates && activity.templates.length" class="turn-grid">
+              <div v-for="tpl in activity.templates" :key="`tpl-${tpl.id}`" class="turn-card">
+                <div class="turn-card-top">
+                  <div class="turn-card-date">{{ tpl.day_of_week }} · {{ tpl.start_time }}hs</div>
+                  <span class="turn-card-badge available">Recurrente</span>
+                </div>
+                <div class="turn-card-body">
+                  <div class="turn-card-row">Horario fijo semanal</div>
+                  <div class="turn-card-row spots">Precio por clase: ${{ tpl.price }}</div>
+                </div>
+                <button type="button" class="turn-card-btn" @click="selectTemplateForSubscription(tpl, activity.activity_name)">
+                  Seleccionar Abono
                 </button>
               </div>
             </div>
-          </div>
+            <div v-else class="no-turnos card-empty-inline">No hay horarios recurrentes para este deporte</div>
+          </template>
 
-          <div v-else class="no-turnos card-empty-inline">
-            No hay turnos disponibles para esta actividad
-          </div>
+          <template v-else>
+            <div v-if="activity.instances.length > 0" class="turn-grid">
+              <div v-for="turno in activity.instances" :key="turno.id" class="turn-card" :class="{ full: isFullyBooked(turno) }">
+                <div class="turn-card-top">
+                  <div class="turn-card-date">{{ formatBookingDate(turno.date, turno.template.day_of_week) }}</div>
+                  <span class="turn-card-badge" :class="isFullyBooked(turno) ? 'full' : 'available'">
+                    {{ isFullyBooked(turno) ? 'Completo' : 'Disponible' }}
+                  </span>
+                </div>
+
+                <div class="turn-card-body">
+                  <div class="turn-card-row">⏰ {{ formatTurnLabel(turno) }}</div>
+                  <div class="turn-card-row">📍 {{ turno.court || 'Sin cancha' }}</div>
+                  <div class="turn-card-row spots">👥 Cupos: {{ turno.booked_count }}/{{ turno.template.capacity }}</div>
+                  <div class="turn-card-price">${{ turno.template.price }}</div>
+                </div>
+
+                <button
+                  type="button"
+                  class="turn-card-btn"
+                  :class="{ disabled: isFullyBooked(turno) }"
+                  :disabled="isFullyBooked(turno) || bookingInProgress"
+                  @click="selectInstanceForBooking(turno)"
+                >
+                  {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? 'Sin Cupo' : 'Reservar') }}
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="no-turnos card-empty-inline">No hay turnos disponibles para esta actividad</div>
+          </template>
         </div>
       </div>
 
@@ -135,6 +229,28 @@
                 <span>${{ selectedInstance?.template.price }}</span>
               </label>
             </div>
+
+            <div class="option">
+              <input
+                type="radio"
+                id="payment-monthly"
+                v-model="paymentType"
+                value="monthly"
+                :disabled="!isSubscriptionWindowOpen"
+              />
+              <label for="payment-monthly">
+                <strong>Pagar mensualidad (Abono)</strong>
+                <span>${{ (Number(selectedInstance?.template?.price || 0) * countRemainingMonthlyOccurrences(selectedInstance?.template?.day_of_week)).toFixed(2) }}</span>
+              </label>
+            </div>
+
+            <p v-if="paymentType === 'monthly'" class="payment-note">
+              El abono se paga al 100% y asegura cupo automático en este horario durante el mes.
+            </p>
+
+            <p v-if="!isSubscriptionWindowOpen" class="payment-warning">
+              ⚠️ El abono mensual solo puede pagarse entre el día 1 y el 30.
+            </p>
 
             <p class="payment-warning">⚠️ Sin pagar ahora, la reserva quedará pendiente de pago y podrá cancelarse.</p>
           </div>
@@ -202,7 +318,7 @@
               :class="{ 'full': isFullyBooked(turno) }"
             >
               <div class="turno-header">
-                <div class="turno-date">{{ formatDate(turno.date) }}</div>
+                <div class="turno-date">{{ formatBookingDate(turno.date, turno.template.day_of_week) }}</div>
                 <div class="turno-badge" :class="isFullyBooked(turno) ? 'full' : 'available'">
                   {{ isFullyBooked(turno) ? 'Sin cupos' : 'Disponible' }}
                 </div>
@@ -211,18 +327,18 @@
               <div class="turno-details">
                 <div class="detail-row">
                   <span class="detail-label">Horario:</span>
-                  <span class="detail-value">{{ turno.template.start_time }}hs</span>
+                  <span class="detail-value">{{ formatTurnLabel(turno) }}</span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-label">Día:</span>
-                  <span class="detail-value">{{ turno.template.day_of_week }}</span>
+                  <span class="detail-label">Cancha:</span>
+                  <span class="detail-value">{{ turno.court || 'Sin cancha' }}</span>
                 </div>
                 <div class="detail-row">
                   <span class="detail-label">Cupos:</span>
                   <span class="detail-value">{{ turno.booked_count }} / {{ turno.template.capacity }}</span>
                 </div>
                 <div class="detail-row price-row">
-                  <span class="detail-label">Precio:</span>
+                  <span class="detail-label">Precio de la clase:</span>
                   <span class="detail-value price">${{ turno.template.price }}</span>
                 </div>
               </div>
@@ -290,17 +406,125 @@ const showTurnosModal = ref(false)
 const selectedActivity = ref(null)
 const selectedInstance = ref(null)
 const paymentType = ref('seña')
-const bookingStatus = ref('pending')
 
 const confirmReady = ref(false)
 const showGatewayModal = ref(false)
 const pendingPaymentAmount = ref(0)
 
+// Reservation UI state
+const reservationType = ref('class') // 'class' or 'subscription'
+const selectedWeekday = ref('all')
+const weekDays = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
+const selectedSportId = ref(null)
+
+const sports = computed(() => groupedActivities.value.map(a => ({ activity_id: a.activity_id, activity_name: a.activity_name })))
+
+const sportHeroStyle = (name) => {
+  const normalized = String(name || '').toLowerCase()
+
+  const base = {
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+  }
+
+  if (normalized.includes('fut')) {
+    return { ...base, backgroundColor: '#2d658d', backgroundImage: "url('/sports/futbol.png')" }
+  }
+
+  if (normalized.includes('pad') || normalized.includes('pádel') || normalized.includes('paddle')) {
+    return { ...base, backgroundColor: '#5a8849', backgroundImage: "url('/sports/padel.png')" }
+  }
+
+  if (normalized.includes('bas') || normalized.includes('basket')) {
+    return { ...base, backgroundColor: '#ff6f00', backgroundImage: "url('/sports/basquet.png')" }
+  }
+
+  if (normalized.includes('vol') || normalized.includes('vóley') || normalized.includes('voley')) {
+    return { ...base, backgroundColor: '#2d658d', backgroundImage: "url('/sports/voley.png')" }
+  }
+
+  return { ...base, backgroundColor: '#2d658d', backgroundImage: 'none' }
+}
+
+const selectSport = (sportId) => {
+  selectedSportId.value = sportId
+  reservationType.value = 'class'
+  selectedWeekday.value = 'all'
+}
+
+const clearSport = () => {
+  selectedSportId.value = null
+  reservationType.value = 'class'
+  selectedWeekday.value = 'all'
+}
+
+const visibleActivities = computed(() => {
+  const dayFilter = selectedWeekday.value
+  const base = selectedSportId.value
+    ? groupedActivities.value.filter(a => a.activity_id === selectedSportId.value)
+    : []
+
+  return base.map((act) => {
+    let templates = act.templates || []
+    let instancesList = act.instances || []
+
+    if (dayFilter !== 'all') {
+      templates = templates.filter(t => t.day_of_week === dayFilter)
+      instancesList = instancesList.filter(i => (i.template && i.template.day_of_week === dayFilter))
+    }
+
+    if (reservationType.value === 'subscription') {
+      return { ...act, templates, instances: [] }
+    }
+    return { ...act, templates: act.templates || [], instances: instancesList }
+  }).filter(a => (a.templates.length || a.instances.length))
+})
+
+const weekdayToJsIndex = {
+  Domingo: 0,
+  Lunes: 1,
+  Martes: 2,
+  'Miércoles': 3,
+  Miercoles: 3,
+  Jueves: 4,
+  Viernes: 5,
+  Sábado: 6,
+  Sabado: 6,
+}
+
+const countRemainingMonthlyOccurrences = (dayOfWeek) => {
+  if (!dayOfWeek) return 0
+
+  const targetDay = weekdayToJsIndex[dayOfWeek]
+  if (targetDay === undefined) return 0
+
+  const today = new Date()
+  const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+  let count = 0
+
+  for (const cursor = new Date(today); cursor <= endOfMonth; cursor.setDate(cursor.getDate() + 1)) {
+    if (cursor.getDay() === targetDay) {
+      count += 1
+    }
+  }
+
+  return count
+}
+
 function computeAmountToPay() {
   const price = Number(selectedInstance.value?.template?.price || 0)
   if (!Number.isFinite(price) || price <= 0) return 0
+  if (paymentType.value === 'monthly') {
+    return price * countRemainingMonthlyOccurrences(selectedInstance.value?.template?.day_of_week)
+  }
   return paymentType.value === 'full' ? price : price * 0.5
 }
+
+const isSubscriptionWindowOpen = computed(() => {
+  const day = new Date().getDate()
+  return day >= 1 && day <= 30
+})
 
 const groupedActivities = computed(() => {
   const groups = new Map()
@@ -356,9 +580,42 @@ const groupedActivities = computed(() => {
 })
 
 const formatDate = (dateStr) => {
-  if (!dateStr) return 'Sin fecha'
-  const date = new Date(dateStr)
+  const date = parseLocalDate(dateStr)
+  if (!date) return 'Sin fecha'
   return date.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+
+const formatBookingDate = (dateStr, fallbackDay) => {
+  const date = parseLocalDate(dateStr)
+  if (!date) return fallbackDay || 'Sin fecha'
+
+  const formatted = date.toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })
+
+  return formatted.replace(',', '').charAt(0).toUpperCase() + formatted.replace(',', '').slice(1)
+}
+
+const formatTurnLabel = (instance) => {
+  if (!instance) return 'Sin horario'
+  return `${instance.template?.start_time || '--:--'}hs`
+}
+
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return null
+  const rawDate = String(dateStr).split('T')[0]
+  const [year, month, day] = rawDate.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    const fallbackDate = new Date(dateStr)
+    return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate
+  }
+
+  const localDate = new Date(year, month - 1, day)
+  return Number.isNaN(localDate.getTime()) ? null : localDate
 }
 
 const isFullyBooked = (instance) => {
@@ -422,15 +679,13 @@ const checkUserStatus = async () => {
     
     if (!token) return
     
-    // Get user info via debug endpoint (TODO: crear endpoint público de /me)
-    const res = await axios.get('/bookings/debug/auth', {
+    const res = await axios.get('/subscriptions/me/status', {
       headers: {
-        'Authorization': `Bearer ${token}`
+        Authorization: `Bearer ${token}`
       }
     })
-    
-    // For now, assume not suspended (TODO: verificar con endpoint de usuario)
-    userSuspended.value = false
+
+    userSuspended.value = Boolean(res.data?.suspended)
   } catch (e) {
     console.error('Error al verificar estado:', e)
   }
@@ -449,8 +704,8 @@ const selectInstanceForBooking = (instance) => {
       ?.activity_name
   }
   
-  // Check if user is abonado for this activity
-  checkAbonado(instance.template.activity_id)
+  // Check if user is abonado for this template (day+hour)
+  checkAbonado(instance.template.id)
 
   confirmReady.value = false
   showPaymentModal.value = true
@@ -459,7 +714,26 @@ const selectInstanceForBooking = (instance) => {
   }, 300)
 }
 
-const checkAbonado = async (activity_id) => {
+const selectTemplateForSubscription = (template, activity_name) => {
+  // prepare selectedInstance shape similar to instance for reuse in modal
+  selectedInstance.value = {
+    template: template,
+    activity_name: activity_name,
+    id: null,
+    date: null,
+  }
+
+  // mark payment type monthly by default
+  paymentType.value = 'monthly'
+  // check abonado for this template
+  checkAbonado(template.id)
+
+  confirmReady.value = false
+  showPaymentModal.value = true
+  setTimeout(() => { confirmReady.value = true }, 300)
+}
+
+const checkAbonado = async (template_id) => {
   try {
     auth.hydrateFromToken()
     const token = auth.token || localStorage.getItem('token')
@@ -469,11 +743,55 @@ const checkAbonado = async (activity_id) => {
       return
     }
     
-    // TODO: crear endpoint para verificar si es abonado
-    isUserAbonado.value = false
+    if (!token) {
+      isUserAbonado.value = false
+      return
+    }
+
+    const res = await axios.get('/subscriptions/me/active', {
+      params: { template_id },
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+
+    isUserAbonado.value = Boolean(res.data?.active)
   } catch (e) {
     isUserAbonado.value = false
   }
+}
+
+async function finalizeSubscriptionPurchase() {
+  auth.hydrateFromToken()
+  const token = auth.token || localStorage.getItem('token')
+
+  if (!token) {
+    errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+    return
+  }
+
+  const templateId = selectedInstance.value?.template?.id
+  if (!templateId) {
+    errorMessage.value = 'No se pudo determinar el horario (template) para el abono.'
+    return
+  }
+
+  const res = await axios.post(
+    '/subscriptions/purchase',
+    { template_id: templateId },
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
+
+  bookingStatus.value = 'completed'
+  successMessage.value = `¡Abono mensual comprado! Reservas creadas: ${res.data.bookings_created}. ` +
+    `Saltadas (sin cupo): ${res.data.skipped_full}. Ya existentes: ${res.data.skipped_existing}. Vigencia hasta: ${res.data.valid_to}.`
+
+  closePaymentModal()
+  showGatewayModal.value = false
+
+  setTimeout(() => {
+    fetchInstances()
+  }, 800)
 }
 
 const closePaymentModal = () => {
@@ -520,8 +838,12 @@ async function finalizeBookingWithPayment() {
 function onGatewayResult(result) {
   if (!result) return
   if (result.status === 'Aprobado') {
-    finalizeBookingWithPayment().catch((e) => {
-      const detail = e.response?.data?.detail || 'Error al procesar la reserva'
+    const afterApproved = paymentType.value === 'monthly'
+      ? finalizeSubscriptionPurchase
+      : finalizeBookingWithPayment
+
+    afterApproved().catch((e) => {
+      const detail = e.response?.data?.detail || 'Error al procesar la operación'
       errorMessage.value = detail
     })
     return
@@ -636,29 +958,260 @@ onMounted(() => {
 
 <style scoped>
 .booking-container {
-  padding: 40px 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-  background: linear-gradient(135deg, rgba(45, 101, 141, 0.08) 0%, rgba(90, 136, 73, 0.08) 52%, rgba(255, 111, 0, 0.08) 100%);
+  padding: 28px 26px 40px;
+  max-width: none;
+  margin: 0;
+  background: transparent;
   min-height: 100vh;
 }
 
 .booking-header {
-  text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 18px;
+}
+
+.booking-header-main {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.booking-header-left {
+  min-width: 0;
 }
 
 .booking-header h1 {
-  font-size: 2.5rem;
-  color: #2d658d;
-  font-weight: 800;
-  margin: 0 0 10px;
+  font-size: 2rem;
+  color: #0d124a;
+  font-weight: 900;
+  margin: 0;
 }
 
-.booking-header p {
-  font-size: 1.1rem;
-  color: #5a8849;
+.booking-stepline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.step-pill {
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: #155724;
+  background: rgba(90, 136, 73, 0.18);
+  border: 1px solid rgba(90, 136, 73, 0.28);
+  padding: 6px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.step-text {
+  color: rgba(13, 18, 74, 0.7);
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.booking-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(13, 18, 74, 0.1);
+  box-shadow: 0 10px 22px rgba(17, 24, 39, 0.08);
+}
+
+.stepper-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 0.78rem;
+  background: rgba(13, 18, 74, 0.08);
+  color: rgba(13, 18, 74, 0.7);
+  border: 1px solid rgba(13, 18, 74, 0.12);
+}
+
+.stepper-node.done .node-dot {
+  background: rgba(45, 101, 141, 0.14);
+  color: #2d658d;
+}
+
+.stepper-node.current .node-dot {
+  background: rgba(45, 101, 141, 0.18);
+  color: #2d658d;
+  border-color: rgba(45, 101, 141, 0.28);
+}
+
+.node-label {
+  font-weight: 800;
+  color: rgba(13, 18, 74, 0.8);
+  font-size: 0.85rem;
+}
+
+.stepper-line {
+  width: 26px;
+  height: 2px;
+  background: rgba(13, 18, 74, 0.12);
+}
+
+.reservation-controls {
+  max-width: none;
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(45, 101, 141, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.reserve-type {
+  display: flex;
+  gap: 10px;
+}
+
+.reserve-type button {
+  border: 1px solid rgba(45, 101, 141, 0.18);
+  background: rgba(255, 255, 255, 0.8);
+  color: #0d124a;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.reserve-type button.active {
+  background: #2d658d;
+  color: white;
+  border-color: transparent;
+}
+
+.day-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.day-filter label {
+  font-weight: 800;
+  color: #0d124a;
+  font-size: 0.9rem;
+}
+
+.day-filter select {
+  border: 1px solid rgba(13, 18, 74, 0.18);
+  background: white;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 700;
+  color: #0d124a;
+}
+
+.change-sport {
+  border: none;
+  background: rgba(45, 101, 141, 0.08);
+  color: #2d658d;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.change-sport:hover {
+  background: rgba(45, 101, 141, 0.12);
+}
+
+.sports-step {
+  max-width: none;
   margin: 0;
+}
+
+.sports-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+
+  margin: 0;
+}
+
+.sport-tile {
+  position: relative;
+  border: 1px solid rgba(13, 18, 74, 0.12);
+  border-radius: 18px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  min-height: 168px;
+  height: 100%;
+  box-shadow: 0 18px 45px rgba(17, 24, 39, 0.12);
+  background-size: cover;
+  background-position: center;
+}
+
+.sport-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.38);
+}
+
+.sport-tile-overlay {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px;
+  gap: 14px;
+}
+
+.sport-tile-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sport-tile-title {
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 1.15rem;
+}
+
+.sport-tile-sub {
+  color: rgba(255, 255, 255, 0.86);
+  font-weight: 600;
+  font-size: 0.85rem;
+  max-width: 54ch;
+}
+
+.sport-tile-action {
+  align-self: flex-end;
+  background: #ff6f00;
+  color: #ffffff;
+  font-weight: 900;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  box-shadow: 0 10px 24px rgba(255, 111, 0, 0.25);
 }
 
 .suspension-warning {
@@ -704,8 +1257,8 @@ onMounted(() => {
 }
 
 .booking-feedback {
-  max-width: 1100px;
-  margin: 0 auto 24px;
+  max-width: none;
+  margin: 0 0 24px;
   padding: 18px 20px;
   border-radius: 16px;
   display: flex;
@@ -716,19 +1269,19 @@ onMounted(() => {
 }
 
 .booking-feedback.confirmed {
-  background: linear-gradient(135deg, #eff6ff, #e8f3ec);
+  background: #eff6ff;
   border: 1px solid rgba(45, 101, 141, 0.22);
   color: #2d658d;
 }
 
 .booking-feedback.pending {
-  background: linear-gradient(135deg, #fff7f0, #fff0e0);
+  background: #fff7f0;
   border: 1px solid rgba(255, 111, 0, 0.22);
   color: #ff6f00;
 }
 
 .booking-feedback.cancelled {
-  background: linear-gradient(135deg, #fff7ed, #fef3c7);
+  background: #fff7ed;
   border: 1px solid rgba(255, 111, 0, 0.28);
   color: #b45309;
 }
@@ -755,57 +1308,171 @@ onMounted(() => {
 
 .classes-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
+  grid-template-columns: 1fr;
+  gap: 18px;
 }
 
-.class-card {
-  background: linear-gradient(180deg, #ffffff 0%, #fff9f4 100%);
+.activity-shell {
   border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 18px 45px rgba(17, 24, 39, 0.12);
-  transition: all 0.3s ease;
-  border: 1px solid rgba(45, 101, 141, 0.12);
+  border: 1px solid rgba(13, 18, 74, 0.12);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 16px 40px rgba(17, 24, 39, 0.12);
+}
+
+.activity-hero {
+  position: relative;
+  min-height: 90px;
+  background-size: cover;
+  background-position: center;
+}
+
+.activity-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.activity-hero-overlay {
+  position: relative;
+  z-index: 1;
+  padding: 16px 18px;
+}
+
+.activity-hero-title {
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 1.05rem;
+}
+
+.activity-hero-sub {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.activity-hero-chip {
+  position: absolute;
+  z-index: 1;
+  top: 14px;
+  right: 14px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 900;
+  font-size: 0.75rem;
+}
+
+.activity-body {
+  padding: 16px 16px 18px;
+}
+
+.turn-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.turn-card {
+  border-radius: 14px;
+  border: 1px solid rgba(13, 18, 74, 0.1);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
+  padding: 14px;
   display: flex;
   flex-direction: column;
-}
-
-.class-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 24px 55px rgba(17, 24, 39, 0.16);
-}
-
-.card-header {
-  background: linear-gradient(135deg, #2d658d 0%, #5a8849 60%, #ff6f00 100%);
-  color: white;
-  padding: 18px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   gap: 12px;
 }
 
-.activity-name {
-  font-size: 1.1rem;
-  margin: 0;
-  font-weight: 800;
-  flex: 1;
+.turn-card.full {
+  opacity: 0.7;
 }
 
-.activity-meta {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.95);
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+.turn-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.turn-card-date {
+  font-weight: 900;
+  color: #0d124a;
+  font-size: 0.86rem;
+}
+
+.turn-card-badge {
+  font-weight: 900;
+  font-size: 0.72rem;
   padding: 6px 10px;
   border-radius: 999px;
+  border: 1px solid transparent;
   white-space: nowrap;
 }
 
-.activity-meta.disabled {
-  background: rgba(255, 255, 255, 0.1);
-  opacity: 0.8;
+.turn-card-badge.available {
+  background: rgba(90, 136, 73, 0.16);
+  color: #155724;
+  border-color: rgba(90, 136, 73, 0.25);
+}
+
+.turn-card-badge.full {
+  background: rgba(220, 53, 69, 0.14);
+  color: #721c24;
+  border-color: rgba(220, 53, 69, 0.22);
+}
+
+.turn-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.turn-card-row {
+  color: rgba(13, 18, 74, 0.78);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.turn-card-row.spots {
+  color: rgba(13, 18, 74, 0.62);
+  font-weight: 800;
+}
+
+.turn-card-price {
+  margin-top: 2px;
+  color: #ff6f00;
+  font-weight: 900;
+  font-size: 0.92rem;
+}
+
+.turn-card-btn {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #ff6f00;
+  color: #ffffff;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.turn-card-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(255, 111, 0, 0.26);
+}
+
+.turn-card-btn:disabled,
+.turn-card-btn.disabled {
+  background: rgba(13, 18, 74, 0.14);
+  color: rgba(13, 18, 74, 0.55);
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .activity-info h3 {
@@ -821,13 +1488,13 @@ onMounted(() => {
 }
 
 .reserve-direct-btn {
-  background: linear-gradient(135deg, #2d658d, #5a8849, #ff6f00);
+  background: #ff6f00;
   border: none;
 }
 
 .reserve-direct-btn:hover {
-  background: linear-gradient(135deg, #24506f, #4d733d, #e65f00);
-  box-shadow: 0 6px 20px rgba(45, 101, 141, 0.35);
+  background: #ff6f00;
+  box-shadow: 0 8px 22px rgba(255, 111, 0, 0.28);
 }
 
 .card-body {
@@ -848,6 +1515,58 @@ onMounted(() => {
   gap: 14px;
 }
 
+@media (min-width: 1025px) {
+  .booking-container {
+    padding: 28px 40px 44px;
+  }
+
+  .booking-header {
+    text-align: left;
+  }
+
+  .booking-header h1 {
+    font-size: 2.2rem;
+  }
+
+  .sports-step {
+    min-height: calc(100vh - 190px);
+  }
+
+  .sports-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(190px, 1fr);
+    min-height: calc(100vh - 190px);
+  }
+
+  .sport-tile {
+    min-height: 190px;
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .booking-container {
+    padding: 22px 14px;
+  }
+
+  .booking-header-main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .booking-stepper {
+    display: none;
+  }
+
+  .sports-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .turn-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .turn-row-inline {
   margin: 0;
   padding: 16px;
@@ -860,7 +1579,7 @@ onMounted(() => {
   margin: 0;
   padding: 16px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #eff6ff, #fff7f0);
+  background: rgba(45, 101, 141, 0.08);
   border: 1px dashed rgba(45, 101, 141, 0.35);
   color: #2d658d;
   font-weight: 600;
@@ -885,26 +1604,31 @@ onMounted(() => {
 .turn-info strong {
   display: block;
   color: #0d124a;
-  font-size: 1.1rem;
-  margin-bottom: 4px;
+  font-size: 0.88rem;
+  line-height: 1.15;
+  margin-bottom: 3px;
+  font-weight: 800;
 }
 
-.turn-info span {
+.turn-info div {
   display: block;
   color: #6c757d;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.25;
+  margin-top: 2px;
 }
 
-.turn-info small {
-  display: block;
-  color: #999;
-  font-size: 0.8rem;
-  margin-top: 4px;
+.turn-schedule {
+  color: #0d124a !important;
 }
 
-.price {
+.turn-spots {
+  color: #4a4f5a !important;
+}
+
+.turn-price {
   color: #ff6f00 !important;
-  font-weight: 600 !important;
+  font-weight: 700 !important;
 }
 
 .turn-actions {
@@ -915,7 +1639,7 @@ onMounted(() => {
 
 .btn-book {
   padding: 10px 16px;
-  background: linear-gradient(135deg, #5a8849, #2d658d);
+  background: #2d658d;
   color: white;
   border: none;
   border-radius: 6px;
@@ -925,8 +1649,9 @@ onMounted(() => {
 }
 
 .btn-book:hover:not(:disabled) {
-  background: linear-gradient(135deg, #4c763e, #24506f);
-  transform: scale(1.05);
+  background: #2d658d;
+  transform: scale(1.02);
+  box-shadow: 0 8px 18px rgba(45, 101, 141, 0.22);
 }
 
 .btn-book:disabled,
@@ -993,36 +1718,64 @@ onMounted(() => {
 }
 
 .modal-content h2 {
-  margin: 0 0 20px;
+  margin: 0 0 16px;
   color: #0d124a;
   font-weight: 800;
 }
 
 .payment-info {
-  background: #f8f9fa;
-  padding: 15px;
-  border-radius: 8px;
+  background: #fbfdff;
+  border: 1px solid rgba(13, 18, 74, 0.08);
+  padding: 16px 18px;
+  border-radius: 16px;
   margin-bottom: 20px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
 .payment-info .info-row {
-  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
   align-items: center;
 }
 
+.payment-info .info-row:last-child {
+  margin-bottom: 0;
+}
+
 .payment-info .label {
-  font-weight: 600;
-  color: #6c757d;
+  font-weight: 700;
+  color: #000000;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
 }
 
 .payment-info .value {
-  font-weight: 700;
+  font-weight: 400;
   color: #0d124a;
+  text-align: right;
+  line-height: 1.2;
 }
 
 .price-amount {
   color: #ff6f00;
-  font-size: 1.2rem;
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.payment-info .info-row.highlight {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(13, 18, 74, 0.08);
+}
+
+.payment-info .info-row.highlight .label,
+.payment-info .info-row.highlight .value {
+  color: #0d124a;
 }
 
 .payment-options {
@@ -1277,7 +2030,7 @@ onMounted(() => {
 .btn-turno-reserve {
   width: 100%;
   padding: 12px;
-  background: linear-gradient(135deg, #5a8849, #2d658d);
+  background: #2d658d;
   color: white;
   border: none;
   border-radius: 8px;
@@ -1287,9 +2040,9 @@ onMounted(() => {
 }
 
 .btn-turno-reserve:hover:not(:disabled):not(.disabled) {
-  background: linear-gradient(135deg, #4c763e, #24506f);
+  background: #2d658d;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(45, 101, 141, 0.28);
+  box-shadow: 0 8px 18px rgba(45, 101, 141, 0.22);
 }
 
 .btn-turno-reserve:disabled,

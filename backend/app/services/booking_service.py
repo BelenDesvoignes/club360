@@ -1,12 +1,13 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from datetime import datetime
+from datetime import datetime, date
 from ..models.booking import Booking
 from ..models.user import User
 from ..models.shift_instance import ShiftInstance
 from ..models.subscription import Subscription
 from ..models.suspension import Suspension
 from ..models.payment import Payment
+from .subscription_service import ensure_user_suspension_if_unpaid
 from fastapi import HTTPException, status
 
 
@@ -26,20 +27,52 @@ def is_user_suspended(db: Session, user_id: int) -> bool:
     return suspension is not None
 
 
-def is_user_abonado(db: Session, user_id: int, template_id: int) -> bool:
-    """Check if user has an active subscription for this template."""
-    subscription = (
+def _subscription_covers_date(subscription: Subscription, target_date: date) -> bool:
+    """Return True if this subscription should count as active for a given class date.
+
+    Backwards compatibility: legacy subscriptions can have NULL purchase_date/valid_to.
+    """
+    if not target_date:
+        return False
+
+    purchase_date = subscription.purchase_date.date() if subscription.purchase_date else None
+    valid_to = subscription.valid_to
+
+    if purchase_date and target_date < purchase_date:
+        return False
+    if valid_to and target_date > valid_to:
+        return False
+    return True
+
+
+def get_active_subscription(db: Session, user_id: int, template_id: int, *, for_date: date | None = None) -> Subscription | None:
+    """Return an active subscription for this template (optionally covering a given date)."""
+    subscriptions = (
         db.query(Subscription)
         .filter(
             and_(
                 Subscription.user_id == user_id,
                 Subscription.template_id == template_id,
-                Subscription.status == "active"
+                Subscription.status == "active",
             )
         )
-        .first()
+        .order_by(Subscription.purchase_date.desc().nullslast(), Subscription.id.desc())
+        .all()
     )
-    return subscription is not None
+
+    if not subscriptions:
+        return None
+    if not for_date:
+        return subscriptions[0]
+
+    for subscription in subscriptions:
+        if _subscription_covers_date(subscription, for_date):
+            return subscription
+    return None
+
+
+def is_user_abonado(db: Session, user_id: int, template_id: int, *, for_date: date | None = None) -> bool:
+    return get_active_subscription(db, user_id, template_id, for_date=for_date) is not None
 
 
 def has_instance_capacity(db: Session, instance_id: int) -> bool:
@@ -110,6 +143,9 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
     if not template:
         raise HTTPException(status_code=500, detail="Template no encontrado")
     
+    # Lazy rule: after day 10, auto-suspend if unpaid (TP-friendly; no cron required)
+    ensure_user_suspension_if_unpaid(db, user_id=user_id)
+
     # Rule 1: Check if user is suspended
     if is_user_suspended(db, user_id):
         raise HTTPException(
@@ -149,14 +185,16 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
             detail="No hay cupos disponibles para este turno. Únetea la lista de espera."
         )
     
-    # Rule 3 & 4: Check if user is abonado for this activity
-    is_abonado = is_user_abonado(db, user_id, template.id)
+    # Rule 3 & 4: Check if user is abonado for this template (and date)
+    active_subscription = get_active_subscription(db, user_id, template.id, for_date=instance.date)
+    is_abonado = active_subscription is not None
     
     # Create booking
     booking = Booking(
         user_id=user_id,
         instance_id=instance_id,
-        status="Confirmed" if is_abonado else "Pending"
+        status="Confirmed" if is_abonado else "Pending",
+        subscription_id=active_subscription.id if active_subscription else None,
     )
     
     db.add(booking)
