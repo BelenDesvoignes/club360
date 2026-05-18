@@ -37,10 +37,13 @@
           </router-link>
         </div>
 
-        <div v-if="auth.isEmployee" class="menu-section">
+       <div v-if="auth.isEmployee" class="menu-section">
           <p class="section-title">OPERACIONES</p>
           <router-link to="/control-ingreso" @click="closeSidebar">
             <span class="icon">🔍</span> Control QR
+          </router-link>
+          <router-link to="/control-asistencias" @click="closeSidebar">
+            <span class="icon">🔒</span> Cerrar Asistencias
           </router-link>
         </div>
 

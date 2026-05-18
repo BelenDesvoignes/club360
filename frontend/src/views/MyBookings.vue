@@ -45,6 +45,9 @@
           </div>
 
           <div v-if="booking.status === 'Confirmed'" class="booking-actions">
+            <button @click="activeQrId = activeQrId === booking.id ? null : booking.id" class="btn btn-secondary btn-sm">
+              {{ activeQrId === booking.id ? 'Ocultar QR' : 'Ver QR' }}
+            </button>
             <button @click="cancelBooking(booking.id)" class="btn btn-danger btn-sm">
               Cancelar Reserva
             </button>
@@ -59,6 +62,16 @@
               Cancelar
             </button>
           </div>
+
+          <div v-if="activeQrId === booking.id" class="qr-container">
+            <p class="qr-text">Presentá este código en recepción para ingresar:</p>
+            <div class="qr-frame">
+              <qrcode-vue :value="String(booking.id)" :size="130" level="H" render-as="svg" />
+              <p class="qr-id-display">ID de Reserva: #{{ booking.id }}</p>
+              <p style="font-size: 0.85rem; color: #6b7280; margin-top: 5px; font-weight: 600;"/>
+              (Para Cierre Masivo - ID de Clase: #{{ booking.instance_id }})
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -70,7 +83,6 @@
       @result="onGatewayResult"
     />
 
-    <!-- Modal de confirmación de cancelación -->
     <transition name="fade">
       <div v-if="showCancelModal" class="modal-overlay" @click="showCancelModal = false">
         <div class="modal-content" @click.stop>
@@ -85,7 +97,6 @@
       </div>
     </transition>
 
-    <!-- Modal de éxito -->
     <transition name="fade">
       <div v-if="successMessage" class="modal-overlay" @click="successMessage = ''">
         <div class="modal-content" @click.stop>
@@ -97,7 +108,6 @@
       </div>
     </transition>
 
-    <!-- Modal de error -->
     <transition name="fade">
       <div v-if="errorMessage" class="modal-overlay error" @click="errorMessage = ''">
         <div class="modal-content" @click.stop>
@@ -116,6 +126,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
 import PaymentModal from '../components/PaymentModal.vue'
+import QrcodeVue from 'qrcode.vue'
 
 const auth = useAuthStore()
 const bookings = ref([])
@@ -129,6 +140,7 @@ const showGatewayModal = ref(false)
 const pendingPaymentAmount = ref(0)
 const pendingBookingId = ref(null)
 const pendingPayeeName = ref('Reserva')
+const activeQrId = ref(null)
 
 const formatDate = (dateStr) => {
   if (!dateStr) return 'Sin fecha'
@@ -147,7 +159,9 @@ const getStatusLabel = (status) => {
     'Confirmed': 'Confirmada',
     'Pending': 'Pendiente de Pago',
     'Cancelled': 'Cancelada',
-    'Attended': 'Asistida'
+    'Attended': 'Asistida',
+    'Concreted': 'Asistida', 
+    'Absent': 'Ausente'      
   }
   return labels[status] || status
 }
@@ -157,7 +171,9 @@ const getCardClass = (booking) => {
     'Confirmed': 'status-confirmed',
     'Pending': 'status-pending',
     'Cancelled': 'status-cancelled',
-    'Attended': 'status-attended'
+    'Attended': 'status-attended',
+    'Concreted': 'status-attended',
+    'Absent': 'status-absent'       
   }
   return classes[booking.status] || ''
 }
@@ -376,6 +392,11 @@ onMounted(() => {
 
 .booking-card.status-attended {
   border-left-color: #5a8849;
+}
+
+/* 🛠️ Nueva clase de borde izquierdo rojo para ausentes */
+.booking-card.status-absent {
+  border-left-color: #dc3545;
 }
 
 .booking-header-card {
@@ -617,5 +638,38 @@ onMounted(() => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* Estilo de Contenedor de Qr  */
+
+.qr-container {
+  margin-top: 15px;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px dashed #ced4da;
+  text-align: center;
+}
+
+.qr-text {
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin: 0 0 8px 0;
+  font-weight: 600;
+}
+
+.qr-frame {
+  display: inline-block;
+  background: white;
+  padding: 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.qr-id-display {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0d124a; 
+  margin-top: 8px;
+  margin-bottom: 0;
 }
 </style>

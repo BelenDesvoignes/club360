@@ -5,8 +5,7 @@ import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
-import ShiftsManagement from '../views/ShiftsManagement.vue' // <--- 1. IMPORTAR EL NUEVO
-
+import ShiftsManagement from '../views/ShiftsManagement.vue'
 
 // TUS IMPORTS (Mantenemos solo Pagos)
 import UserPayments from '../views/UserPayments.vue'
@@ -15,6 +14,11 @@ import UserPayments from '../views/UserPayments.vue'
 import MyBookings from '../views/MyBookings.vue'
 import ClassBooking from '../views/ClassBooking.vue'
 import AddCard from '../views/AddCard.vue'
+
+// NUEVOS IMPORTS: Vistas del Empleado Administrativo
+
+import ControlIngreso from '../views/ControlIngreso.vue'
+import ControlAsistencias from '../views/ControlAsistencias.vue'
 
 const routes = [
   { path: '/', component: Home },
@@ -51,6 +55,20 @@ const routes = [
     component: ActivityManagement,
     meta: { requiresAuth: true, role: 'admin' }
   },
+
+  // RUTAS EXCLUSIVAS PARA EL EMPLEADO ADMINISTRATIVO
+  {
+    path: '/control-ingreso',
+    name: 'ControlIngreso',
+    component: ControlIngreso,
+    meta: { requiresAuth: true, role: 'empleado' } // El guard solo deja pasar si auth.role === 'employee'
+  },
+  {
+    path: '/control-asistencias',
+    name: 'ControlAsistencias',
+    component: ControlAsistencias,
+    meta: { requiresAuth: true, role: 'empleado' }
+  },
 ]
 
 const router = createRouter({
@@ -61,13 +79,22 @@ const router = createRouter({
 // Navigation Guard
 router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
+  
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     next('/login')
-  } else if (to.meta.role && auth.role !== to.meta.role) {
-    next('/')
+  } else if (to.meta.role) {
+    // Convertimos ambos a minúsculas...
+    const userRole = String(auth.role || '').toLowerCase()
+    const requiredRole = String(to.meta.role).toLowerCase()
+    
+    if (userRole !== requiredRole) {
+      console.warn(`🛑 Acceso denegado. Rol del usuario: "${userRole}". Rol requerido: "${requiredRole}"`)
+      next('/')
+    } else {
+      next()
+    }
   } else {
     next()
   }
 })
-
 export default router
