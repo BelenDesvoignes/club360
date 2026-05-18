@@ -48,14 +48,14 @@ const onScanSuccess = async (decodedText) => {
     }
 
     const response = await axios.post(
-      `http://127.0.0.1:8000/bookings/verify-qr?booking_id=${bookingId}`,
-      {},
-      {
-        headers: {
-          Authorization: `Bearer ${auth.token}`
-        }
-      }
-    );
+  `/bookings/verify-qr?booking_id=${bookingId}`,
+  {},
+  {
+    headers: {
+      Authorization: `Bearer ${auth.token}`
+    }
+  }
+);
 
     feedback.value = {
       type: 'success',
