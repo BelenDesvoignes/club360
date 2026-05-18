@@ -97,3 +97,36 @@ def crear_cliente(user_in: UserRegister, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/clientes")
+def listar_clientes(db: Session = Depends(get_db)):
+
+    # Trae todos los usuarios de la base de datos que sean Clientes
+    result = db.query(User).filter(User.role == UserRole.CLIENT).all()
+    
+    clients_list = []
+    for user in result:
+        clients_list.append({
+            "id": user.id_user, 
+            "nombre": f"{user.first_name} {user.last_name}", 
+            "dni": user.dni,
+            "estado": "Suspendido" if user.is_suspended else "Activo"
+        })
+    return clients_list
+
+
+@router.patch("/clientes/{client_id}/suspension")
+def alternar_suspension_cliente(client_id: int, db: Session = Depends(get_db)):
+
+    # Endpoint para suspender o levantar la suspensión usando 'id_user'
+    user = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+    
+    # Invertimos el valor de tu columna real
+    user.is_suspended = not user.is_suspended
+    db.commit()
+    
+    nuevo_estado = "Suspendido" if user.is_suspended else "Activo"
+    return {"message": f"Estado cambiado a {nuevo_estado}", "nuevo_estado": nuevo_estado}
