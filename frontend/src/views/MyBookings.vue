@@ -323,7 +323,7 @@ onMounted(() => {
   padding: 40px 20px;
   max-width: 1200px;
   margin: 0 auto;
-  background: linear-gradient(135deg, rgba(45, 101, 141, 0.08) 0%, rgba(90, 136, 73, 0.08) 55%, rgba(255, 111, 0, 0.08) 100%);
+  background: rgba(45, 101, 141, 0.06);
   min-height: 100vh;
 }
 
@@ -422,7 +422,7 @@ onMounted(() => {
 }
 
 .booking-header-card {
-  background: linear-gradient(135deg, #2d658d 0%, #5a8849 55%, #ff6f00 100%);
+  background: #2d658d;
   color: white;
   padding: 15px 20px;
   display: flex;
@@ -431,19 +431,19 @@ onMounted(() => {
 }
 
 .booking-card.status-confirmed .booking-header-card {
-  background: linear-gradient(135deg, #2d658d 0%, #5a8849 100%);
+  background: #5a8849;
 }
 
 .booking-card.status-pending .booking-header-card {
-  background: linear-gradient(135deg, #5a8849 0%, #ff6f00 100%);
+  background: #ff6f00;
 }
 
 .booking-card.status-cancelled .booking-header-card {
-  background: linear-gradient(135deg, #2d658d 0%, #ff6f00 100%);
+  background: #2d658d;
 }
 
 .booking-card.status-expired .booking-header-card {
-  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+  background: #9ca3af;
 }
 
 .booking-status {
@@ -519,23 +519,25 @@ onMounted(() => {
 }
 
 .booking-actions .btn-danger {
-  background: linear-gradient(135deg, #ff6f00, #2d658d);
+  background: #ff6f00;
   color: white;
   border: none;
 }
 
 .booking-actions .btn-danger:hover {
-  background: linear-gradient(135deg, #e65f00, #24506f);
+  background: #ff6f00;
+  box-shadow: 0 8px 18px rgba(255, 111, 0, 0.22);
 }
 
 .booking-actions .btn-success {
-  background: linear-gradient(135deg, #5a8849, #2d658d);
+  background: #5a8849;
   color: white;
   border: none;
 }
 
 .booking-actions .btn-success:hover {
-  background: linear-gradient(135deg, #4c763e, #24506f);
+  background: #5a8849;
+  box-shadow: 0 8px 18px rgba(90, 136, 73, 0.22);
 }
 
 .booking-actions {
