@@ -50,10 +50,10 @@
               class="turn-row turn-row-inline"
             >
               <div class="turn-info">
-                <strong>{{ turno.template.start_time }}hs · {{ turno.template.day_of_week }}</strong>
-                <span>{{ turno.court || 'Sin cancha' }}</span>
-                <small>Cupos: {{ turno.booked_count }}/{{ turno.template.capacity }}</small>
-                <small class="price">${{ turno.template.price }}</small>
+                <strong class="turn-day-number">{{ formatBookingDate(turno.date, turno.template.day_of_week) }}</strong>
+                <div class="turn-schedule">{{ formatTurnLabel(turno) }} en {{ turno.court || 'Sin cancha' }}</div>
+                <div class="turn-spots">Cupos: {{ turno.booked_count }}/{{ turno.template.capacity }}</div>
+                <div class="turn-price">Precio de la clase: ${{ turno.template.price }}</div>
               </div>
               <div class="turn-actions">
                 <button
@@ -224,7 +224,7 @@
               :class="{ 'full': isFullyBooked(turno) }"
             >
               <div class="turno-header">
-                <div class="turno-date">{{ formatDate(turno.date) }}</div>
+                <div class="turno-date">{{ formatBookingDate(turno.date, turno.template.day_of_week) }}</div>
                 <div class="turno-badge" :class="isFullyBooked(turno) ? 'full' : 'available'">
                   {{ isFullyBooked(turno) ? 'Sin cupos' : 'Disponible' }}
                 </div>
@@ -233,18 +233,18 @@
               <div class="turno-details">
                 <div class="detail-row">
                   <span class="detail-label">Horario:</span>
-                  <span class="detail-value">{{ turno.template.start_time }}hs</span>
+                  <span class="detail-value">{{ formatTurnLabel(turno) }}</span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-label">Día:</span>
-                  <span class="detail-value">{{ turno.template.day_of_week }}</span>
+                  <span class="detail-label">Cancha:</span>
+                  <span class="detail-value">{{ turno.court || 'Sin cancha' }}</span>
                 </div>
                 <div class="detail-row">
                   <span class="detail-label">Cupos:</span>
                   <span class="detail-value">{{ turno.booked_count }} / {{ turno.template.capacity }}</span>
                 </div>
                 <div class="detail-row price-row">
-                  <span class="detail-label">Precio:</span>
+                  <span class="detail-label">Precio de la clase:</span>
                   <span class="detail-value price">${{ turno.template.price }}</span>
                 </div>
               </div>
@@ -312,7 +312,6 @@ const showTurnosModal = ref(false)
 const selectedActivity = ref(null)
 const selectedInstance = ref(null)
 const paymentType = ref('seña')
-const bookingStatus = ref('pending')
 
 const confirmReady = ref(false)
 const showGatewayModal = ref(false)
@@ -417,9 +416,42 @@ const groupedActivities = computed(() => {
 })
 
 const formatDate = (dateStr) => {
-  if (!dateStr) return 'Sin fecha'
-  const date = new Date(dateStr)
+  const date = parseLocalDate(dateStr)
+  if (!date) return 'Sin fecha'
   return date.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+
+const formatBookingDate = (dateStr, fallbackDay) => {
+  const date = parseLocalDate(dateStr)
+  if (!date) return fallbackDay || 'Sin fecha'
+
+  const formatted = date.toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })
+
+  return formatted.replace(',', '').charAt(0).toUpperCase() + formatted.replace(',', '').slice(1)
+}
+
+const formatTurnLabel = (instance) => {
+  if (!instance) return 'Sin horario'
+  return `${instance.template?.start_time || '--:--'}hs`
+}
+
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return null
+  const rawDate = String(dateStr).split('T')[0]
+  const [year, month, day] = rawDate.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    const fallbackDate = new Date(dateStr)
+    return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate
+  }
+
+  const localDate = new Date(year, month - 1, day)
+  return Number.isNaN(localDate.getTime()) ? null : localDate
 }
 
 const isFullyBooked = (instance) => {
@@ -992,26 +1024,31 @@ onMounted(() => {
 .turn-info strong {
   display: block;
   color: #0d124a;
-  font-size: 1.1rem;
-  margin-bottom: 4px;
+  font-size: 0.88rem;
+  line-height: 1.15;
+  margin-bottom: 3px;
+  font-weight: 800;
 }
 
-.turn-info span {
+.turn-info div {
   display: block;
   color: #6c757d;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.25;
+  margin-top: 2px;
 }
 
-.turn-info small {
-  display: block;
-  color: #999;
-  font-size: 0.8rem;
-  margin-top: 4px;
+.turn-schedule {
+  color: #0d124a !important;
 }
 
-.price {
+.turn-spots {
+  color: #4a4f5a !important;
+}
+
+.turn-price {
   color: #ff6f00 !important;
-  font-weight: 600 !important;
+  font-weight: 700 !important;
 }
 
 .turn-actions {
@@ -1100,36 +1137,64 @@ onMounted(() => {
 }
 
 .modal-content h2 {
-  margin: 0 0 20px;
+  margin: 0 0 16px;
   color: #0d124a;
   font-weight: 800;
 }
 
 .payment-info {
-  background: #f8f9fa;
-  padding: 15px;
-  border-radius: 8px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f6f9fc 100%);
+  border: 1px solid rgba(13, 18, 74, 0.08);
+  padding: 16px 18px;
+  border-radius: 16px;
   margin-bottom: 20px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
 .payment-info .info-row {
-  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
   align-items: center;
 }
 
+.payment-info .info-row:last-child {
+  margin-bottom: 0;
+}
+
 .payment-info .label {
-  font-weight: 600;
-  color: #6c757d;
+  font-weight: 700;
+  color: #000000;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
 }
 
 .payment-info .value {
-  font-weight: 700;
+  font-weight: 400;
   color: #0d124a;
+  text-align: right;
+  line-height: 1.2;
 }
 
 .price-amount {
   color: #ff6f00;
-  font-size: 1.2rem;
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.payment-info .info-row.highlight {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(13, 18, 74, 0.08);
+}
+
+.payment-info .info-row.highlight .label,
+.payment-info .info-row.highlight .value {
+  color: #0d124a;
 }
 
 .payment-options {

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Date, func
 from sqlalchemy.orm import relationship
-from app.database import Base
+from ..database import Base
 
 # 1. ACTIVIDAD (Fútbol, Vóley...)
 class Activity(Base):

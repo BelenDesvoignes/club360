@@ -68,14 +68,33 @@ def crear_miembro_equipo(user_in: UserRegister, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-@router.post("/run-subscription-suspensions")
-def run_subscription_suspensions(
-    authorization: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-):
-    """Run unpaid-subscription suspension sweep.
+@router.post("/crear-cliente", response_model=UserResponse)
+def crear_cliente(user_in: UserRegister, db: Session = Depends(get_db)):
+    # Permite a admin/empleado crear cuentas de clientes y fuerza el rol CLIENT
+    user_exists = db.query(User).filter(
+        (User.email == user_in.email) | (User.dni == user_in.dni)
+    ).first()
 
-    Intended to be called by a scheduled job (cron) starting on day 11.
-    """
-    _require_admin(authorization, db)
-    return subscription_service.suspend_users_for_unpaid_subscriptions(db)
+    if user_exists:
+        raise HTTPException(
+            status_code=400,
+            detail="El usuario con este Email o DNI ya existe."
+        )
+
+    new_user = User(
+        first_name=user_in.first_name,
+        last_name=user_in.last_name,
+        dni=user_in.dni,
+        email=user_in.email,
+        hashed_password=get_password_hash(user_in.password),
+        role=UserRole.CLIENT
+    )
+
+    try:
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

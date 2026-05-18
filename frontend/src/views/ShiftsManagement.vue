@@ -2,8 +2,8 @@
   <div class="page">
     <div class="gestion-container">
       <header class="page-header">
-        <h1>Gestión de Clases Próximas</h1>
-        <p>Administra instancias específicas y cupos por fecha</p>
+        <h1>Gestión de clases</h1>
+        <p>Panel de edición de cupos y cancelaciones por clase</p>
       </header>
 
       <!-- Filtros -->
@@ -63,8 +63,8 @@
               <td>{{ shift.template.start_time }}hs</td>
               <td>
                 <div class="occupancy-bar">
-                  <span :style="{ width: (shift.booked_count / shift.template.capacity * 100) + '%' }"></span>
-                  <small>{{ shift.booked_count }} / {{ shift.template.capacity }}</small>
+                  <span :style="{ width: (shift.booked_count / shift.capacity * 100) + '%' }"></span>
+                  <small>{{ shift.booked_count }} / {{ shift.capacity }}</small>
                 </div>
               </td>
               <td>
@@ -82,8 +82,7 @@
                   class="icon-btn" 
                   :class="{ 'is-loading': savingId === shift.id }"
                   :disabled="savingId === shift.id"
-                  title="Guardar cambios"
-                >
+                  title="Guardar cambios">
                   <span v-if="savingId === shift.id" class="mini-spinner"></span>
                   <span v-else>💾</span>
                 </button>
@@ -261,13 +260,27 @@ const resetFilters = () => {
 }
 
 const formatDate = (dateStr) => {
-  if (!dateStr) return 'Sin fecha'
-  const date = new Date(dateStr + 'T12:00:00') 
+  const date = parseLocalDate(dateStr)
+  if (!date) return 'Sin fecha'
   return date.toLocaleDateString('es-AR', { 
     day: '2-digit', 
     month: '2-digit', 
     year: 'numeric' 
   })
+}
+
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return null
+  const rawDate = String(dateStr).split('T')[0]
+  const [year, month, day] = rawDate.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    const fallbackDate = new Date(dateStr)
+    return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate
+  }
+
+  const localDate = new Date(year, month - 1, day)
+  return Number.isNaN(localDate.getTime()) ? null : localDate
 }
 
 const showMsg = (txt, type) => {
