@@ -2,8 +2,8 @@
   <div class="page">
     <div class="gestion-container">
       <header class="page-header">
-        <h1>Gestión de Clases Próximas</h1>
-        <p>Administra instancias específicas y cupos por fecha</p>
+        <h1>Gestión de clases</h1>
+        <p>Panel de edición de cupos y cancelaciones por clase</p>
       </header>
 
       <!-- Filtros -->
@@ -63,8 +63,8 @@
               <td>{{ shift.template.start_time }}hs</td>
               <td>
                 <div class="occupancy-bar">
-                  <span :style="{ width: (shift.booked_count / shift.template.capacity * 100) + '%' }"></span>
-                  <small>{{ shift.booked_count }} / {{ shift.template.capacity }}</small>
+                  <span :style="{ width: (shift.booked_count / shift.capacity * 100) + '%' }"></span>
+                  <small>{{ shift.booked_count }} / {{ shift.capacity }}</small>
                 </div>
               </td>
               <td>
@@ -82,8 +82,7 @@
                   class="icon-btn" 
                   :class="{ 'is-loading': savingId === shift.id }"
                   :disabled="savingId === shift.id"
-                  title="Guardar cambios"
-                >
+                  title="Guardar cambios">
                   <span v-if="savingId === shift.id" class="mini-spinner"></span>
                   <span v-else>💾</span>
                 </button>
