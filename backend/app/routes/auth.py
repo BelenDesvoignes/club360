@@ -16,25 +16,26 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserResponse)
 def register(user_in: UserRegister, db: Session = Depends(get_db)):
-    # 1. Verificar si ya existe el usuario
-    user_exists = db.query(User).filter(
-        (User.email == user_in.email) | (User.dni == user_in.dni)
-    ).first()
 
-    if user_exists:
+    if db.query(User).filter(User.dni == user_in.dni).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User with this email or DNI already exists."
+            detail="Ya existe un usuario registrado con ese DNI."
         )
 
-    # 2. Crear instancia del nuevo usuario
+    if db.query(User).filter(User.email == user_in.email).first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ya existe una cuenta con ese correo electrónico."
+        )
+
     new_user = User(
         first_name=user_in.first_name,
         last_name=user_in.last_name,
         dni=user_in.dni,
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
-        role=UserRole.CLIENT # Por defecto es cliente
+        role=UserRole.CLIENT
     )
 
     try:
@@ -54,14 +55,21 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
     # 1. Buscar usuario
     user = db.query(User).filter(User.email == user_in.email).first()
 
-    # 2. Validar existencia y contraseña
-    if not user or not verify_password(user_in.password, user.hashed_password):
+    # 2. Validar existencia
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email o contraseña incorrectos"
+            detail="El correo electrónico no está registrado."
         )
 
-    # 3. Generar Token incluyendo el ROL
+    # 3. Validar contraseña
+    if not verify_password(user_in.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Contraseña incorrecta."
+        )
+
+    # 4. Generar Token incluyendo el ROL
     access_token = create_access_token(
         data={"sub": user.email, "id": user.id_user, "role": user.role.value}
     )

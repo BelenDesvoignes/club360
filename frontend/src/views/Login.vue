@@ -111,11 +111,10 @@ const handleLogin = async () => {
   try {
     const exito = await auth.login(credenciales.value.email, credenciales.value.password)
     if (exito) {
-      // Redirigir según el rol o a una página de inicio
       router.push('/')
     }
   } catch (err) {
-    error.value = err?.response?.data?.detail || err?.message || 'Error al iniciar sesión'
+    error.value = typeof err === 'string' ? err : 'Error al iniciar sesión'
   } finally {
     cargando.value = false
   }
