@@ -121,7 +121,7 @@ def get_instances(db: Session = Depends(get_db)):
                 "activity_id": row.activity_id,
                 "day_of_week": row.day_of_week,
                 "start_time": row.start_time,
-                "capacity": row.template_capacity,
+                "capacity": row.instance_capacity,
                 "price": float(row.price) if row.price else 100.0
             }
         })
