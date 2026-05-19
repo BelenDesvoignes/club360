@@ -6,8 +6,14 @@ from ..schemas.user import UserRegister, UserResponse
 from ..auth_utils import get_password_hash
 from ..auth_utils import get_user_id_from_token
 from app.services import subscription_service
-# Asumo que tienes una función para obtener el usuario actual desde el token
-# from app.routes.auth import get_current_admin_user
+from pydantic import BaseModel
+from datetime import date
+from ..models.shift_template import ShiftTemplate
+from ..models.shift_instance import ShiftInstance
+from ..models.booking import Booking
+from ..models.subscription import Subscription
+from ..models.payment import Payment
+from datetime import datetime
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -104,12 +110,12 @@ def listar_clientes(db: Session = Depends(get_db)):
 
     # Trae todos los usuarios de la base de datos que sean Clientes
     result = db.query(User).filter(User.role == UserRole.CLIENT).all()
-    
+
     clients_list = []
     for user in result:
         clients_list.append({
-            "id": user.id_user, 
-            "nombre": f"{user.first_name} {user.last_name}", 
+            "id": user.id_user,
+            "nombre": f"{user.first_name} {user.last_name}",
             "dni": user.dni,
             "estado": "Suspendido" if user.is_suspended else "Activo"
         })
@@ -123,10 +129,269 @@ def alternar_suspension_cliente(client_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
     if not user:
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
-    
+
     # Invertimos el valor de tu columna real
     user.is_suspended = not user.is_suspended
     db.commit()
-    
+
     nuevo_estado = "Suspendido" if user.is_suspended else "Activo"
     return {"message": f"Estado cambiado a {nuevo_estado}", "nuevo_estado": nuevo_estado}
+
+
+
+# -------------------------------------------------------
+# 1. Listar instancias disponibles para reservar
+# -------------------------------------------------------
+@router.get("/clientes/{client_id}/instancias-disponibles")
+def listar_instancias_disponibles(
+    client_id: int,
+    activity_id: int | None = None,
+    day_of_week: str | None = None,
+    db: Session = Depends(get_db)
+):
+    cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    query = (
+        db.query(ShiftInstance)
+        .join(ShiftTemplate, ShiftInstance.template_id == ShiftTemplate.id)
+        .filter(
+            ShiftInstance.date >= date.today(),
+            ShiftInstance.is_cancelled == False,
+            ShiftTemplate.is_active == True,
+        )
+    )
+
+    if activity_id:
+        query = query.filter(ShiftTemplate.activity_id == activity_id)
+    if day_of_week:
+        query = query.filter(ShiftTemplate.day_of_week == day_of_week)
+
+    instances = query.order_by(ShiftInstance.date).all()
+
+    result = []
+    for inst in instances:
+        # Calcular cupos ocupados
+        ocupados = db.query(Booking).filter(
+            Booking.instance_id == inst.id,
+            Booking.status != "Cancelled"
+        ).count()
+        disponibles = inst.capacity - ocupados
+
+        if disponibles <= 0:
+            continue
+
+        # Verificar si el cliente ya tiene reserva en esta instancia
+        ya_reservado = db.query(Booking).filter(
+            Booking.instance_id == inst.id,
+            Booking.user_id == client_id,
+            Booking.status != "Cancelled"
+        ).first()
+
+        if ya_reservado:
+            continue
+
+        result.append({
+            "instance_id": inst.id,
+            "date": inst.date,
+            "day_of_week": inst.template.day_of_week,
+            "start_time": inst.template.start_time,
+            "activity_id": inst.template.activity_id,
+            "activity_name": inst.template.activity.name if inst.template.activity else None,
+            "price": inst.template.price,
+            "cupos_disponibles": disponibles,
+        })
+
+    return result
+
+
+# -------------------------------------------------------
+# 2. Reservar clase suelta para un cliente
+# -------------------------------------------------------
+class ReservaParaClientePayload(BaseModel):
+    instance_id: int
+    amount_paid: float  # 50% o 100% del precio
+
+@router.post("/clientes/{client_id}/reservar-clase")
+def reservar_clase_para_cliente(
+    client_id: int,
+    payload: ReservaParaClientePayload,
+    db: Session = Depends(get_db)
+):
+    cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    instancia = db.query(ShiftInstance).filter(ShiftInstance.id == payload.instance_id).first()
+    if not instancia:
+        raise HTTPException(status_code=404, detail="Instancia no encontrada.")
+
+    ocupados = db.query(Booking).filter(
+        Booking.instance_id == payload.instance_id,
+        Booking.status != "Cancelled"
+    ).count()
+    if ocupados >= instancia.capacity:
+        raise HTTPException(status_code=400, detail="No hay cupos disponibles.")
+
+    ya_reservado = db.query(Booking).filter(
+        Booking.instance_id == payload.instance_id,
+        Booking.user_id == client_id,
+        Booking.status != "Cancelled"
+    ).first()
+    if ya_reservado:
+        raise HTTPException(status_code=400, detail="El cliente ya tiene una reserva en este turno.")
+
+    precio_total = instancia.template.price
+    minimo = round(precio_total * 0.5, 2)
+    if payload.amount_paid < minimo:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El monto mínimo para reservar es ${minimo} (50% del precio)."
+        )
+
+    payment_status = "paid" if payload.amount_paid >= precio_total else "partial"
+
+    try:
+        booking = Booking(
+            user_id=client_id,
+            instance_id=payload.instance_id,
+            status="Confirmed",
+            amount_paid=payload.amount_paid,
+            payment_status=payment_status,
+        )
+        db.add(booking)
+
+        payment = Payment(
+            user_id=client_id,
+            amount=payload.amount_paid,
+            status=payment_status,
+            type="booking",
+            date=datetime.utcnow(),
+        )
+        db.add(payment)
+
+        db.commit()
+        db.refresh(booking)
+
+        return {
+            "booking_id": booking.id,
+            "status": booking.status,
+            "amount_paid": booking.amount_paid,
+            "payment_status": booking.payment_status,
+            "precio_total": precio_total,
+            "saldo_pendiente": round(precio_total - booking.amount_paid, 2),
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+# -------------------------------------------------------
+# 3. Marcar pago restante como pagado
+# -------------------------------------------------------
+@router.patch("/clientes/{client_id}/reservas/{booking_id}/pagar-restante")
+def pagar_restante(
+    client_id: int,
+    booking_id: int,
+    db: Session = Depends(get_db)
+):
+    booking = db.query(Booking).filter(
+        Booking.id == booking_id,
+        Booking.user_id == client_id,
+    ).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Reserva no encontrada.")
+
+    if booking.payment_status == "paid":
+        raise HTTPException(status_code=400, detail="Esta reserva ya fue pagada en su totalidad.")
+
+    if booking.status == "Cancelled":
+        raise HTTPException(status_code=400, detail="No se puede pagar una reserva cancelada.")
+
+    precio_total = booking.instance.template.price
+    restante = round(precio_total - (booking.amount_paid or 0), 2)
+
+    try:
+        booking.amount_paid = precio_total
+        booking.payment_status = "paid"
+
+        payment = Payment(
+            user_id=client_id,
+            amount=restante,
+            status="completed",
+            type="booking",
+            date=datetime.utcnow(),
+        )
+        db.add(payment)
+        db.commit()
+
+        return {
+            "booking_id": booking.id,
+            "payment_status": booking.payment_status,
+            "amount_paid": booking.amount_paid,
+            "mensaje": "Pago completado correctamente."
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+# -------------------------------------------------------
+# 5. Listar reservas de un cliente
+# -------------------------------------------------------
+@router.get("/clientes/{client_id}/reservas")
+def listar_reservas_cliente(client_id: int, db: Session = Depends(get_db)):
+
+    cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    bookings = (
+        db.query(Booking)
+        .filter(Booking.user_id == client_id)
+        .order_by(Booking.created_at.desc())
+        .all()
+    )
+
+    result = []
+    for b in bookings:
+        instance = b.instance
+        result.append({
+            "booking_id": b.id,
+            "status": b.status,
+            "payment_status": b.payment_status,
+            "amount_paid": b.amount_paid,
+            "created_at": b.created_at,
+            "activity_name": instance.template.activity.name if instance and instance.template and instance.template.activity else None,
+            "date": instance.date if instance else None,
+            "day_of_week": instance.template.day_of_week if instance and instance.template else None,
+            "start_time": instance.template.start_time if instance and instance.template else None,
+            "price": instance.template.price if instance and instance.template else None,
+            "is_subscription": b.subscription_id is not None,
+        })
+
+    return result
+
+
+@router.get("/clientes/{client_id}/pagos")
+def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
+    cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    pagos = (
+        db.query(Payment)
+        .filter(Payment.user_id == client_id)
+        .order_by(Payment.date.desc())
+        .all()
+    )
+
+    return [
+        {
+            "payment_id": p.id,
+            "amount": p.amount,
+            "status": p.status,
+            "type": p.type,
+            "date": p.date,
+        }
+        for p in pagos
+    ]

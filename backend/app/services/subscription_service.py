@@ -420,3 +420,152 @@ def ensure_user_suspension_if_unpaid(db: Session, *, user_id: int, today: date |
     )
     db.commit()
     return True
+
+
+def purchase_half_month_subscription_and_reserve(
+    #Toma las instancias del mes ordenadas por fecha.
+#Se queda solo con las 2 últimas.
+#El precio es price * 4 * 0.8 (80% del abono completo).
+#valid_to igual, fin de mes.
+    db: Session, *, user_id: int, template_id: int, today: date | None = None
+) -> PurchaseResult:
+    today = today or date.today()
+
+    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template no encontrado")
+
+    if _subscription_already_purchased_this_month(db, user_id=user_id, template_id=template_id, today=today):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ya tenés un abono activo para este horario este mes.",
+        )
+
+    valid_to = last_day_of_month(today)
+
+    # Asegurar que existan las instancias del mes
+    ensure_shift_instances_until(db, template, start=today, until=valid_to)
+
+    # Traer TODAS las instancias del mes ordenadas por fecha
+    all_instances = (
+        db.query(ShiftInstance)
+        .filter(
+            and_(
+                ShiftInstance.template_id == template_id,
+                ShiftInstance.date >= date(today.year, today.month, 1),
+                ShiftInstance.date <= valid_to,
+                ShiftInstance.is_cancelled == False,
+            )
+        )
+        .order_by(ShiftInstance.date.asc())
+        .all()
+    )
+
+    if len(all_instances) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="No hay suficientes turnos en el mes para registrar un abono a mitad de mes."
+        )
+
+    # Solo las 2 últimas instancias
+    instances = all_instances[-2:]
+
+    # Precio: 80% del abono completo (price * 4 * 0.8)
+    monthly_full_price = float(template.price or 0) * 4
+    half_month_price = round(monthly_full_price * 0.8, 2)
+
+    if half_month_price <= 0:
+        raise HTTPException(status_code=400, detail="No se pudo determinar el precio del abono.")
+
+    purchase_dt = datetime.utcnow()
+
+    subscription = Subscription(
+        user_id=user_id,
+        template_id=template_id,
+        month=today.month,
+        status="active",
+        price_paid=half_month_price,
+        purchase_date=purchase_dt,
+        valid_to=valid_to,
+    )
+
+    payment = Payment(
+        user_id=user_id,
+        amount=half_month_price,
+        status="completed",
+        type="subscription",
+        date=purchase_dt,
+    )
+
+    try:
+        db.add(subscription)
+        db.add(payment)
+        db.flush()
+
+        bookings_created = 0
+        skipped_existing = 0
+        skipped_full = 0
+
+        for instance in instances:
+            existing_booking = (
+                db.query(Booking)
+                .filter(
+                    and_(
+                        Booking.user_id == user_id,
+                        Booking.instance_id == instance.id,
+                        Booking.status != "Cancelled",
+                    )
+                )
+                .first()
+            )
+            if existing_booking:
+                skipped_existing += 1
+                continue
+
+            booked_count = (
+                db.query(Booking)
+                .filter(
+                    and_(
+                        Booking.instance_id == instance.id,
+                        Booking.status != "Cancelled",
+                    )
+                )
+                .count()
+            )
+
+            if booked_count >= instance.capacity:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"No hay cupos disponibles para el turno del {instance.date}.",
+                )
+
+            db.add(
+                Booking(
+                    user_id=user_id,
+                    instance_id=instance.id,
+                    status="Confirmed",
+                    subscription_id=subscription.id,
+                    amount_paid=half_month_price,
+                    payment_status="paid",
+                )
+            )
+            bookings_created += 1
+
+        db.commit()
+        db.refresh(subscription)
+
+        return PurchaseResult(
+            subscription_id=subscription.id,
+            valid_to=valid_to,
+            price_paid=half_month_price,
+            bookings_created=bookings_created,
+            skipped_full=skipped_full,
+            skipped_existing=skipped_existing,
+            instances_created=0,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al comprar el abono: {str(e)}")

@@ -11,9 +11,6 @@ load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
-print(f"USER: '{GMAIL_USER}'")
-print(f"PASS: '{GMAIL_APP_PASSWORD}'")
-
 async def send_reset_code(email: str, code: str):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Código de recuperación - CLUB360"
