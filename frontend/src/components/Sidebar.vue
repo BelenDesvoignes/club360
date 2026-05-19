@@ -20,24 +20,21 @@
       </div>
 
       <nav class="menu-content">
-        
+
         <div v-if="auth.isAuthenticated && !auth.isAdmin && !auth.isEmployee" class="menu-section">
           <p class="section-title">MI CUENTA</p>
           <router-link to="/reservar" @click="closeSidebar">
-            <span class="icon">📅</span> Reservar Clase
+            <span class="icon"></span> Reservar clase
           </router-link>
           <router-link to="/reservas" @click="closeSidebar">
-            <span class="icon">📋</span> Mis Reservas
-          </router-link>
-          <router-link to="/agregar-tarjeta" @click="closeSidebar">
-            <span class="icon">💳</span> Mis Tarjetas
+            <span class="icon"></span> Mis reservas
           </router-link>
           <router-link to="/mis-pagos" @click="closeSidebar">
-            <span class="icon">💰</span> Mis Pagos
+            <span class="icon"></span> Mis pagos
           </router-link>
         </div>
 
-       <div v-if="auth.isEmployee" class="menu-section">
+        <div v-if="auth.isEmployee && !auth.isAdmin" class="menu-section">
           <p class="section-title">OPERACIONES</p>
           <router-link to="/control-ingreso" @click="closeSidebar">
             <span class="icon">🔍</span> Control QR
@@ -45,38 +42,38 @@
           <router-link to="/control-asistencias" @click="closeSidebar">
             <span class="icon">🔒</span> Cerrar Asistencias
           </router-link>
-        </div>
-
-        <div v-if="auth.isAdmin" class="menu-section">
-          <p class="section-title">VISTA CLIENTE</p>
-          <router-link to="/reservar" @click="closeSidebar">
-            <span class="icon">📅</span> Reservar Clase
+          <router-link to="/clases" @click="closeSidebar">
+            <span class="icon"></span> Gestión de clases
           </router-link>
-          <router-link to="/reservas" @click="closeSidebar">
-            <span class="icon">📋</span> Mis Reservas
-          </router-link>
-          <router-link to="/mis-pagos" @click="closeSidebar">
-            <span class="icon">💰</span> Mis Pagos
+          <router-link to="/clientes" @click="closeSidebar">
+            <span class="icon"></span> Gestión de clientes
           </router-link>
         </div>
 
         <div v-if="auth.isAdmin" class="menu-section">
-          <p class="section-title">SISTEMA</p>
-          <router-link to="/gestion-actividades" @click="closeSidebar">
-             <span class="icon">⚙️</span> Gestión de Actividades
+          <p class="section-title">OPERACIONES</p>
+          <router-link to="/control-ingreso" @click="closeSidebar">
+            <span class="icon"></span> Control QR
           </router-link>
           <router-link to="/clases" @click="closeSidebar">
-             <span class="icon">⚙️</span> Gestión de Clases
+            <span class="icon"></span> Gestión de clases
+          </router-link>
+          <router-link to="/clientes" @click="closeSidebar">
+            <span class="icon"></span> Gestión de clientes
+          </router-link>
+          <router-link to="/gestion-actividades" @click="closeSidebar">
+            <span class="icon"></span> Gestión de actividades
           </router-link>
           <router-link to="/equipo" @click="closeSidebar">
-            <span class="icon">👥</span> Gestión de Personal
+            <span class="icon"></span> Gestión de personal
           </router-link>
         </div>
+
       </nav>
 
       <div class="sidebar-footer">
         <button @click="handleLogout" class="logout-btn">
-          <span class="icon">🚪</span> Cerrar Sesión
+          <span class="icon"></span> Cerrar Sesión
         </button>
       </div>
     </aside>
@@ -243,7 +240,7 @@ onMounted(() => {
 
 .logout-btn:hover {
   background: #fee2e2;
-  color: #ef4444;
+  color: #190707;
   border-color: #fecaca;
 }
 
