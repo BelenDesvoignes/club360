@@ -115,7 +115,7 @@ def get_instances(db: Session = Depends(get_db)):
             "booked_count": row.booked_count if row.booked_count else 0,
             "activity_name": row.activity_name or f"Actividad {row.activity_id}",
             "court": row.court or "",
-            "capacity": row.instance_capacity, 
+            "capacity": row.instance_capacity,
             "template": {
                 "id": row.template_id,
                 "activity_id": row.activity_id,
@@ -139,33 +139,144 @@ def get_shift_instance(instance_id: int, db: Session = Depends(get_db)):
 @router.patch("/instances/{instance_id}")
 def update_instance_capacity(instance_id: int, capacity: int, db: Session = Depends(get_db)):
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
-    
+
     if not instance:
         raise HTTPException(status_code=404, detail="La clase específica no existe")
-    
+
     booked_count = db.query(Booking).filter(
-        Booking.instance_id == instance_id, 
+        Booking.instance_id == instance_id,
         Booking.status != "Cancelled"
     ).count()
-    
+
     if capacity < booked_count:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"No puedes bajar el cupo a {capacity} porque ya hay {booked_count} personas anotadas."
         )
     instance.capacity = capacity
     db.commit()
-    
+
     return {"message": "Cupo de la clase actualizado", "new_capacity": instance.capacity}
 
 @router.patch("/instances/{instance_id}/cancel")
 def cancel_shift_instance(instance_id: int, db: Session = Depends(get_db)):
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
-    
+
     if not instance:
         raise HTTPException(status_code=404, detail="La clase no existe")
-    
+
     instance.is_cancelled = True
     db.commit()
-    
+
     return {"message": "Clase cancelada exitosamente", "id": instance_id}
+
+import asyncio
+from ..mail import send_shift_cancellation, send_template_cancellation
+
+# ── Cancelar clase puntual ──────────────────────────────────────────
+@router.patch("/instances/{instance_id}/cancel")
+def cancel_shift_instance(instance_id: int, db: Session = Depends(get_db)):
+    instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
+
+    if not instance:
+        raise HTTPException(status_code=404, detail="La clase no existe")
+
+    active_bookings = (
+        db.query(Booking)
+        .filter(
+            Booking.instance_id == instance_id,
+            Booking.status.in_(["Confirmed", "Pending"])
+        )
+        .all()
+    )
+
+    instance.is_cancelled = True
+    db.commit()
+
+    if active_bookings:
+        template = instance.template
+        activity_name = template.activity.name if template and template.activity else "la actividad"
+        fecha = instance.date.strftime("%d/%m/%Y")
+        hora = template.start_time if template else ""
+
+        for booking in active_bookings:
+            user = booking.user
+            if user and user.email:
+                try:
+                    asyncio.run(send_shift_cancellation(
+                        email=user.email,
+                        nombre=user.first_name,
+                        actividad=activity_name,
+                        fecha=fecha,
+                        hora=hora
+                    ))
+                except Exception as e:
+                    print(f"Error enviando mail a {user.email}: {e}")
+
+    return {
+        "message": "Clase cancelada exitosamente",
+        "id": instance_id,
+        "notified": len(active_bookings)
+    }
+
+
+# ── Cancelar turno completo (template) ─────────────────────────────
+@router.delete("/templates/{template_id}")
+def delete_template(template_id: int, db: Session = Depends(get_db)):
+    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
+
+    if not template:
+        raise HTTPException(status_code=404, detail="Turno base no encontrado")
+
+    activity_name = template.activity.name if template.activity else "la actividad"
+    dia = template.day_of_week
+    hora = template.start_time
+
+    # Buscar instancias futuras con reservas activas, sin repetir usuarios
+    future_instances = (
+        db.query(ShiftInstance)
+        .filter(
+            ShiftInstance.template_id == template_id,
+            ShiftInstance.date >= date.today(),
+            ShiftInstance.is_cancelled == False
+        )
+        .all()
+    )
+
+    instance_ids = [i.id for i in future_instances]
+
+    users_to_notify = {}  # dict para no notificar dos veces al mismo usuario
+    if instance_ids:
+        active_bookings = (
+            db.query(Booking)
+            .filter(
+                Booking.instance_id.in_(instance_ids),
+                Booking.status.in_(["Confirmed", "Pending"])
+            )
+            .all()
+        )
+        for booking in active_bookings:
+            user = booking.user
+            if user and user.email and user.id_user not in users_to_notify:
+                users_to_notify[user.id_user] = user
+
+    # Ejecutar la eliminación
+    shift_service.delete_template_and_instances(db, template_id)
+
+    # Mandar mails sin repetir
+    for user in users_to_notify.values():
+        try:
+            asyncio.run(send_template_cancellation(
+                email=user.email,
+                nombre=user.first_name,
+                actividad=activity_name,
+                dia=dia,
+                hora=hora
+            ))
+        except Exception as e:
+            print(f"Error enviando mail a {user.email}: {e}")
+
+    return {
+        "message": "Turno base y sus clases eliminadas correctamente",
+        "notified": len(users_to_notify)
+    }
