@@ -259,22 +259,22 @@ def verify_user_qr(
 
     # 4. Control de Fecha (¿Es hoy?)
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
-    hoy_local = datetime.now().date()
+    hoy_local = datetime.datetime.now().date()
     if not instance or instance.date != hoy_local:
         raise HTTPException(status_code=400, detail=f"Acceso denegado: Esta reserva pertenece al día {instance.date if instance else 'desconocido'}.")
 
-    # 5. Control  de Tolerancia (+30 min / -30 min) A revisar!
+   # 5. Control  de Tolerancia (+30 min / -30 min) A revisado para v1.0 QR
     template = instance.template
     if not template or not template.start_time:
         raise HTTPException(status_code=500, detail="Error de configuración: La clase no tiene un horario asignado.")
 
     try:
-        class_time = datetime.strptime(template.start_time, "%H:%M").time()
-        class_datetime = datetime.combine(instance.date, class_time)
+        class_time = datetime.datetime.strptime(template.start_time, "%H:%M").time()
+        class_datetime = datetime.datetime.combine(instance.date, class_time)
     except Exception:
         raise HTTPException(status_code=500, detail="Error interno al procesar el horario de la clase.")
 
-    ahora = datetime.now()
+    ahora = datetime.datetime.now()
     limite_inferior = class_datetime - datetime.timedelta(minutes=30)
     limite_superior = class_datetime + datetime.timedelta(minutes=30)
 
@@ -305,7 +305,7 @@ def verify_user_qr(
         )
         db.add(nueva_asistencia)
     except Exception:
-        pass  # Si la tabla intermedia no está lista, permitimos que guarde el estado igual para la demo
+        pass  # Si la tabla intermedia no está lista, permitimos que guarde el estado igual para la demo1
 
     db.commit()
 
