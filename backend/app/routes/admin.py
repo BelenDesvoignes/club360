@@ -15,6 +15,18 @@ from ..models.subscription import Subscription
 from ..models.payment import Payment
 from datetime import datetime
 
+class AbonoPayload(BaseModel):
+    template_id: int
+    tipo: str  # "completo" o "mitad"
+
+from datetime import datetime, date as date_type
+from calendar import monthrange
+
+class AbonoPayload(BaseModel):
+    template_id: int
+    tipo: str  # "completo" o "mitad"
+
+
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
@@ -206,9 +218,6 @@ def listar_instancias_disponibles(
     return result
 
 
-# -------------------------------------------------------
-# 2. Reservar clase suelta para un cliente
-# -------------------------------------------------------
 class ReservaParaClientePayload(BaseModel):
     instance_id: int
     amount_paid: float  # 50% o 100% del precio
@@ -370,6 +379,130 @@ def listar_reservas_cliente(client_id: int, db: Session = Depends(get_db)):
         })
 
     return result
+
+# -------------------------------------------------------
+# Registrar abono mensual para un cliente
+# -------------------------------------------------------
+
+@router.post("/clientes/{client_id}/registrar-abono")
+def registrar_abono(
+    client_id: int,
+    payload: AbonoPayload,
+    db: Session = Depends(get_db)
+):
+    cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == payload.template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Horario no encontrado.")
+
+    if not template.is_active:
+        raise HTTPException(status_code=400, detail="Este horario no está activo.")
+
+    hoy = datetime.utcnow()
+    mes_actual = hoy.month
+    anio_actual = hoy.year
+    ultimo_dia = monthrange(anio_actual, mes_actual)[1]
+    valid_to = date_type(anio_actual, mes_actual, ultimo_dia)
+
+    # Calcular precio
+    base = template.price * 4
+    monto = round(base * 0.8, 2) if payload.tipo == "mitad" else round(base, 2)
+
+    # Verificar que no tenga ya un abono activo para este template en este mes
+    abono_existente = db.query(Subscription).filter(
+        Subscription.user_id == client_id,
+        Subscription.template_id == payload.template_id,
+        Subscription.month == mes_actual,
+        Subscription.status == "active"
+    ).first()
+    if abono_existente:
+        raise HTTPException(status_code=400, detail="El cliente ya tiene un abono activo para este horario este mes.")
+
+    # Buscar todas las instancias del mes para este template
+    instancias_del_mes = db.query(ShiftInstance).filter(
+        ShiftInstance.template_id == payload.template_id,
+        ShiftInstance.date >= date_type(anio_actual, mes_actual, 1),
+        ShiftInstance.date <= valid_to,
+        ShiftInstance.is_cancelled == False,
+    ).all()
+
+    # Si es "mitad", tomar solo las instancias desde hoy en adelante
+    if payload.tipo == "mitad":
+        instancias_del_mes = [i for i in instancias_del_mes if i.date >= hoy.date()]
+
+    try:
+        # Crear la suscripción
+        subscription = Subscription(
+            user_id=client_id,
+            template_id=payload.template_id,
+            month=mes_actual,
+            status="active",
+            price_paid=monto,
+            purchase_date=hoy,
+            valid_to=valid_to,
+        )
+        db.add(subscription)
+        db.flush()  # necesitamos el ID para los bookings
+
+        # Crear un booking por cada instancia del mes
+        bookings_creados = 0
+        for instancia in instancias_del_mes:
+            # Verificar que no tenga ya una reserva en esa instancia
+            ya_reservado = db.query(Booking).filter(
+                Booking.instance_id == instancia.id,
+                Booking.user_id == client_id,
+                Booking.status != "Cancelled"
+            ).first()
+            if ya_reservado:
+                continue
+
+            # Verificar cupos
+            ocupados = db.query(Booking).filter(
+                Booking.instance_id == instancia.id,
+                Booking.status != "Cancelled"
+            ).count()
+            if ocupados >= instancia.capacity:
+                continue
+
+            booking = Booking(
+                user_id=client_id,
+                instance_id=instancia.id,
+                subscription_id=subscription.id,
+                status="Confirmed",
+                amount_paid=0,
+                payment_status="paid",  # el abono ya cubre la clase
+            )
+            db.add(booking)
+            bookings_creados += 1
+
+        # Registrar el pago del abono
+        payment = Payment(
+            user_id=client_id,
+            amount=monto,
+            status="completed",
+            type="subscription",
+            date=hoy,
+        )
+        db.add(payment)
+        db.commit()
+
+        return {
+            "subscription_id": subscription.id,
+            "template_id": payload.template_id,
+            "tipo": payload.tipo,
+            "monto": monto,
+            "month": mes_actual,
+            "valid_to": valid_to,
+            "clases_reservadas": bookings_creados,
+            "mensaje": f"Abono registrado con éxito. Se reservaron {bookings_creados} clases."
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 
 
 @router.get("/clientes/{client_id}/pagos")

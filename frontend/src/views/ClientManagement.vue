@@ -216,68 +216,87 @@
     </transition>
 
     <!-- MODAL NUEVO ABONO -->
-    <transition name="fade">
-      <div v-if="showAbonoModal" class="modal-overlay" @click.self="showAbonoModal = false">
-        <div class="modal-card modal-large">
-          <header class="form-header">
-            <h3>Registrar Abono</h3>
-            <p>Abono mensual para: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
-          </header>
+   <!-- MODAL NUEVO ABONO -->
+<transition name="fade">
+  <div v-if="showAbonoModal" class="modal-overlay" @click.self="showAbonoModal = false">
+    <div class="modal-card modal-large">
+      <header class="form-header">
+        <h3>Registrar Abono</h3>
+        <p>Abono mensual para: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
+      </header>
 
-          <div class="instancias-list">
-            <div v-if="loadingTemplates" class="empty-state">Cargando horarios...</div>
-            <div v-else-if="templates.length === 0" class="empty-state">No hay horarios activos.</div>
-            <div
-              v-for="tmpl in templates"
-              :key="tmpl.id"
-              class="instancia-item"
-              :class="{ selected: templateSeleccionado?.id === tmpl.id }"
-              @click="templateSeleccionado = tmpl"
-            >
-              <div class="instancia-info">
-                <span class="instancia-actividad">{{ tmpl.activity_name || tmpl.activity?.name }}</span>
-                <span class="instancia-detalle">{{ tmpl.day_of_week }} · {{ tmpl.start_time }}</span>
-              </div>
-              <div class="instancia-right">
-                <span class="instancia-precio">${{ tmpl.price }}/clase</span>
-                <span class="instancia-cupos">{{ tmpl.capacity }} cupos</span>
-              </div>
-            </div>
+      <div class="modal-filters">
+        <div class="input-group">
+          <label>Actividad</label>
+          <select v-model="filterAbonoActividad" @change="filtrarTemplates">
+            <option value="">Todas</option>
+            <option v-for="act in actividadesAbono" :key="act.id" :value="act.id">{{ act.name }}</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Día</label>
+          <select v-model="filterAbonoDia" @change="filtrarTemplates">
+            <option value="">Todos</option>
+            <option v-for="dia in diasSemana" :key="dia" :value="dia">{{ dia }}</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="instancias-list">
+        <div v-if="loadingTemplates" class="empty-state">Cargando horarios...</div>
+        <div v-else-if="templatesFiltrados.length === 0" class="empty-state">No hay horarios disponibles.</div>
+        <div
+          v-for="tmpl in templatesFiltrados"
+          :key="tmpl.id"
+          class="instancia-item"
+          :class="{ selected: templateSeleccionado?.id === tmpl.id }"
+          @click="templateSeleccionado = tmpl"
+        >
+          <div class="instancia-info">
+            <span class="instancia-actividad">{{ tmpl.activity_name }}</span>
+            <span class="instancia-detalle">{{ tmpl.day_of_week }} · {{ tmpl.start_time }}</span>
           </div>
-
-          <div v-if="templateSeleccionado" class="pago-section">
-            <p class="pago-label">Seleccioná el tipo de abono:</p>
-            <div class="pago-botones">
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: tipoAbono === 'completo' }"
-                @click="tipoAbono = 'completo'"
-              >
-                Mes completo — ${{ Math.round(templateSeleccionado.price * 4 * 100) / 100 }}
-              </button>
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: tipoAbono === 'mitad' }"
-                @click="tipoAbono = 'mitad'"
-              >
-                Mitad de mes — ${{ Math.round(templateSeleccionado.price * 4 * 0.8 * 100) / 100 }}
-              </button>
-            </div>
-          </div>
-
-          <div v-if="templateSeleccionado" class="resumen-pago">
-            Total a cobrar: <strong>${{ precioAbono }}</strong>
-          </div>
-
-          <div class="modal-actions-container">
-            <button class="btn-confirm" @click="submitAbono" :disabled="loadingAbono || !templateSeleccionado">
-              {{ loadingAbono ? 'Guardando...' : 'Confirmar Abono' }}
-            </button>
-            <button class="btn-cancel" @click="showAbonoModal = false">Cancelar</button>
+          <div class="instancia-right">
+            <span class="instancia-precio">${{ tmpl.price }}/clase</span>
+            <span class="instancia-cupos">{{ tmpl.capacity }} cupos</span>
           </div>
         </div>
       </div>
-    </transition>
+
+      <div v-if="templateSeleccionado" class="pago-section">
+        <p class="pago-label">Seleccioná el tipo de abono:</p>
+        <div class="pago-botones">
+          <button
+            class="btn-pago-opcion"
+            :class="{ active: tipoAbono === 'completo' }"
+            @click="tipoAbono = 'completo'"
+          >
+            Mes completo — ${{ Math.round(templateSeleccionado.price * 4 * 100) / 100 }}
+          </button>
+          <button
+            class="btn-pago-opcion"
+            :class="{ active: tipoAbono === 'mitad' }"
+            @click="tipoAbono = 'mitad'"
+          >
+            Mitad de mes — ${{ Math.round(templateSeleccionado.price * 4 * 0.8 * 100) / 100 }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="templateSeleccionado" class="resumen-pago">
+        Total a cobrar: <strong>${{ precioAbono }}</strong>
+      </div>
+
+      <div class="modal-actions-container">
+        <button class="btn-confirm" @click="submitAbono" :disabled="loadingAbono || !templateSeleccionado">
+          {{ loadingAbono ? 'Guardando...' : 'Confirmar Abono' }}
+        </button>
+        <button class="btn-cancel" @click="showAbonoModal = false">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</transition>
+
     <!-- MODAL HISTORIAL RESERVAS -->
 <transition name="fade">
   <div v-if="showReservasModal" class="modal-overlay" @click.self="showReservasModal = false">
@@ -574,30 +593,34 @@ const submitReserva = async () => {
 const createReserva = (cliente) => openReservaModal(cliente)
 
 // ---- Nuevo Abono ----
+// ---- Nuevo Abono ----
 const showAbonoModal = ref(false)
 const templates = ref([])
+const templatesFiltrados = ref([])
+const actividadesAbono = ref([])
 const templateSeleccionado = ref(null)
 const tipoAbono = ref('completo')
 const loadingTemplates = ref(false)
 const loadingAbono = ref(false)
+const filterAbonoActividad = ref('')
+const filterAbonoDia = ref('')
 
 const fetchTemplates = async () => {
   loadingTemplates.value = true
   try {
     const res = await axios.get('/activities')
-    // Aplanamos los templates de todas las actividades
     const allTemplates = []
     res.data.forEach(act => {
       act.templates?.forEach(tmpl => {
         if (tmpl.is_active !== false) {
-          allTemplates.push({
-            ...tmpl,
-            activity_name: act.name,
-          })
+          allTemplates.push({ ...tmpl, activity_name: act.name, activity_id: act.id })
         }
       })
     })
     templates.value = allTemplates
+    // Armar lista de actividades únicas para el filtro
+    actividadesAbono.value = res.data.map(act => ({ id: act.id, name: act.name }))
+    filtrarTemplates()
   } catch (e) {
     showToast('Error al cargar los horarios.', 'error')
   } finally {
@@ -605,14 +628,24 @@ const fetchTemplates = async () => {
   }
 }
 
+const filtrarTemplates = () => {
+  templateSeleccionado.value = null
+  templatesFiltrados.value = templates.value.filter(tmpl => {
+    const matchActividad = !filterAbonoActividad.value || tmpl.activity_id === filterAbonoActividad.value
+    const matchDia = !filterAbonoDia.value || tmpl.day_of_week === filterAbonoDia.value
+    return matchActividad && matchDia
+  })
+}
+
 const openAbonoModal = async (cliente) => {
   clienteSeleccionado.value = cliente
   templateSeleccionado.value = null
   tipoAbono.value = 'completo'
+  filterAbonoActividad.value = ''
+  filterAbonoDia.value = ''
   showAbonoModal.value = true
   await fetchTemplates()
 }
-
 const precioAbono = computed(() => {
   if (!templateSeleccionado.value) return 0
   const base = templateSeleccionado.value.price * 4
