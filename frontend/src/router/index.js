@@ -9,7 +9,7 @@ import GestionClientes from '../views/ClientManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
 import ShiftsManagement from '../views/ShiftsManagement.vue'
 
-// TUS IMPORTS (Mantenemos solo Pagos)
+// TUS IMPORTS (Pagos)
 import UserPayments from '../views/UserPayments.vue'
 
 // IMPORTS DE DEV (Lo que trajeron tus compañeros)
@@ -63,7 +63,7 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin', headerTitle: 'Actividades' }
   },
 
-  // RUTAS EXCLUSIVAS PARA EL EMPLEADO ADMINISTRATIVO
+  // RUTAS EXCLUSIVAS PARA EL EMPLEADO ADMINISTRATIVO (CONSERVADAS)
   {
     path: '/control-ingreso',
     name: 'ControlIngreso',
@@ -86,7 +86,7 @@ const router = createRouter({
 // Simple in-app navigation history (previous visited page)
 export const previousRoutePath = ref(null)
 
-// Navigation Guard
+// Navigation Guard Blindado
 router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
   
@@ -96,13 +96,13 @@ router.beforeEach((to, from, next) => {
     return
   }
 
-  // 2. Control Avanzado de Roles (Soporta strings, arrays y la keyword employee)
+  // 2. Control Avanzado de Roles (Soporta strings, arrays y minúsculas)
   if (to.meta.role) {
     const required = to.meta.role
+    const userRole = String(auth.role || '').toLowerCase()
     
     // Si es una lista de roles permitidos (ej: ['admin', 'empleado'])
     if (Array.isArray(required)) {
-      const userRole = String(auth.role || '').toLowerCase()
       const hasRole = required.map(r => String(r).toLowerCase()).includes(userRole)
       if (!hasRole) {
         console.warn(`🛑 Acceso denegado. Rol del usuario: "${userRole}". Roles permitidos: ${required}`)
@@ -110,7 +110,7 @@ router.beforeEach((to, from, next) => {
         return
       }
     } else {
-      // Si requiere la palabra clave 'employee' para dejar pasar empleado o admin
+      // Soporte para keyword especial 'employee' para dejar pasar empleado o admin
       if (required === 'employee') {
         if (!auth.isEmployee) {
           next('/')
@@ -118,7 +118,6 @@ router.beforeEach((to, from, next) => {
         }
       } else {
         // Validación estricta para rol único string plano
-        const userRole = String(auth.role || '').toLowerCase()
         const requiredRole = String(required).toLowerCase()
         if (userRole !== requiredRole) {
           next('/')

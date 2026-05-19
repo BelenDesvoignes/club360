@@ -1,7 +1,7 @@
 <template>
   <div class="payments-container">
     <div class="header-section">
-      <h1 class="main-title">Mis Pagos</h1>
+      <h1 class="main-title">Mis pagos</h1>
       <p class="subtitle">Historial financiero y comprobantes de tu cuenta en el club.</p>
     </div>
 
@@ -26,7 +26,7 @@
               {{ formatDate(p.date) }}
             </td>
             <td class="cell-concept capitalize font-semibold">
-              {{ p.type === 'booking' ? 'Reserva de Clase' : p.type }}
+              {{ p.type === 'booking' ? 'Reserva de clase' : p.type }}
             </td>
             <td class="cell-amount text-right font-mono font-bold text-base">
               ${{ p.amount }}
@@ -41,21 +41,21 @@
       </table>
 
       <div class="pagination-footer" v-if="totalPages !== 1">
-        <button 
-          @click="prevPage" 
-          :disabled="currentPage === 1" 
+        <button
+          @click="prevPage"
+          :disabled="currentPage === 1"
           class="page-btn"
         >
           ← Anterior
         </button>
-        
+
         <span class="page-info">
           Página <strong>{{ currentPage }}</strong> de {{ totalPages }}
         </span>
-        
-        <button 
-          @click="nextPage" 
-          :disabled="currentPage === totalPages" 
+
+        <button
+          @click="nextPage"
+          :disabled="currentPage === totalPages"
           class="page-btn"
         >
           Siguiente →
@@ -65,7 +65,7 @@
 
     <div v-else class="empty-state-card">
       <div class="empty-icon-circle">
-        <span role="img" aria-label="tarjeta">💳</span>
+        <span role="img" aria-label="tarjeta"></span>
       </div>
       <h3>Sin pagos registrados</h3>
       <p>No encontramos ningún movimiento financiero asociado a tu cuenta actualmente.</p>
@@ -110,7 +110,7 @@ const prevPage = () => {
 const formatDate = (dateStr) => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
-  if (isNaN(date.getTime())) return dateStr 
+  if (isNaN(date.getTime())) return dateStr
   const d = date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const t = date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
   return `${d} - ${t}`

@@ -15,7 +15,6 @@
     </div>
 
     <div v-else class="bookings-grid">
-   
       <div v-for="booking in bookings" :key="booking.id" class="booking-card" :class="getCardClass(booking)">
         <div class="booking-header-card">
           <div class="booking-status" :class="getCardClass(booking)">

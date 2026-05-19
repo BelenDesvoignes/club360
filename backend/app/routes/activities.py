@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from app.database import get_db
-from app.models.activity import Activity
-from app.models.shift_template import ShiftTemplate
-from app.models.shift_instance import ShiftInstance
-from app.models.booking import Booking
-from app.services import shift_service
+from ..database import get_db
+from ..models.activity import Activity
+from ..models.shift_template import ShiftTemplate
+from ..models.shift_instance import ShiftInstance
+from ..models.booking import Booking
+from ..services import shift_service
 
 router = APIRouter(prefix="/activities", tags=["activities"])
 
@@ -67,6 +67,11 @@ def check_template_bookings(template_id: int, db: Session = Depends(get_db)):
         "confirmed_count": len(confirmed_bookings)
     }
 
+# agregar al inicio del archivo
+import asyncio
+from ..mail import send_template_cancellation
+from datetime import date
+
 @router.delete("/templates/{template_id}")
 def delete_shift_template(
     template_id: int,
@@ -77,35 +82,80 @@ def delete_shift_template(
     if not template:
         raise HTTPException(status_code=404, detail="Turno no encontrado")
 
-    instances = db.query(ShiftInstance).filter(ShiftInstance.template_id == template_id).all()
-    inst_ids = [i.id for i in instances]
+    activity_name = template.activity.name if template.activity else "la actividad"
+    dia = template.day_of_week
+    hora = template.start_time
 
+    # Solo instancias futuras
+    future_instances = db.query(ShiftInstance).filter(
+        ShiftInstance.template_id == template_id,
+        ShiftInstance.date >= date.today(),
+        ShiftInstance.is_cancelled == False
+    ).all()
+    inst_ids = [i.id for i in future_instances]
+
+    # Recolectar usuarios a notificar antes de borrar
+    users_to_notify = {}
     if inst_ids:
-        confirmed_bookings = db.query(Booking).filter(
+        active_bookings = db.query(Booking).filter(
             Booking.instance_id.in_(inst_ids),
+            Booking.status.in_(["Confirmed", "Pending"])
+        ).all()
+
+        for booking in active_bookings:
+            user = booking.user
+            if user and user.email and user.id_user not in users_to_notify:
+                users_to_notify[user.id_user] = user
+
+    # --- lógica existente sin cambios ---
+    all_instances = db.query(ShiftInstance).filter(ShiftInstance.template_id == template_id).all()
+    all_inst_ids = [i.id for i in all_instances]
+
+    if all_inst_ids:
+        confirmed_bookings = db.query(Booking).filter(
+            Booking.instance_id.in_(all_inst_ids),
             Booking.status == "Confirmed"
         ).all()
 
         if confirmed_bookings and not cancel_bookings:
-            # Soft delete: desactivar sin tocar reservas
             template.is_active = False
             db.commit()
+            # Notificar igual aunque sea soft delete
+            _send_template_cancellation_mails(users_to_notify, activity_name, dia, hora)
             return {"message": "Horario desactivado correctamente"}
 
-        # Borrar en orden: bookings → instancias → template
         db.query(Booking).filter(
-            Booking.instance_id.in_(inst_ids)
+            Booking.instance_id.in_(all_inst_ids)
         ).delete(synchronize_session=False)
         db.flush()
 
         db.query(ShiftInstance).filter(
-            ShiftInstance.id.in_(inst_ids)
+            ShiftInstance.id.in_(all_inst_ids)
         ).delete(synchronize_session=False)
         db.flush()
 
     db.delete(template)
     db.commit()
+    # --- fin lógica existente ---
+
+    _send_template_cancellation_mails(users_to_notify, activity_name, dia, hora)
+
     return {"message": "Horario eliminado correctamente"}
+
+
+def _send_template_cancellation_mails(users_to_notify: dict, activity_name: str, dia: str, hora: str):
+    """Helper para no repetir el loop de mails."""
+    for user in users_to_notify.values():
+        try:
+            asyncio.run(send_template_cancellation(
+                email=user.email,
+                nombre=user.first_name,
+                actividad=activity_name,
+                dia=dia,
+                hora=hora
+            ))
+        except Exception as e:
+            print(f"Error enviando mail a {user.email}: {e}")
 
 @router.put("/{activity_id}")
 def update_activity(activity_id: int, data: dict, db: Session = Depends(get_db)):

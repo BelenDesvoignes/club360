@@ -1,8 +1,8 @@
-#abono
-
-from sqlalchemy import Column, Integer, String, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Date, Float
 from sqlalchemy.orm import relationship
+
 from app.database import Base
+from datetime import datetime
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
@@ -13,5 +13,10 @@ class Subscription(Base):
     month = Column(Integer, nullable=False)
     status = Column(String, default="active")
 
+    price_paid = Column(Float, nullable=True)
+    purchase_date = Column(DateTime, nullable=True)
+    valid_to = Column(Date, nullable=True)
+
     user = relationship("User", back_populates="subscriptions")
     template = relationship("ShiftTemplate", back_populates="subscriptions")
+    bookings = relationship("Booking", back_populates="subscription")
