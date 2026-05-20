@@ -22,7 +22,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         .count()
     )
     
-    # 2. NUEVO: Contar Clientes Suspendidos reales en la DB
+    # 2. Contar Clientes Suspendidos reales en la DB
     clientes_suspendidos = (
         db.query(User)
         .filter(User.role == UserRole.CLIENT, User.is_suspended == True)
@@ -37,27 +37,30 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         {
             "id": emp.id_user,
             "nombre": f"{emp.first_name} {emp.last_name}",
-            "iniciales": f"{emp.first_name[0]}{emp.last_name[0]}".upper()
+            "iniciales": f"{emp.first_name[0]}{emp.last_name[0]}".upper() if emp.first_name and emp.last_name else "ST"
         }
         for emp in empleados
     ]
 
-    # 4. Traer el Historial reciente (Últimas 4 reservas)
-    ultimas_reservas = (
-        db.query(Booking)
+    # 4. Traer el Historial reciente (Optimizado con JOINs para evitar N+1)
+    resultados = (
+        db.query(Booking, User, Activity)
         .join(User, Booking.user_id == User.id_user)
         .join(ShiftInstance, Booking.instance_id == ShiftInstance.id)
+        .join(ShiftInstance.template) 
+        .join(Activity) 
         .filter(Booking.status == "Confirmed")
         .order_by(Booking.created_at.desc())
         .limit(4)
         .all()
     )
     
+    # 5. Mapeo instantáneo desde la tupla de resultados
     feed_actividad = []
-    for b in ultimas_reservas:
-        act_name = b.instance.template.activity.name if b.instance and b.instance.template and b.instance.template.activity else "una clase"
+    for booking, user, activity in resultados:
+        act_name = activity.name if activity else "una clase"
         feed_actividad.append({
-            "texto": f"<strong>{b.user.first_name} {b.user.last_name}</strong> reservó {act_name}",
+            "texto": f"<strong>{user.first_name} {user.last_name}</strong> reservó {act_name}",
             "tiempo": "Reciente",
             "colorClass": "bg-blue-dot"
         })
@@ -67,10 +70,9 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
             { "texto": "Sistema listo para recibir reservas.", "tiempo": "Ahora", "colorClass": "bg-green-dot" }
         ]
 
-    # Agregamos la nueva métrica al JSON de respuesta
     return {
         "active_subscriptions": abonos_activos if abonos_activos > 0 else 1284,
-        "suspended_clients": clientes_suspendidos, # <-- Enviado al front de forma real
+        "suspended_clients": clientes_suspendidos,
         "today_attendance": asistencias_hoy,
         "staff": staff_list,
         "activity_feed": feed_actividad
