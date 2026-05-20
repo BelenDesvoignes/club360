@@ -16,6 +16,7 @@ from .models.activity import Activity           # Nueva
 from .models.shift_template import ShiftTemplate # Nueva
 from .models.shift_instance import ShiftInstance # Nueva
 from .models.waiting_list import WaitingList
+from .routes import dashboard
 
 # 1. Instancia de FastAPI
 app = FastAPI(title="CLUB360 API", root_path="/api")
@@ -48,3 +49,5 @@ app.include_router(credits.router)
 app.include_router(payments.router, prefix="/payments", tags=["payments"])
 app.include_router(cards.router)
 app.include_router(subscriptions.router)
+app.include_router(dashboard.router)
+
