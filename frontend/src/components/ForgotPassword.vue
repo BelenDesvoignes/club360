@@ -4,7 +4,7 @@
 
       <!-- Paso 1: Email -->
       <div v-if="paso === 1">
-        <div class="modal-icon">🔑</div>
+        <div class="modal-icon"></div>
         <h2>Recuperar contraseña</h2>
         <p>Ingresá tu email y te enviamos un código de 6 dígitos.</p>
         <div class="control">
@@ -19,7 +19,7 @@
 
       <!-- Paso 2: Código -->
       <div v-else-if="paso === 2">
-        <div class="modal-icon">📩</div>
+        <div class="modal-icon"></div>
         <h2>Revisá tu email</h2>
         <p>Enviamos un código a <strong>{{ email }}</strong>. Ingresalo abajo.</p>
         <div class="codigo-inputs">
@@ -45,7 +45,7 @@
 
       <!-- Paso 3: Nueva contraseña -->
       <div v-else-if="paso === 3">
-        <div class="modal-icon">🔒</div>
+        <div class="modal-icon"></div>
         <h2>Nueva contraseña</h2>
         <p>Elegí una contraseña de al menos 8 caracteres.</p>
         <div class="control">
@@ -74,7 +74,7 @@
 
       <!-- Paso 4: Éxito -->
       <div v-else-if="paso === 4">
-        <div class="modal-icon">✅</div>
+        <div class="modal-icon"></div>
         <h2>¡Listo!</h2>
         <p>Tu contraseña fue actualizada correctamente. Ya podés iniciar sesión.</p>
         <button class="primary" @click="$emit('close')">Volver al login</button>
@@ -260,13 +260,13 @@ p {
 }
 
 .digito:focus {
-  border-color: #ff6f00;
+  border-color: #2d658d;
 }
 
 .primary {
   width: 100%;
   padding: 13px;
-  background: #ff6f00;
+  background: #2d658d;
   color: white;
   border: none;
   border-radius: 10px;
@@ -278,7 +278,7 @@ p {
 }
 
 .primary:hover:not(:disabled) {
-  background: #e65c00;
+  background: #2d658d;
 }
 
 .primary:disabled {
@@ -289,7 +289,7 @@ p {
 .link {
   background: none;
   border: none;
-  color: #1a237e;
+  color: #2c303b;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;

@@ -371,7 +371,7 @@ select:disabled {
 .primary {
   width: 100%;
   padding: 14px;
-  background: #ff6f00;
+  background: #2d658d;
   color: white;
   border: none;
   border-radius: 10px;

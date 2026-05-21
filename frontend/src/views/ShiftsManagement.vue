@@ -17,7 +17,7 @@
             </option>
           </select>
         </div>
-        
+
         <!-- NUEVO: Filtro por Día de la Semana -->
         <div class="filter-group">
           <label>Filtrar por Día</label>
@@ -39,7 +39,7 @@
       <!-- Tabla de Instancias -->
       <div class="table-container">
         <div v-if="loading" class="loading-state">Cargando clases...</div>
-        
+
         <table v-else class="shifts-table">
           <thead>
             <tr>
@@ -68,8 +68,8 @@
                 </div>
               </td>
               <td>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   v-model.number="shift.capacity"
                   class="inline-input"
                   :min="shift.booked_count"
@@ -77,19 +77,19 @@
                 />
               </td>
               <td class="actions-cell">
-                <button 
-                  @click="updateShift(shift)" 
-                  class="icon-btn" 
+                <button
+                  @click="updateShift(shift)"
+                  class="icon-btn"
                   :class="{ 'is-loading': savingId === shift.id }"
                   :disabled="savingId === shift.id"
                   title="Guardar cambios">
                   <span v-if="savingId === shift.id" class="mini-spinner"></span>
                   <span v-else>💾</span>
                 </button>
-                
-                <button 
-                  @click="confirmCancel(shift)" 
-                  class="icon-btn" 
+
+                <button
+                  @click="confirmCancel(shift)"
+                  class="icon-btn"
                   :disabled="savingId === shift.id"
                   title="Cancelar clase"
                 >
@@ -99,7 +99,7 @@
             </tr>
           </tbody>
         </table>
-        
+
         <div v-if="filteredShifts.length === 0 && !loading" class="empty-state">
           No se encontraron clases con los filtros seleccionados.
         </div>
@@ -112,12 +112,12 @@
 
       <transition name="fade">
         <div v-if="showConfirmModal" class="modal-overlay">
-          
+
           <div v-if="instanceToDelete && instanceToDelete.booked_count > 0" class="modal-card alert-card">
             <h3>⚠️ No se puede eliminar</h3>
             <p>
-              La clase de <strong>{{ instanceToDelete.activity_name }}</strong> del día 
-              <strong>{{ formatDate(instanceToDelete.date) }}</strong> tiene 
+              La clase de <strong>{{ instanceToDelete.activity_name }}</strong> del día
+              <strong>{{ formatDate(instanceToDelete.date) }}</strong> tiene
               <strong>{{ instanceToDelete.booked_count }}</strong> reserva(s) activa(s).
             </p>
             <p class="modal-subtext">No podés borrar una clase que ya tiene alumnos anotados.</p>
@@ -153,7 +153,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import axios from 'axios' 
+import axios from 'axios'
 
 const shifts = ref([])
 const loading = ref(false)
@@ -204,7 +204,7 @@ const updateShift = async (shift) => {
   savingId.value = shift.id
   try {
     const res = await axios.patch(`/shifts/instances/${shift.id}?capacity=${shift.capacity}`)
-    
+
     const index = shifts.value.findIndex(s => s.id === shift.id)
     if (index !== -1) {
       if (res.data && res.data.new_capacity !== undefined) {
@@ -234,13 +234,13 @@ const confirmCancel = (shift) => {
 
 const executeCancel = async () => {
   if (!instanceToDelete.value) return
-  
+
   const id = instanceToDelete.value.id
   try {
     await axios.patch(`/shifts/instances/${id}/cancel`)
     showMsg("Clase cancelada con éxito", "success")
     showConfirmModal.value = false
-    
+
     const index = shifts.value.findIndex(s => s.id === id)
     if (index !== -1) {
       shifts.value[index].is_cancelled = true
@@ -262,10 +262,10 @@ const resetFilters = () => {
 const formatDate = (dateStr) => {
   const date = parseLocalDate(dateStr)
   if (!date) return 'Sin fecha'
-  return date.toLocaleDateString('es-AR', { 
-    day: '2-digit', 
-    month: '2-digit', 
-    year: 'numeric' 
+  return date.toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
   })
 }
 
@@ -349,13 +349,13 @@ onMounted(fetchShifts)
 /* ==========================================
    FILTROS (Estilo Card Flotante)
    ========================================== */
-.filters-card { 
+.filters-card {
   width: 100%;
-  background: white; 
-  padding: 30px; 
-  border-radius: 18px; 
-  display: flex; 
-  gap: 20px; 
+  background: white;
+  padding: 30px;
+  border-radius: 18px;
+  display: flex;
+  gap: 20px;
   align-items: flex-end;
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.15);
   box-sizing: border-box;
@@ -391,36 +391,36 @@ input, select {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff8f5; 
-  color: #ff6f00;    
-  border: 1px solid #ffbc99;
+  background: #2d658d;
+  color: #fff8f5;
+  border: 1px solid #f9f7f7;
   padding: 10px 16px;
   border-radius: 10px;
   font-weight: 700;
   font-size: 14px;
   cursor: pointer;
-  height: 42px; 
+  height: 42px;
   text-transform: uppercase;
   transition: all 0.2s ease;
   white-space: nowrap;
 }
 
 .btn-clear:hover {
-  background: #ff6f00;
+  background: #2d658d;
   color: white;
-  border-color: #ff6f00;
+  border-color: #2d658d;
 }
 
 /* ==========================================
    TABLA DE CLASES
    ========================================== */
-.table-container { 
+.table-container {
   width: 100%;
-  background: white; 
-  padding: 30px; 
-  border-radius: 18px; 
+  background: white;
+  padding: 30px;
+  border-radius: 18px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.05);
-  overflow-x: auto; 
+  overflow-x: auto;
   box-sizing: border-box;
 }
 
@@ -477,22 +477,22 @@ input, select {
   background: #fff5f5;
 }
 
-.occupancy-bar { 
-  width: 110px; 
-  height: 10px; 
-  background: #e5e7eb; 
-  border-radius: 10px; 
+.occupancy-bar {
+  width: 110px;
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 10px;
   position: relative;
-  overflow: visible; 
+  overflow: visible;
   margin-bottom: 14px;
 }
 
-.occupancy-bar span { 
-  position: absolute; 
-  height: 100%; 
-  background: #ff6f00; 
+.occupancy-bar span {
+  position: absolute;
+  height: 100%;
+  background: #ff6f00;
   border-radius: 10px;
-  left: 0; 
+  left: 0;
 }
 
 .occupancy-bar small {
@@ -547,7 +547,7 @@ input, select {
 .mini-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid #ff6f00;
+  border: 2px solid #2d658d;
   border-bottom-color: transparent;
   border-radius: 50%;
   display: inline-block;
@@ -566,7 +566,7 @@ input, select {
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(45, 101, 141, 0.8); 
+  background: rgba(45, 101, 141, 0.8);
   backdrop-filter: blur(4px);
   display: flex; justify-content: center; align-items: center; z-index: 100;
 }
@@ -595,21 +595,21 @@ input, select {
   line-height: 1.5;
 }
 
-.modal-actions { 
-  display: flex; 
-  gap: 10px; 
-  margin-top: 20px; 
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
 }
 
-.btn-confirm { 
-  flex: 1; 
-  background: #ff6f00; 
-  color: white; 
-  border: none; 
-  padding: 12px; 
-  border-radius: 10px; 
-  font-weight: 700; 
-  cursor: pointer; 
+.btn-confirm {
+  flex: 1;
+  background: #2d658d;
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
   transition: transform 0.2s, opacity 0.2s;
 }
 

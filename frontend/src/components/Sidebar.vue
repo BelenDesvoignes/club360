@@ -134,7 +134,7 @@ onMounted(() => {
 
 .menu-toggle.is-active {
   left: 210px;
-  background: #ff6f00;
+  background: #2c303b;
 }
 
 .bar { width: 22px; height: 2px; background: white; border-radius: 2px; }
@@ -174,7 +174,7 @@ onMounted(() => {
   color: #2d658d;
   letter-spacing: 2px;
 }
-.logo span { color: #ff6f00; } /* Naranja para el '360' */
+.logo span { color: #2c303b; } /* el '360' */
 
 .menu-content { flex-grow: 1; padding: 20px; overflow-y: auto; }
 .menu-section { margin-bottom: 25px; }
@@ -210,7 +210,7 @@ onMounted(() => {
 
 .router-link-active {
   background: #f3f4f6;
-  color: #ff6f00 !important;
+  color: #2d658d!important;
 }
 
 .icon { margin-right: 12px; font-size: 1.1rem; }
@@ -224,7 +224,7 @@ onMounted(() => {
 .logout-btn {
   width: 100%;
   background: #ffffff;
-  border: 1px solid #d1d5db;
+  border: 1px solid #b1b3b8;
   color: #4b5563;
   padding: 12px;
   border-radius: 10px;
@@ -239,9 +239,9 @@ onMounted(() => {
 }
 
 .logout-btn:hover {
-  background: #fee2e2;
-  color: #190707;
-  border-color: #fecaca;
+  background: #d0cfcf;
+  color: #4b5563;
+  border-color: #dcdcdc;
 }
 
 /* Overlay de fondo */

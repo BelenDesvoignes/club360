@@ -1,9 +1,12 @@
 <template>
   <div class="home-wrapper">
-    
+
     <div v-if="!auth.isAuthenticated" class="welcome-hero">
       <div class="hero-content">
-        <h1 class="main-logo">CLUB<span>360</span></h1>
+        <div class="logo-container">
+          <img src="../assets/logo.png" alt="Club 360 Logo" class="logo-img" />
+        </div>
+
         <div class="auth-buttons-vertical">
           <router-link to="/login" class="btn-full-orange">Iniciar sesión</router-link>
           <router-link to="/register" class="btn-full-white">Registrarse</router-link>
@@ -13,7 +16,6 @@
 
     <div v-else>
       <AdminDashboard v-if="auth.user?.role === 'admin' || auth.role === 'admin'" />
-
       <DefaultDashboard v-else />
     </div>
 
@@ -23,7 +25,7 @@
 <script setup>
 import { useAuthStore } from '../stores/auth'
 import AdminDashboard from '../components/AdminDashboard.vue'
-import DefaultDashboard from '../components/DefaultDashboard.vue' 
+import DefaultDashboard from '../components/DefaultDashboard.vue'
 
 const auth = useAuthStore()
 </script>
@@ -32,36 +34,45 @@ const auth = useAuthStore()
 /* Contenedor Principal */
 .home-wrapper {
   min-height: 100vh;
-  background-color: #f8f9fa;
+  background-color: #ffffff; /* Aseguramos fondo blanco general */
 }
 
-/* --- ESTILOS VISTA BIENVENIDA ORIGINALES --- */
+/* --- ESTILOS VISTA BIENVENIDA --- */
 .welcome-hero {
   height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #2d658d;
-  color: white;
+  background: #ffffff;
   text-align: center;
 }
-.main-logo {
-  font-size: 5rem;
-  font-weight: 900;
-  letter-spacing: 4px;
-  margin-bottom: 50px;
+
+/* Contenedor del logo centrado */
+.logo-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 60px;
 }
-.main-logo span {
-  color: #ff6f00;
+
+/* Logo significativamente más grande y nítido */
+.logo-img {
+  width: 420px; /* 👈 CAMBIÁ ESTO: Estaba en 280px, subilo a 420px para la compu */
+  height: auto;
+  object-fit: contain;
 }
+
+/* Botones de autenticación */
 .auth-buttons-vertical {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 16px;
   align-items: center;
 }
+
 .btn-full-orange {
-  background: #ff6f00;
+  background: #2c303b;
   color: white;
   width: 280px;
   padding: 16px;
@@ -69,25 +80,38 @@ const auth = useAuthStore()
   text-decoration: none;
   font-weight: bold;
   font-size: 1.1rem;
-  transition: transform 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 12px rgba(255, 111, 0, 0.2);
 }
+
 .btn-full-white {
-  background: white;
-  color: #0d124a;
+  background: #2d658d;
+  color: #ffffff;
   width: 280px;
   padding: 16px;
   border-radius: 12px;
+  border: 2px solid #2d658d;
   text-decoration: none;
   font-weight: bold;
   font-size: 1.1rem;
-  transition: transform 0.2s;
+  transition: transform 0.2s, background-color 0.2s;
 }
+
 .btn-full-orange:hover, .btn-full-white:hover {
   transform: scale(1.03);
 }
 
+.btn-full-white:hover {
+  background-color: #2d658d;
+}
+
+/* Ajustes para celulares */
 @media (max-width: 600px) {
-  .main-logo { font-size: 3.5rem; }
-  .btn-full-orange, .btn-full-white { width: 240px; }
+  .logo-img {
+    width: 280px; /* 👈 AJUSTADO: Un tamaño imponente para celular sin romper la pantalla */
+  }
+  .btn-full-orange, .btn-full-white {
+    width: 240px;
+  }
 }
 </style>

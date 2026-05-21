@@ -137,7 +137,7 @@ const handleSubmit = async () => {
 }
 
 .form-header h1 {
-  color: #111827;
+  color: #2c303b;
   font-size: 24px;
   margin: 0;
   font-weight: 800;
@@ -183,14 +183,14 @@ input, select {
 }
 
 input:focus, select:focus {
-  border-color: #ff6f00;
+  border-color: #2d658d;
   box-shadow: 0 0 0 3px rgba(255, 111, 0, 0.1);
 }
 
 .btn-submit {
   width: 100%;
   padding: 14px;
-  background: #ff6f00; /* Naranja corporativo */
+  background: #2d658d; /* Naranja corporativo */
   color: white;
   border: none;
   border-radius: 10px;

@@ -174,7 +174,7 @@ if (exito) {
   font-weight: 800;
   letter-spacing: 4px;
   font-size: 28px;
-  color: #5a8849;
+  color: #2c303b;
   user-select: none;
 }
 
@@ -253,7 +253,7 @@ input::placeholder {
   display: inline-block;
   margin: 4px 0 12px;
   font-size: 12px;
-  color: #1a237e;
+  color: #2c303b;
   text-decoration: none;
   font-weight: 600;
   touch-action: manipulation;
@@ -262,7 +262,7 @@ input::placeholder {
 .primary {
   width: 100%;
   padding: 12px;
-  background: #ff6f00;
+  background: #2d658d;
   color: white;
   border: none;
   border-radius: 10px;
@@ -310,7 +310,7 @@ input::placeholder {
 }
 
 .back a {
-  color: #1a237e;
+  color: #2c303b;
   font-weight: 700;
   text-decoration: none;
   touch-action: manipulation;
