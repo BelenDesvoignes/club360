@@ -6,14 +6,41 @@
       <div class="modal" tabindex="-1">
         <header class="modal-header">
           <div class="title-wrap">
-            <h2 class="title">Pagar {{ payeeLabel }}</h2>
-            <p class="subtitle">Usted está por pagar <strong>{{ formattedAmount }}</strong>.</p>
+            <h2 class="title">{{ titleText }}</h2>
+            <p class="subtitle">{{ subtitleText }} <strong>{{ formattedAmount }}</strong>.</p>
           </div>
           <button class="icon-btn" type="button" @click="close('dismiss')" aria-label="Cerrar">✕</button>
         </header>
 
         <section class="modal-body">
           <div class="summary">
+            <div class="summary-row">
+              <span class="k">Tipo</span>
+              <span class="v">{{ props.isAbono ? 'Abono mensual' : 'Clase' }}</span>
+            </div>
+
+            <div v-if="showPaymentOptions" class="summary-row">
+              <span class="k">Pago</span>
+              <div class="pay-options" role="group" aria-label="Tipo de pago">
+                <button
+                  type="button"
+                  class="pay-option"
+                  :class="{ active: selectedPaymentType === 'deposit' }"
+                  @click="selectedPaymentType = 'deposit'"
+                >
+                  Seña 50%
+                </button>
+                <button
+                  type="button"
+                  class="pay-option"
+                  :class="{ active: selectedPaymentType === 'full' }"
+                  @click="selectedPaymentType = 'full'"
+                >
+                  Total 100%
+                </button>
+              </div>
+            </div>
+
             <div class="summary-row">
               <span class="k">Monto</span>
               <span class="v">{{ formattedAmount }}</span>
@@ -84,7 +111,10 @@ import { gatewayService } from '../utils/gatewayService'
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   amount: { type: Number, required: true },
-  payeeName: { type: String, default: '' }
+  depositAmount: { type: Number, default: null },
+  fullAmount: { type: Number, default: null },
+  payeeName: { type: String, default: '' },
+  isAbono: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:modelValue', 'result'])
@@ -97,14 +127,38 @@ const isProcessing = ref(false)
 const message = ref('')
 const messageType = ref('') // success | error
 
+const selectedPaymentType = ref('deposit') // deposit | full
+
+const showPaymentOptions = computed(() => {
+  if (!props.modelValue) return false
+  if (props.isAbono) return false
+  const deposit = Number(props.depositAmount)
+  const full = Number(props.fullAmount)
+  if (!Number.isFinite(deposit) || deposit <= 0) return false
+  if (!Number.isFinite(full) || full <= 0) return false
+  return deposit < full
+})
+
+const effectiveAmount = computed(() => {
+  if (!showPaymentOptions.value) return props.amount
+  const deposit = Number(props.depositAmount)
+  const full = Number(props.fullAmount)
+  return selectedPaymentType.value === 'full' ? full : deposit
+})
+
 const storageKey = computed(() => {
   const email = auth.userEmail || 'anonymous'
   return `club360:card:${email}`
 })
 
 function loadLinkedCard() {
+  auth.hydrateFromToken()
+  const token = auth.token || localStorage.getItem('token')
+
   return axios
-    .get('/cards/me')
+    .get('/cards/me', {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined
+    })
     .then((res) => {
       const card = res.data
       if (!card) {
@@ -172,16 +226,24 @@ const canPay = computed(() => {
   if (isProcessing.value) return false
   if (!linkedCard.value) return false
   if (isCardExpired.value) return false
-  return Number.isFinite(props.amount) && props.amount > 0
+  return Number.isFinite(effectiveAmount.value) && effectiveAmount.value > 0
 })
 
 const payeeLabel = computed(() => props.payeeName?.trim() || 'monto requerido')
 
+const titleText = computed(() => {
+  return props.isAbono ? 'Pagar Abono' : `Pagar ${payeeLabel.value}`
+})
+
+const subtitleText = computed(() => {
+  return props.isAbono ? 'Usted está por pagar el abono por' : 'Usted está por pagar'
+})
+
 const formattedAmount = computed(() => {
   try {
-    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(props.amount)
+    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(effectiveAmount.value)
   } catch {
-    return `$ ${props.amount}`
+    return `$ ${effectiveAmount.value}`
   }
 })
 
@@ -230,14 +292,18 @@ async function pay() {
   try {
     const res = await gatewayService.charge({
       token: linkedCard.value.token,
-      amount: props.amount,
+      amount: effectiveAmount.value,
       cardStatus: linkedCard.value.status
     })
 
     if (res.status === 'approved') {
       message.value = 'Pago exitoso.'
       messageType.value = 'success'
-      emit('result', { status: 'Aprobado' })
+      emit('result', {
+        status: 'Aprobado',
+        amount: effectiveAmount.value,
+        paymentType: showPaymentOptions.value ? selectedPaymentType.value : null
+      })
       // autocierre suave
       setTimeout(() => emit('update:modelValue', false), 650)
       return
@@ -276,6 +342,9 @@ watch(
       loadLinkedCard()
       message.value = ''
       messageType.value = ''
+
+      // default: seña (50%) cuando hay opción
+      selectedPaymentType.value = 'deposit'
     }
   }
 )
@@ -358,6 +427,29 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 6px 0;
+}
+
+.pay-options {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.pay-option {
+  border-radius: 999px;
+  padding: 8px 10px;
+  border: 1px solid rgba(13, 18, 74, 0.18);
+  background: white;
+  color: #0d124a;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.pay-option.active {
+  border-color: rgba(45, 101, 141, 0.4);
+  background: rgba(45, 101, 141, 0.08);
+  color: #2d658d;
 }
 
 .k {
