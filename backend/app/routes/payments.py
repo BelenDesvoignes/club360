@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from app.database import get_db
-from app.services import payment_service
-from app.schemas.payment import PaymentCompleteBookingRequest, PaymentResponse
-from app.auth_utils import get_user_id_from_token
+from ..database import get_db
+from ..services import payment_service
+from ..schemas.payment import PaymentCompleteBookingRequest, PaymentResponse
+from ..auth_utils import get_user_id_from_token
 
 router = APIRouter()
 

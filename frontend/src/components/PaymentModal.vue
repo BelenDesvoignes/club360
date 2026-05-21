@@ -376,7 +376,7 @@ onMounted(() => {
   border-radius: 14px;
   padding: 14px;
   color: white;
-  background: linear-gradient(135deg, #2d658d, #5a8849);
+  background: #2d658d;
 }
 
 .card-preview.expired {

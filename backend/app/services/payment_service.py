@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from app.models.payment import Payment
-from app.models.booking import Booking
+from ..models.payment import Payment
+from ..models.booking import Booking
 from sqlalchemy import desc
 from datetime import timedelta
 

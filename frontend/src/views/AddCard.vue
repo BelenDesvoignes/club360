@@ -467,7 +467,7 @@ onMounted(() => {
 .linked-card {
   border-radius: 14px;
   padding: 16px;
-  background: linear-gradient(135deg, #2d658d, #5a8849);
+  background: #2d658d;
   color: white;
 }
 

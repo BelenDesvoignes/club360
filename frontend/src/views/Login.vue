@@ -67,12 +67,14 @@
             </div>
           </label>
 
-          <a class="forgot" href="#" @click.prevent>¿Olvidaste tu contraseña?</a>
-
+          <a class="forgot" href="#" @click.prevent="mostrarRecupero = true">
+              ¿Olvidaste tu contraseña?
+          </a>
           <button class="primary" type="submit" :disabled="cargando">
             {{ cargando ? 'Validando...' : 'Iniciar Sesión' }}
           </button>
         </form>
+        <ForgotPassword v-if="mostrarRecupero" @close="mostrarRecupero = false" />
 
         <div v-if="error" class="alert error" role="alert">{{ error }}</div>
 
@@ -91,6 +93,9 @@
 import { ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
+import ForgotPassword from '../components/ForgotPassword.vue'
+
+const mostrarRecupero = ref(false)
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -105,12 +110,15 @@ const handleLogin = async () => {
   error.value = ''
   try {
     const exito = await auth.login(credenciales.value.email, credenciales.value.password)
-    if (exito) {
-      // Redirigir según el rol o a una página de inicio
-      router.push('/')
-    }
+if (exito) {
+  if (auth.role === 'admin' || auth.role === 'empleado') {
+    router.push('/')
+  } else {
+    router.push('/dashboard')
+  }
+}
   } catch (err) {
-    error.value = err?.response?.data?.detail || err?.message || 'Error al iniciar sesión'
+    error.value = typeof err === 'string' ? err : 'Error al iniciar sesión'
   } finally {
     cargando.value = false
   }
@@ -166,7 +174,7 @@ const handleLogin = async () => {
   font-weight: 800;
   letter-spacing: 4px;
   font-size: 28px;
-  color: #5a8849;
+  color: #2c303b;
   user-select: none;
 }
 
@@ -245,7 +253,7 @@ input::placeholder {
   display: inline-block;
   margin: 4px 0 12px;
   font-size: 12px;
-  color: #1a237e;
+  color: #2c303b;
   text-decoration: none;
   font-weight: 600;
   touch-action: manipulation;
@@ -254,7 +262,7 @@ input::placeholder {
 .primary {
   width: 100%;
   padding: 12px;
-  background: #ff6f00;
+  background: #2d658d;
   color: white;
   border: none;
   border-radius: 10px;
@@ -302,7 +310,7 @@ input::placeholder {
 }
 
 .back a {
-  color: #1a237e;
+  color: #2c303b;
   font-weight: 700;
   text-decoration: none;
   touch-action: manipulation;

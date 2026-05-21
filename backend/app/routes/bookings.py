@@ -98,20 +98,20 @@ def debug_auth(authorization: str | None = Header(default=None), db: Session = D
         "all_bookings_in_db": 0,
         "bookings_for_extracted_user": None,
     }
-    
+
     if authorization and authorization.startswith("Bearer "):
         token = authorization.removeprefix("Bearer ").strip()
         user_id = get_user_id_from_token(token)
         debug_info["extracted_user_id"] = user_id
-        
+
         if user_id:
             bookings_count = db.query(Booking).filter(Booking.user_id == user_id).count()
             debug_info["bookings_for_extracted_user"] = bookings_count
-    
+
     # Total de bookings en toda la BD
     total_bookings = db.query(Booking).count()
     debug_info["all_bookings_in_db"] = total_bookings
-    
+
     return debug_info
 
 
@@ -119,14 +119,14 @@ def debug_auth(authorization: str | None = Header(default=None), db: Session = D
 def debug_all_bookings(db: Session = Depends(get_db)):
     """Endpoint de debug para ver TODOS los bookings por user_id"""
     from sqlalchemy import func
-    
+
     # Agrupar bookings por user_id y contar
     result = db.query(Booking.user_id, func.count(Booking.id).label('count')).group_by(Booking.user_id).all()
-    
+
     bookings_by_user = {}
     for user_id, count in result:
         bookings_by_user[user_id] = count
-    
+
     return {
         "total_bookings": db.query(Booking).count(),
         "bookings_by_user_id": bookings_by_user,
@@ -142,7 +142,7 @@ def debug_user_bookings(user_id: int, db: Session = Depends(get_db)):
         .order_by(Booking.created_at.desc())
         .all()
     )
-    
+
     result = []
     for booking in bookings:
         instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
@@ -181,12 +181,12 @@ def debug_user_bookings(user_id: int, db: Session = Depends(get_db)):
 def debug_user_info(user_id: int, db: Session = Depends(get_db)):
     """Endpoint de debug para ver info del usuario"""
     from ..models.user import User
-    
+
     user = db.query(User).filter(User.id_user == user_id).first()
-    
+
     if not user:
         return {"error": f"Usuario {user_id} no encontrado"}
-    
+
     return {
         "id": user.id_user,
         "email": user.email,
@@ -196,8 +196,8 @@ def debug_user_info(user_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{booking_id}/cancel", response_model=dict)
 def cancel_booking(booking_id: int, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    from app.models.user import UserRole
-    
+    from ..models.user import UserRole
+
     user_id = _extract_user_id(authorization)
 
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
@@ -213,3 +213,52 @@ def cancel_booking(booking_id: int, authorization: str | None = Header(default=N
     db.commit()
 
     return {"message": "Reserva cancelada exitosamente"}
+
+@router.get("/my-next")
+def get_my_next_booking(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
+):
+    from datetime import date, datetime
+
+    user_id = _extract_user_id(authorization)
+
+    hoy = date.today()
+    ahora = datetime.now().strftime("%H:%M")
+
+    bookings = (
+        db.query(Booking)
+        .filter(
+            Booking.user_id == user_id,
+            Booking.status != "Cancelled",
+        )
+        .all()
+    )
+
+    proxima = None
+    for booking in bookings:
+        instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
+        if not instance or instance.is_cancelled:
+            continue
+        if instance.date < hoy:
+            continue
+        if instance.date == hoy and instance.template and instance.template.start_time < ahora:
+            continue
+
+        if proxima is None or instance.date < proxima["date"] or (
+            instance.date == proxima["date"] and
+            instance.template.start_time < proxima["start_time"]
+        ):
+            proxima = {
+                "booking_id": booking.id,
+                "instance_id": instance.id,
+                "date": instance.date,
+                "start_time": instance.template.start_time if instance.template else None,
+                "activity_name": instance.template.activity.name if instance.template and instance.template.activity else None,
+            }
+
+    if not proxima:
+        return None
+
+    proxima["date"] = str(proxima["date"])
+    return proxima

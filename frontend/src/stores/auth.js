@@ -5,7 +5,8 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     token: localStorage.getItem('token') || null,
     role: localStorage.getItem('role') || null,
-    userEmail: localStorage.getItem('email') || null
+    userEmail: localStorage.getItem('email') || null,
+    user: JSON.parse(localStorage.getItem('user') || 'null'),
   }),
   getters: {
     isAuthenticated: (state) => !!state.token,
@@ -30,27 +31,30 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async login(email, password) {
-      try {
-        const res = await axios.post('/auth/login', { email, password })
+  try {
+    const res = await axios.post('/auth/login', { email, password })
 
-        // Guardamos en el estado
-        this.token = res.data.access_token
-        this.role = res.data.role
-        this.userEmail = email
+    this.token = res.data.access_token
+    this.role = res.data.role
+    this.userEmail = email
 
-        // Persistencia para que no se borre al refrescar la página
-        localStorage.setItem('token', this.token)
-        localStorage.setItem('role', this.role)
-        localStorage.setItem('email', email)
+    localStorage.setItem('token', this.token)
+    localStorage.setItem('role', this.role)
+    localStorage.setItem('email', email)
 
-        // Configuramos axios para que use este token en adelante
-        axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
+    // ✅ Primero configurar el header
+    axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`
 
-        return true
-      } catch (error) {
-        throw error.response?.data?.detail || 'Error al iniciar sesión'
-      }
-    },
+    // ✅ Después llamar a /auth/me
+    const meRes = await axios.get('/auth/me')
+    this.user = meRes.data
+    localStorage.setItem('user', JSON.stringify(meRes.data))
+
+    return true
+  } catch (error) {
+    throw error.response?.data?.detail || 'Error al iniciar sesión'
+  }
+},
     logout() {
       this.token = null
       this.role = null

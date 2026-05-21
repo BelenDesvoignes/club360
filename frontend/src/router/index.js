@@ -1,40 +1,71 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '../stores/auth' // Importante para la protección
+import { ref } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
+import GestionClientes from '../views/ClientManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
+import ShiftsManagement from '../views/ShiftsManagement.vue' // <--- 1. IMPORTAR EL NUEVO
+import ClientDashboard from '../views/ClientDashboard.vue'
+
+// TUS IMPORTS (Mantenemos solo Pagos)
+import UserPayments from '../views/UserPayments.vue'
+
+// IMPORTS DE DEV (Lo que trajeron tus compañeros)
 import MyBookings from '../views/MyBookings.vue'
 import ClassBooking from '../views/ClassBooking.vue'
 import AddCard from '../views/AddCard.vue'
 
 const routes = [
-  { path: '/', component: Home },
-  { path: '/login', component: Login },
-  { path: '/register', component: Register },
-  // Rutas protegidas (puedes crear estas vistas luego)
-  { path: '/reservar', component: ClassBooking },
-  { path: '/reservas', component: MyBookings, meta: { requiresAuth: true } },
-  { path: '/agregar-tarjeta', component: AddCard, meta: { requiresAuth: true } },
-  // Rutas protegidas - Solo Administradores
+  { path: '/', component: Home, meta: { headerTitle: 'CLUB360' } },
+  { path: '/login', component: Login, meta: { headerTitle: 'Iniciar sesión' } },
+  { path: '/register', component: Register, meta: { headerTitle: 'Crear cuenta' } },
+
+  // RUTAS DE SOCIO (Combinadas)
+  { path: '/reservar', component: ClassBooking, meta: { headerTitle: 'Reservar', headerSubtitle: 'Elegí deporte y tipo' } },
+  { path: '/reservas', component: MyBookings, meta: { requiresAuth: true, headerTitle: 'Mis reservas' } },
+  { path: '/agregar-tarjeta', component: AddCard, meta: { requiresAuth: true, headerTitle: 'Agregar tarjeta' } },
+  {
+    path: '/mis-pagos',
+    name: 'UserPayments',
+    component: UserPayments,
+    meta: { requiresAuth: true, headerTitle: 'Mis pagos' }
+  },
+
+  // RUTAS DE ADMINISTRADOR
   {
     path: '/clases',
-    component: { template: '<div><h1>Gestión de Clases</h1></div>' },
-    meta: { requiresAuth: true, role: 'admin' }
+    name: 'GestionClases',
+    component: ShiftsManagement,
+    meta: { requiresAuth: true, role: 'admin', headerTitle: 'Gestión de clases' }
   },
   {
     path: '/equipo',
     name: 'GestionEquipo',
     component: GestionEquipo,
-    meta: { requiresAuth: true, role: 'admin' }
+    meta: { requiresAuth: true, role: 'admin', headerTitle: 'Equipo' }
+  },
+  {
+    path: '/clientes',
+    name: 'GestionClientes',
+    component: GestionClientes,
+    meta: { requiresAuth: true, role: ['admin', 'empleado'], headerTitle: 'Clientes' }
   },
   {
     path: '/gestion-actividades',
     name: 'GestionActividades',
     component: ActivityManagement,
-    meta: { requiresAuth: true, role: 'admin' }
+    meta: { requiresAuth: true, role: 'admin', headerTitle: 'Actividades' }
   },
+  {
+  path: '/dashboard',
+  name: 'ClientDashboard',
+  component: ClientDashboard,
+  meta: { requiresAuth: true, headerTitle: 'Mi espacio' }
+},
+
 
 
 ]
@@ -44,21 +75,53 @@ const router = createRouter({
   routes
 })
 
-// Navigation Guard: Protege las rutas
+// Simple in-app navigation history (previous visited page)
+export const previousRoutePath = ref(null)
+
+// Navigation Guard
 router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
-  console.log("Ruta destino:", to.path)
-  console.log("Rol requerido:", to.meta.role)
-  console.log("Rol del usuario:", auth.role)
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     next('/login')
-  } else if (to.meta.role && auth.role !== to.meta.role) {
-    console.warn("Bloqueado por falta de permisos")
-    next('/')
-  } else {
-    next()
+    return
   }
+
+  // Si un cliente intenta ir a la raíz, mandarlo a su dashboard
+  if (to.path === '/' && auth.isAuthenticated && auth.role === 'cliente') {
+    next('/dashboard')
+    return
+  }
+
+  if (to.meta.role) {
+    const required = to.meta.role
+    if (Array.isArray(required)) {
+      if (!required.includes(auth.role)) {
+        next('/')
+        return
+      }
+    } else {
+      if (required === 'employee') {
+        if (!auth.isEmployee) {
+          next('/')
+          return
+        }
+      } else {
+        if (auth.role !== required) {
+          next('/')
+          return
+        }
+      }
+    }
+  }
+
+  next()
+})
+
+router.afterEach((to, from) => {
+  if (!from || !from.fullPath) return
+  if (from.fullPath === to.fullPath) return
+  previousRoutePath.value = from.fullPath
 })
 
 export default router

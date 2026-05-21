@@ -17,8 +17,8 @@
     <div v-else class="bookings-grid">
       <div v-for="booking in bookings" :key="booking.id" class="booking-card" :class="getCardClass(booking)">
         <div class="booking-header-card">
-          <div class="booking-status" :class="booking.status.toLowerCase()">
-            {{ getStatusLabel(booking.status) }}
+          <div class="booking-status" :class="getCardClass(booking)">
+            {{ getStatusLabel(booking.status, booking) }}
           </div>
           <span class="booking-id">#{{ booking.id }}</span>
         </div>
@@ -44,7 +44,14 @@
             <span class="created-at">Reservada el {{ formatDateTime(booking.created_at) }}</span>
           </div>
 
-          <div v-if="booking.status === 'Confirmed'" class="booking-actions">
+          <div v-if="isBookingExpired(booking)" class="booking-actions">
+            <div class="expired-notice">
+              <span class="expired-icon">🕐</span>
+              <span>Esta reserva ha expirado. Pasó la fecha y hora.</span>
+            </div>
+          </div>
+
+          <div v-else-if="booking.status === 'Confirmed'" class="booking-actions">
             <button @click="cancelBooking(booking.id)" class="btn btn-danger btn-sm">
               Cancelar Reserva
             </button>
@@ -142,7 +149,38 @@ const formatDateTime = (dateStr) => {
   return date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-const getStatusLabel = (status) => {
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return null
+  const rawDate = String(dateStr).split('T')[0]
+  const [year, month, day] = rawDate.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    const fallbackDate = new Date(dateStr)
+    return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate
+  }
+
+  const localDate = new Date(year, month - 1, day)
+  return Number.isNaN(localDate.getTime()) ? null : localDate
+}
+
+const isBookingExpired = (booking) => {
+  if (!booking.date || !booking.start_time) return false
+  const bookingDate = parseLocalDate(booking.date)
+  if (!bookingDate) return false
+
+  const [hours, minutes] = String(booking.start_time).split(':').map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return false
+
+  bookingDate.setHours(hours, minutes, 0, 0)
+  const now = new Date()
+  return now > bookingDate
+}
+
+const getStatusLabel = (status, booking) => {
+  // Si ya pasó la fecha/hora, mostrar "Expirada"
+  if (booking && isBookingExpired(booking)) {
+    return 'Fecha pasada'
+  }
   const labels = {
     'Confirmed': 'Confirmada',
     'Pending': 'Pendiente de Pago',
@@ -285,7 +323,7 @@ onMounted(() => {
   padding: 40px 20px;
   max-width: 1200px;
   margin: 0 auto;
-  background: linear-gradient(135deg, rgba(45, 101, 141, 0.08) 0%, rgba(90, 136, 73, 0.08) 55%, rgba(255, 111, 0, 0.08) 100%);
+  background: rgba(45, 101, 141, 0.06);
   min-height: 100vh;
 }
 
@@ -378,8 +416,13 @@ onMounted(() => {
   border-left-color: #5a8849;
 }
 
+.booking-card.status-expired {
+  border-left-color: #9ca3af;
+  opacity: 0.6;
+}
+
 .booking-header-card {
-  background: linear-gradient(135deg, #2d658d 0%, #5a8849 55%, #ff6f00 100%);
+  background: #2d658d;
   color: white;
   padding: 15px 20px;
   display: flex;
@@ -388,15 +431,19 @@ onMounted(() => {
 }
 
 .booking-card.status-confirmed .booking-header-card {
-  background: linear-gradient(135deg, #2d658d 0%, #5a8849 100%);
+  background: #5a8849;
 }
 
 .booking-card.status-pending .booking-header-card {
-  background: linear-gradient(135deg, #5a8849 0%, #ff6f00 100%);
+  background: #ff6f00;
 }
 
 .booking-card.status-cancelled .booking-header-card {
-  background: linear-gradient(135deg, #2d658d 0%, #ff6f00 100%);
+  background: #2d658d;
+}
+
+.booking-card.status-expired .booking-header-card {
+  background: #9ca3af;
 }
 
 .booking-status {
@@ -472,29 +519,44 @@ onMounted(() => {
 }
 
 .booking-actions .btn-danger {
-  background: linear-gradient(135deg, #ff6f00, #2d658d);
+  background: #ff6f00;
   color: white;
   border: none;
 }
 
 .booking-actions .btn-danger:hover {
-  background: linear-gradient(135deg, #e65f00, #24506f);
+  background: #ff6f00;
+  box-shadow: 0 8px 18px rgba(255, 111, 0, 0.22);
 }
 
 .booking-actions .btn-success {
-  background: linear-gradient(135deg, #5a8849, #2d658d);
+  background: #5a8849;
   color: white;
   border: none;
 }
 
 .booking-actions .btn-success:hover {
-  background: linear-gradient(135deg, #4c763e, #24506f);
+  background: #5a8849;
+  box-shadow: 0 8px 18px rgba(90, 136, 73, 0.22);
 }
 
 .booking-actions {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.expired-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 15px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 0.9rem;
+  width: 100%;
 }
 
 /* Modal styles */
