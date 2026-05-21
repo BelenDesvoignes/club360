@@ -285,7 +285,7 @@ onMounted(() => {
   padding: 40px 20px;
   max-width: 1200px;
   margin: 0 auto;
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  background: linear-gradient(135deg, rgba(45, 101, 141, 0.08) 0%, rgba(90, 136, 73, 0.08) 55%, rgba(255, 111, 0, 0.08) 100%);
   min-height: 100vh;
 }
 
@@ -296,14 +296,14 @@ onMounted(() => {
 
 .bookings-header h1 {
   font-size: 2.5rem;
-  color: #0d124a;
+  color: #2d658d;
   font-weight: 800;
   margin: 0 0 10px;
 }
 
 .bookings-header p {
   font-size: 1.1rem;
-  color: #6c757d;
+  color: #5a8849;
   margin: 0;
 }
 
@@ -353,7 +353,7 @@ onMounted(() => {
   transition: all 0.3s ease;
   display: flex;
   flex-direction: column;
-  border-left: 5px solid #007bff;
+  border-left: 5px solid #2d658d;
 }
 
 .booking-card:hover {
@@ -362,24 +362,24 @@ onMounted(() => {
 }
 
 .booking-card.status-confirmed {
-  border-left-color: #28a745;
+  border-left-color: #5a8849;
 }
 
 .booking-card.status-pending {
-  border-left-color: #ffc107;
+  border-left-color: #ff6f00;
 }
 
 .booking-card.status-cancelled {
-  border-left-color: #dc3545;
+  border-left-color: #2d658d;
   opacity: 0.7;
 }
 
 .booking-card.status-attended {
-  border-left-color: #6f42c1;
+  border-left-color: #5a8849;
 }
 
 .booking-header-card {
-  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+  background: linear-gradient(135deg, #2d658d 0%, #5a8849 55%, #ff6f00 100%);
   color: white;
   padding: 15px 20px;
   display: flex;
@@ -388,15 +388,15 @@ onMounted(() => {
 }
 
 .booking-card.status-confirmed .booking-header-card {
-  background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%);
+  background: linear-gradient(135deg, #2d658d 0%, #5a8849 100%);
 }
 
 .booking-card.status-pending .booking-header-card {
-  background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+  background: linear-gradient(135deg, #5a8849 0%, #ff6f00 100%);
 }
 
 .booking-card.status-cancelled .booking-header-card {
-  background: linear-gradient(135deg, #dc3545 0%, #a71d2a 100%);
+  background: linear-gradient(135deg, #2d658d 0%, #ff6f00 100%);
 }
 
 .booking-status {
@@ -462,13 +462,33 @@ onMounted(() => {
 }
 
 .pending-notice {
-  background: #fff3cd;
-  color: #856404;
+  background: #fff7ed;
+  color: #b45309;
   padding: 10px;
   border-radius: 6px;
   margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
+}
+
+.booking-actions .btn-danger {
+  background: linear-gradient(135deg, #ff6f00, #2d658d);
+  color: white;
+  border: none;
+}
+
+.booking-actions .btn-danger:hover {
+  background: linear-gradient(135deg, #e65f00, #24506f);
+}
+
+.booking-actions .btn-success {
+  background: linear-gradient(135deg, #5a8849, #2d658d);
+  color: white;
+  border: none;
+}
+
+.booking-actions .btn-success:hover {
+  background: linear-gradient(135deg, #4c763e, #24506f);
 }
 
 .booking-actions {
@@ -506,7 +526,7 @@ onMounted(() => {
 }
 
 .modal-icon.success {
-  color: #28a745;
+  color: #5a8849;
 }
 
 .modal-icon.error {
@@ -514,7 +534,7 @@ onMounted(() => {
 }
 
 .modal-icon.warning {
-  color: #ffc107;
+  color: #ff6f00;
 }
 
 .modal-content h2 {
