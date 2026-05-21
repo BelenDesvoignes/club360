@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { ref } from 'vue'
-import { useAuthStore } from '../stores/auth' 
+import { useAuthStore } from '../stores/auth'
 import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
@@ -8,7 +8,7 @@ import GestionEquipo from '../views/TeamManagement.vue'
 import GestionClientes from '../views/ClientManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
 import ShiftsManagement from '../views/ShiftsManagement.vue' // <--- 1. IMPORTAR EL NUEVO
-
+import ClientDashboard from '../views/ClientDashboard.vue'
 
 // TUS IMPORTS (Mantenemos solo Pagos)
 import UserPayments from '../views/UserPayments.vue'
@@ -27,18 +27,18 @@ const routes = [
   { path: '/reservar', component: ClassBooking, meta: { headerTitle: 'Reservar', headerSubtitle: 'Elegí deporte y tipo' } },
   { path: '/reservas', component: MyBookings, meta: { requiresAuth: true, headerTitle: 'Mis reservas' } },
   { path: '/agregar-tarjeta', component: AddCard, meta: { requiresAuth: true, headerTitle: 'Agregar tarjeta' } },
-  { 
-    path: '/mis-pagos', 
+  {
+    path: '/mis-pagos',
     name: 'UserPayments',
-    component: UserPayments, 
-    meta: { requiresAuth: true, headerTitle: 'Mis pagos' } 
+    component: UserPayments,
+    meta: { requiresAuth: true, headerTitle: 'Mis pagos' }
   },
 
   // RUTAS DE ADMINISTRADOR
   {
     path: '/clases',
     name: 'GestionClases',
-    component: ShiftsManagement, 
+    component: ShiftsManagement,
     meta: { requiresAuth: true, role: 'admin', headerTitle: 'Gestión de clases' }
   },
   {
@@ -59,6 +59,15 @@ const routes = [
     component: ActivityManagement,
     meta: { requiresAuth: true, role: 'admin', headerTitle: 'Actividades' }
   },
+  {
+  path: '/dashboard',
+  name: 'ClientDashboard',
+  component: ClientDashboard,
+  meta: { requiresAuth: true, headerTitle: 'Mi espacio' }
+},
+
+
+
 ]
 
 const router = createRouter({
@@ -72,8 +81,15 @@ export const previousRoutePath = ref(null)
 // Navigation Guard
 router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
+
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     next('/login')
+    return
+  }
+
+  // Si un cliente intenta ir a la raíz, mandarlo a su dashboard
+  if (to.path === '/' && auth.isAuthenticated && auth.role === 'cliente') {
+    next('/dashboard')
     return
   }
 
@@ -85,7 +101,6 @@ router.beforeEach((to, from, next) => {
         return
       }
     } else {
-      // Support special keyword 'employee' to allow empleado OR admin
       if (required === 'employee') {
         if (!auth.isEmployee) {
           next('/')

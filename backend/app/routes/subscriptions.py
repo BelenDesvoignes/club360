@@ -80,3 +80,75 @@ def purchase_subscription(
         "skipped_full": result.skipped_full,
         "skipped_existing": result.skipped_existing,
     }
+
+@router.get("/my-active")
+def get_my_active_subscription_dashboard(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    from app.models.subscription import Subscription
+    from app.models.shift_template import ShiftTemplate
+    from app.models.activity import Activity
+    from datetime import date
+
+    user_id = _extract_user_id(authorization)
+
+    sub = (
+        db.query(Subscription)
+        .filter(
+            Subscription.user_id == user_id,
+            Subscription.status == "active",
+            Subscription.valid_to >= date.today(),
+        )
+        .order_by(Subscription.valid_to.desc())
+        .first()
+    )
+
+    if not sub:
+        return None
+
+    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == sub.template_id).first()
+    actividad = db.query(Activity).filter(Activity.id == template.activity_id).first() if template else None
+
+    return {
+        "subscription_id": sub.id,
+        "actividad": actividad.name if actividad else None,
+        "valid_to": str(sub.valid_to),
+        "status": sub.status,
+    }
+
+@router.get("/my-active-all")
+def get_all_my_active_subscriptions(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    from app.models.subscription import Subscription
+    from app.models.shift_template import ShiftTemplate
+    from app.models.activity import Activity
+    from datetime import date
+
+    user_id = _extract_user_id(authorization)
+
+    subs = (
+        db.query(Subscription)
+        .filter(
+            Subscription.user_id == user_id,
+            Subscription.status == "active",
+            Subscription.valid_to >= date.today(),
+        )
+        .order_by(Subscription.valid_to.asc())
+        .all()
+    )
+
+    result = []
+    for sub in subs:
+        template = db.query(ShiftTemplate).filter(ShiftTemplate.id == sub.template_id).first()
+        actividad = db.query(Activity).filter(Activity.id == template.activity_id).first() if template else None
+        result.append({
+            "subscription_id": sub.id,
+            "actividad": actividad.name if actividad else None,
+            "valid_to": str(sub.valid_to),
+            "status": sub.status,
+        })
+
+    return result

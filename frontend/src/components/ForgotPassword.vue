@@ -126,7 +126,8 @@ async function solicitarCodigo() {
     digitos.value = ['', '', '', '', '', '']
     paso.value = 2
   } catch (e) {
-    error.value = 'Error al enviar el código. Verificá el email.'
+    // Muestra el mensaje que viene del backend si existe, si no uno genérico
+    error.value = e?.response?.data?.detail || 'Error al enviar el código.'
   } finally {
     cargando.value = false
   }

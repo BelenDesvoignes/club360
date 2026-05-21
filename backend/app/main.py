@@ -50,4 +50,6 @@ app.include_router(payments.router, prefix="/payments", tags=["payments"])
 app.include_router(cards.router)
 app.include_router(subscriptions.router)
 app.include_router(dashboard.router)
+from .routes import attendances  # ← agregar al import
+app.include_router(attendances.router)  # ← agregar junto a los otros
 
