@@ -4,7 +4,6 @@
 
     <main :class="['main-content', { 'full-width': !isSidebarOpen || !auth.isAuthenticated }]">
       <div class="app-mobile-header">
-        <BackButton variant="icon" />
         <div class="app-mobile-header-text">
           <div class="app-mobile-title">{{ headerTitle }}</div>
           <div v-if="headerSubtitle" class="app-mobile-subtitle">{{ headerSubtitle }}</div>
@@ -13,7 +12,6 @@
       </div>
 
       <div class="app-toolbar">
-        <BackButton variant="pill" />
       </div>
       <router-view />
     </main>
@@ -24,7 +22,6 @@
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar.vue'
-import BackButton from './components/BackButton.vue'
 import { useAuthStore } from './stores/auth'
 
 const auth = useAuthStore()

@@ -74,6 +74,7 @@
       v-model="showGatewayModal"
       :amount="pendingPaymentAmount"
       :payeeName="pendingPayeeName"
+      :isAbono="false"
       @result="onGatewayResult"
     />
 
@@ -298,6 +299,7 @@ async function onGatewayResult(result) {
       { headers: { Authorization: `Bearer ${token}` } }
     )
 
+    errorMessage.value = ''
     successMessage.value = 'Pago exitoso. Tu reserva quedó confirmada.'
     pendingBookingId.value = null
     pendingPaymentAmount.value = 0
@@ -306,6 +308,7 @@ async function onGatewayResult(result) {
       fetchBookings()
     }, 800)
   } catch (e) {
+    successMessage.value = ''
     errorMessage.value = e.response?.data?.detail || 'Error al confirmar el pago'
   }
 }
