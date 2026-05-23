@@ -7,6 +7,7 @@ from ..models.shift_template import ShiftTemplate
 from ..models.shift_instance import ShiftInstance
 from ..models.booking import Booking
 from ..services import shift_service
+from ..time_override import business_today
 
 router = APIRouter(prefix="/activities", tags=["activities"])
 
@@ -89,7 +90,7 @@ def delete_shift_template(
     # Solo instancias futuras
     future_instances = db.query(ShiftInstance).filter(
         ShiftInstance.template_id == template_id,
-        ShiftInstance.date >= date.today(),
+        ShiftInstance.date >= business_today(),
         ShiftInstance.is_cancelled == False
     ).all()
     inst_ids = [i.id for i in future_instances]

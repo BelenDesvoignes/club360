@@ -10,6 +10,7 @@ from app.database import get_db
 from app.services import subscription_service
 from app.services.booking_service import get_active_subscription
 from app.services.booking_service import is_user_suspended
+from app.time_override import business_today
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
@@ -33,7 +34,7 @@ def get_my_active_subscription(
     db: Session = Depends(get_db),
 ):
     user_id = _extract_user_id(authorization)
-    subscription = get_active_subscription(db, user_id, template_id, for_date=date.today())
+    subscription = get_active_subscription(db, user_id, template_id, for_date=business_today())
 
     return {
         "active": subscription is not None,
@@ -98,7 +99,7 @@ def get_my_active_subscription_dashboard(
         .filter(
             Subscription.user_id == user_id,
             Subscription.status == "active",
-            Subscription.valid_to >= date.today(),
+            Subscription.valid_to >= business_today(),
         )
         .order_by(Subscription.valid_to.desc())
         .first()
@@ -134,7 +135,7 @@ def get_all_my_active_subscriptions(
         .filter(
             Subscription.user_id == user_id,
             Subscription.status == "active",
-            Subscription.valid_to >= date.today(),
+            Subscription.valid_to >= business_today(),
         )
         .order_by(Subscription.valid_to.asc())
         .all()

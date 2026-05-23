@@ -15,6 +15,8 @@ from app.models.shift_template import ShiftTemplate
 from app.models.subscription import Subscription
 from app.models.suspension import Suspension
 
+from app.time_override import business_today, business_utcnow
+
 
 DAYS_MAP = {
     "Lunes": 0,
@@ -118,7 +120,7 @@ class PurchaseResult:
 
 
 def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id: int, today: date | None = None) -> PurchaseResult:
-    today = today or date.today()
+    today = today or business_today()
 
     if today.day < 1 or today.day > 30:
         raise HTTPException(
@@ -161,7 +163,7 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
     if monthly_price <= 0:
         raise HTTPException(status_code=400, detail="No se pudo determinar el precio mensual")
 
-    purchase_dt = datetime.utcnow()
+    purchase_dt = business_utcnow()
 
     subscription = Subscription(
         user_id=user_id,
@@ -265,7 +267,7 @@ def suspend_users_for_unpaid_subscriptions(db: Session, *, today: date | None = 
 
     Intended to be triggered daily by a cron job calling an admin endpoint.
     """
-    today = today or date.today()
+    today = today or business_today()
     if today.day <= 30:
         return {"suspended": 0, "already_suspended": 0, "skipped": 0}
 
@@ -329,7 +331,7 @@ def suspend_users_for_unpaid_subscriptions(db: Session, *, today: date | None = 
             Suspension(
                 user_id=user_id,
                 reason="Suspensión automática por falta de pago del abono mensual (1-30).",
-                start_date=datetime.utcnow(),
+                start_date=business_utcnow(),
                 end_date=None,
                 status="active",
             )
@@ -352,7 +354,7 @@ def ensure_user_suspension_if_unpaid(db: Session, *, user_id: int, today: date |
 
     Returns True if a new suspension was created.
     """
-    today = today or date.today()
+    today = today or business_today()
     if today.day <= 30:
         return False
 
@@ -413,7 +415,7 @@ def ensure_user_suspension_if_unpaid(db: Session, *, user_id: int, today: date |
         Suspension(
             user_id=user_id,
             reason="Suspensión automática por falta de pago del abono mensual (1-30).",
-            start_date=datetime.utcnow(),
+            start_date=business_utcnow(),
             end_date=None,
             status="active",
         )
@@ -429,7 +431,7 @@ def purchase_half_month_subscription_and_reserve(
 #valid_to igual, fin de mes.
     db: Session, *, user_id: int, template_id: int, today: date | None = None
 ) -> PurchaseResult:
-    today = today or date.today()
+    today = today or business_today()
 
     template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
     if not template:
@@ -477,7 +479,7 @@ def purchase_half_month_subscription_and_reserve(
     if half_month_price <= 0:
         raise HTTPException(status_code=400, detail="No se pudo determinar el precio del abono.")
 
-    purchase_dt = datetime.utcnow()
+    purchase_dt = business_utcnow()
 
     subscription = Subscription(
         user_id=user_id,

@@ -8,6 +8,7 @@ from ..models.booking import Booking
 from ..models.user import User
 from ..services import booking_service
 from ..auth_utils import get_user_id_from_token
+from ..time_override import business_today
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
@@ -219,11 +220,11 @@ def get_my_next_booking(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db)
 ):
-    from datetime import date, datetime
+    from datetime import datetime
 
     user_id = _extract_user_id(authorization)
 
-    hoy = date.today()
+    hoy = business_today()
     ahora = datetime.now().strftime("%H:%M")
 
     bookings = (

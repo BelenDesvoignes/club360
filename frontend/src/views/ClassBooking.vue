@@ -277,9 +277,11 @@ import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useAppClockStore } from '../stores/appClock'
 import PaymentModal from '../components/PaymentModal.vue'
 
 const auth = useAuthStore()
+const clock = useAppClockStore()
 const router = useRouter()
 const dayOrder = {
   Lunes: 1,
@@ -427,7 +429,7 @@ const countRemainingMonthlyOccurrences = (dayOfWeek) => {
   const targetDay = weekdayToJsIndex[dayOfWeek]
   if (targetDay === undefined) return 0
 
-  const today = new Date()
+  const today = clock.effectiveNow
   const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
   let count = 0
 
@@ -450,7 +452,7 @@ function computeAmountToPay() {
 }
 
 const isSubscriptionWindowOpen = computed(() => {
-  const day = new Date().getDate()
+  const day = clock.effectiveNow.getDate()
   return day >= 1 && day <= 30
 })
 

@@ -89,8 +89,10 @@
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
+import { useAppClockStore } from '../stores/appClock'
 
 const auth = useAuthStore()
+const clock = useAppClockStore()
 const loading = ref(true)
 
 const abonos = ref([])
@@ -99,7 +101,7 @@ const asistenciasMes = ref(0)
 
 // Helpers para los abonos
 const calcDias = (validTo) => {
-  const diff = Math.ceil((new Date(validTo) - new Date()) / (1000 * 60 * 60 * 24))
+  const diff = Math.ceil((new Date(validTo) - clock.effectiveNow) / (1000 * 60 * 60 * 24))
   return Math.max(0, diff)
 }
 const calcPorcentaje = (validTo) => Math.min(100, Math.round((calcDias(validTo) / 30) * 100))
@@ -124,8 +126,15 @@ const nombreCompleto = computed(() => {
 
 const labelFechaClase = computed(() => {
   if (!proximaClase.value?.date) return ''
-  const hoy = new Date().toISOString().split('T')[0]
-  const manana = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+  const formatLocalYyyyMmDd = (dt) => {
+    const y = dt.getFullYear()
+    const m = String(dt.getMonth() + 1).padStart(2, '0')
+    const d = String(dt.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
+  const hoy = clock.effectiveTodayStr
+  const manana = formatLocalYyyyMmDd(new Date(clock.effectiveNow.getTime() + 86400000))
   if (proximaClase.value.date === hoy) return 'Hoy'
   if (proximaClase.value.date === manana) return 'Mañana'
   return new Date(proximaClase.value.date).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -133,7 +142,13 @@ const labelFechaClase = computed(() => {
 
 const tiempoHastaClase = computed(() => {
   if (!proximaClase.value) return ''
-  const ahora = new Date()
+  const ahora = (() => {
+    if (!clock.hasOverride) return new Date()
+    const real = new Date()
+    const simulated = new Date(clock.effectiveNow)
+    simulated.setHours(real.getHours(), real.getMinutes(), real.getSeconds(), real.getMilliseconds())
+    return simulated
+  })()
   const [h, m] = proximaClase.value.start_time.split(':').map(Number)
   const claseDate = new Date(proximaClase.value.date)
   claseDate.setHours(h, m, 0, 0)

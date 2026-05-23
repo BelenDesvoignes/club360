@@ -171,9 +171,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
+import { useAppClockStore } from '../stores/appClock'
 
 // Control de carga general
 const loading = ref(true)
+const clock = useAppClockStore()
 
 // Estados reactivos
 const reservasHoy = ref(0)
@@ -215,7 +217,7 @@ const inicializarDashboard = async () => {
     historialActividad.value = resSummary.data.activity_feed
 
     // Asignar y procesar datos de /shifts/instances
-    const hoyStr = new Date().toISOString().split('T')[0]
+    const hoyStr = clock.effectiveTodayStr
     todasLasClasesDelDia.value = resShifts.data.filter(clase => clase.date === hoyStr)
     
     procesarFiltroClases()

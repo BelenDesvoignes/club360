@@ -6,6 +6,8 @@ from ..models.shift_instance import ShiftInstance
 from ..auth_utils import get_user_id_from_token
 from datetime import date
 
+from ..time_override import business_today
+
 router = APIRouter(prefix="/attendances", tags=["attendances"])
 
 
@@ -26,7 +28,7 @@ def get_my_month_attendance_count(
 ):
     user_id = _extract_user_id(authorization)
 
-    hoy = date.today()
+    hoy = business_today()
     primer_dia = hoy.replace(day=1)
 
     asistencias = (

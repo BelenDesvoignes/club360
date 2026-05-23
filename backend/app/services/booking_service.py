@@ -9,6 +9,7 @@ from ..models.suspension import Suspension
 from ..models.payment import Payment
 from .subscription_service import ensure_user_suspension_if_unpaid
 from fastapi import HTTPException, status
+from ..time_override import business_today
 
 
 def is_user_suspended(db: Session, user_id: int) -> bool:
@@ -154,7 +155,7 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
         )
     
     # Rule 5: Check if booking date is in the future
-    if instance.date < datetime.now().date():
+    if instance.date < business_today():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No puedes hacer reservas para clases pasadas"
