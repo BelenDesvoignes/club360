@@ -10,6 +10,7 @@ from ..database import get_db
 from ..schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut, ShiftDetailResponse
 from ..models.shift_template import ShiftTemplate
 from ..services import shift_service
+from ..time_override import business_today
 
 router = APIRouter(prefix="/shifts", tags=["shifts"])
 
@@ -56,7 +57,7 @@ def get_instances(db: Session = Depends(get_db)):
         .join(ShiftInstance, ShiftInstance.template_id == ShiftTemplate.id)
         .filter(
             ShiftTemplate.id.in_(template_ids),
-            ShiftInstance.date >= date.today(),
+            ShiftInstance.date >= business_today(),
             ShiftInstance.is_cancelled == False
         )
         .distinct()
@@ -100,7 +101,7 @@ def get_instances(db: Session = Depends(get_db)):
         .outerjoin(booking_count_sq, ShiftInstance.id == booking_count_sq.c.instance_id)
         .filter(Activity.is_active == True)
         .filter(ShiftTemplate.is_active == True)
-        .filter(ShiftInstance.date >= date.today())
+        .filter(ShiftInstance.date >= business_today())
         .filter(ShiftInstance.is_cancelled == False)
         .order_by(ShiftInstance.date.asc(), ShiftTemplate.start_time.asc())
         .all()
@@ -237,7 +238,7 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
         db.query(ShiftInstance)
         .filter(
             ShiftInstance.template_id == template_id,
-            ShiftInstance.date >= date.today(),
+            ShiftInstance.date >= business_today(),
             ShiftInstance.is_cancelled == False
         )
         .all()

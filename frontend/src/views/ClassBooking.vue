@@ -182,6 +182,7 @@
       :fullAmount="Number(selectedInstance?.template?.price || 0)"
       :payeeName="selectedInstance?.activity_name || 'Reserva'"
       :isAbono="paymentType === 'monthly'"
+      :busy="finalizingPayment"
       @result="onGatewayResult"
     />
 
@@ -277,9 +278,11 @@ import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useAppClockStore } from '../stores/appClock'
 import PaymentModal from '../components/PaymentModal.vue'
 
 const auth = useAuthStore()
+const clock = useAppClockStore()
 const router = useRouter()
 const dayOrder = {
   Lunes: 1,
@@ -338,6 +341,12 @@ const paymentType = ref('seña')
 
 const showGatewayModal = ref(false)
 const pendingPaymentAmount = ref(0)
+const finalizingPayment = ref(false)
+
+// Subscription quote state (backend is source of truth)
+const subscriptionQuoteAmount = ref(0)
+const subscriptionPayNowRequired = ref(true)
+const subscriptionQuoteReason = ref('')
 
 // Reservation UI state
 const reservationType = ref('class') // 'class' or 'subscription'
@@ -427,7 +436,7 @@ const countRemainingMonthlyOccurrences = (dayOfWeek) => {
   const targetDay = weekdayToJsIndex[dayOfWeek]
   if (targetDay === undefined) return 0
 
-  const today = new Date()
+  const today = clock.effectiveNow
   const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
   let count = 0
 
@@ -444,15 +453,15 @@ function computeAmountToPay() {
   const price = Number(selectedInstance.value?.template?.price || 0)
   if (!Number.isFinite(price) || price <= 0) return 0
   if (paymentType.value === 'monthly') {
+    if (Number.isFinite(subscriptionQuoteAmount.value) && subscriptionQuoteAmount.value > 0) {
+      return subscriptionQuoteAmount.value
+    }
     return price * countRemainingMonthlyOccurrences(selectedInstance.value?.template?.day_of_week)
   }
   return paymentType.value === 'full' ? price : price * 0.5
 }
 
-const isSubscriptionWindowOpen = computed(() => {
-  const day = new Date().getDate()
-  return day >= 1 && day <= 30
-})
+const isSubscriptionWindowOpen = computed(() => true)
 
 const groupedActivities = computed(() => {
   const groups = new Map()
@@ -686,10 +695,7 @@ const selectInstanceForBooking = async (instance) => {
 }
 
 const selectTemplateForSubscription = async (template, activity_name) => {
-  if (!isSubscriptionWindowOpen.value) {
-    errorMessage.value = '⚠️ El abono mensual solo puede pagarse entre el día 1 y el 30.'
-    return
-  }
+  if (bookingInProgress.value) return
 
   // prepare selectedInstance shape similar to instance for reuse in modal
   selectedInstance.value = {
@@ -708,6 +714,32 @@ const selectTemplateForSubscription = async (template, activity_name) => {
     return
   }
 
+  // Ask backend for the quote (discount + remaining classes + pay-now rule)
+  try {
+    auth.hydrateFromToken()
+    const token = auth.token || localStorage.getItem('token')
+    if (!token) {
+      errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+      closePaymentModal()
+      return
+    }
+
+    const quoteRes = await axios.get('/subscriptions/quote', {
+      params: { template_id: template.id },
+      headers: { Authorization: `Bearer ${token}` }
+    })
+
+    subscriptionQuoteAmount.value = Number(quoteRes.data?.amount || 0)
+    subscriptionPayNowRequired.value = Boolean(quoteRes.data?.pay_now_required)
+    subscriptionQuoteReason.value = String(quoteRes.data?.discount_reason || '')
+  } catch (e) {
+    if (handleAuthError(e)) return
+    const detail = e.response?.data?.detail || 'No se pudo calcular el abono.'
+    errorMessage.value = detail
+    closePaymentModal()
+    return
+  }
+
   pendingPaymentAmount.value = computeAmountToPay()
   if (!pendingPaymentAmount.value) {
     errorMessage.value = 'No se pudo determinar el monto a pagar.'
@@ -715,6 +747,22 @@ const selectTemplateForSubscription = async (template, activity_name) => {
     return
   }
 
+  // Days 1–10: pago pendiente permitido -> NO mostrar modal de pago.
+  if (subscriptionPayNowRequired.value === false) {
+    bookingInProgress.value = true
+    finalizeSubscriptionPurchase()
+      .catch((e) => {
+        if (handleAuthError(e)) return
+        const detail = e.response?.data?.detail || 'Error al procesar la operación'
+        errorMessage.value = detail
+      })
+      .finally(() => {
+        bookingInProgress.value = false
+      })
+    return
+  }
+
+  // Day 11+: pago en el momento -> mostrar modal.
   showGatewayModal.value = true
 }
 
@@ -778,8 +826,15 @@ async function finalizeSubscriptionPurchase() {
 
   bookingStatus.value = 'completed'
   errorMessage.value = ''
-  successMessage.value = `¡Abono mensual comprado! Reservas creadas: ${res.data.bookings_created}. ` +
-    `Saltadas (sin cupo): ${res.data.skipped_full}. Ya existentes: ${res.data.skipped_existing}. Vigencia hasta: ${res.data.valid_to}.`
+  const pagoTxt = subscriptionPayNowRequired.value
+    ? 'Pago registrado.'
+    : `Pago pendiente: $${pendingPaymentAmount.value}.`
+  const reglaTxt = subscriptionQuoteReason.value ? ` ${subscriptionQuoteReason.value}` : ''
+
+  successMessage.value = `¡Abono mensual registrado! ${pagoTxt}${reglaTxt} ` +
+    `Reservas creadas: ${res.data.bookings_created}. ` +
+    `Saltadas (sin cupo): ${res.data.skipped_full}. Ya existentes: ${res.data.skipped_existing}. ` +
+    `Vigencia hasta: ${res.data.valid_to}.`
 
   closePaymentModal()
   showGatewayModal.value = false
@@ -794,6 +849,9 @@ const closePaymentModal = () => {
   selectedInstance.value = null
   paymentType.value = 'seña'
   isUserAbonado.value = false
+  subscriptionQuoteAmount.value = 0
+  subscriptionPayNowRequired.value = true
+  subscriptionQuoteReason.value = ''
 }
 
 async function finalizeBookingWithPayment() {
@@ -845,6 +903,8 @@ async function finalizeBookingWithPayment() {
 
 function onGatewayResult(result) {
   if (!result) return
+  const isSubscription = paymentType.value === 'monthly'
+
   if (result.status === 'Aprobado') {
     if (Number.isFinite(result.amount) && result.amount > 0) {
       pendingPaymentAmount.value = result.amount
@@ -860,7 +920,26 @@ function onGatewayResult(result) {
       ? finalizeSubscriptionPurchase
       : finalizeBookingWithPayment
 
-    afterApproved().catch((e) => {
+    finalizingPayment.value = true
+    afterApproved()
+      .then(() => {
+        showGatewayModal.value = false
+      })
+      .catch((e) => {
+        if (handleAuthError(e)) return
+        const detail = e.response?.data?.detail || 'Error al procesar la operación'
+        errorMessage.value = detail
+      })
+      .finally(() => {
+        finalizingPayment.value = false
+      })
+    return
+  }
+
+  // Days 1-10: allow subscription purchase even if payment isn't effective (pending payment).
+  if (isSubscription && subscriptionPayNowRequired.value === false) {
+    showGatewayModal.value = false
+    finalizeSubscriptionPurchase().catch((e) => {
       if (handleAuthError(e)) return
       const detail = e.response?.data?.detail || 'Error al procesar la operación'
       errorMessage.value = detail

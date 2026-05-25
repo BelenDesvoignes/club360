@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from datetime import date
 
+from ..time_override import business_today
+
 from ..database import get_db
 from ..models.user import User, UserRole
 from ..models.subscription import Subscription
@@ -13,7 +15,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("/summary")
 def get_dashboard_summary(db: Session = Depends(get_db)):
-    hoy = date.today()
+    hoy = business_today()
     
     # 1. Contar Abonos Activos reales en la DB
     abonos_activos = (

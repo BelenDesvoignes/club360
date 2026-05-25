@@ -13,6 +13,12 @@ if (token) {
   axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
 }
 
+// Día corrido (simulación): si existe, lo enviamos en cada request
+const simulatedToday = localStorage.getItem('club360_simulated_today')
+if (simulatedToday) {
+  axios.defaults.headers.common['X-Club360-Today'] = simulatedToday
+}
+
 const app = createApp(App)
 app.use(createPinia()) // <--- Agregar
 app.use(router)
