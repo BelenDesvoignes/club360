@@ -9,7 +9,7 @@ from ..models.suspension import Suspension
 from ..models.payment import Payment
 from .subscription_service import ensure_user_suspension_if_unpaid
 from fastapi import HTTPException, status
-from ..time_override import business_today
+from ..time_override import business_today, business_utcnow
 
 
 def is_user_suspended(db: Session, user_id: int) -> bool:
@@ -194,6 +194,7 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
     booking = Booking(
         user_id=user_id,
         instance_id=instance_id,
+        created_at=business_utcnow(),
         status="Confirmed" if is_abonado else "Pending",
         subscription_id=active_subscription.id if active_subscription else None,
         amount_paid=0,
@@ -209,7 +210,8 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
             user_id=user_id,
             amount=seña_amount,
             status="pending",
-            type="booking"
+            type="booking",
+            date=business_utcnow(),
         )
         db.add(payment)
     

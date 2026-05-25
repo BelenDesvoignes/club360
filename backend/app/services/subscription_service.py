@@ -157,12 +157,6 @@ def get_subscription_quote(
 ) -> SubscriptionQuote:
     today = today or business_today()
 
-    if today.day < 1 or today.day > 30:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El abono mensual solo se permite entre el día 1 y el 30 de cada mes.",
-        )
-
     template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Template no encontrado")
@@ -251,12 +245,6 @@ class PurchaseResult:
 
 def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id: int, today: date | None = None) -> PurchaseResult:
     today = today or business_today()
-
-    if today.day < 1 or today.day > 30:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El abono mensual solo se permite entre el día 1 y el 30 de cada mes.",
-        )
 
     template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
     if not template:
@@ -362,6 +350,7 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
                 Booking(
                     user_id=user_id,
                     instance_id=instance.id,
+                    created_at=purchase_dt,
                     status="Confirmed",
                     subscription_id=subscription.id,
                     amount_paid=0,
@@ -673,6 +662,7 @@ def purchase_half_month_subscription_and_reserve(
                 Booking(
                     user_id=user_id,
                     instance_id=instance.id,
+                    created_at=purchase_dt,
                     status="Confirmed",
                     subscription_id=subscription.id,
                     amount_paid=half_month_price,

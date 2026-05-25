@@ -461,10 +461,7 @@ function computeAmountToPay() {
   return paymentType.value === 'full' ? price : price * 0.5
 }
 
-const isSubscriptionWindowOpen = computed(() => {
-  const day = clock.effectiveNow.getDate()
-  return day >= 1 && day <= 30
-})
+const isSubscriptionWindowOpen = computed(() => true)
 
 const groupedActivities = computed(() => {
   const groups = new Map()
@@ -698,10 +695,7 @@ const selectInstanceForBooking = async (instance) => {
 }
 
 const selectTemplateForSubscription = async (template, activity_name) => {
-  if (!isSubscriptionWindowOpen.value) {
-    errorMessage.value = '⚠️ El abono mensual solo puede pagarse entre el día 1 y el 30.'
-    return
-  }
+  if (bookingInProgress.value) return
 
   // prepare selectedInstance shape similar to instance for reuse in modal
   selectedInstance.value = {
@@ -753,6 +747,22 @@ const selectTemplateForSubscription = async (template, activity_name) => {
     return
   }
 
+  // Days 1–10: pago pendiente permitido -> NO mostrar modal de pago.
+  if (subscriptionPayNowRequired.value === false) {
+    bookingInProgress.value = true
+    finalizeSubscriptionPurchase()
+      .catch((e) => {
+        if (handleAuthError(e)) return
+        const detail = e.response?.data?.detail || 'Error al procesar la operación'
+        errorMessage.value = detail
+      })
+      .finally(() => {
+        bookingInProgress.value = false
+      })
+    return
+  }
+
+  // Day 11+: pago en el momento -> mostrar modal.
   showGatewayModal.value = true
 }
 

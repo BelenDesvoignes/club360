@@ -3,6 +3,7 @@ from ..models.payment import Payment
 from ..models.booking import Booking
 from sqlalchemy import desc
 from datetime import timedelta
+from ..time_override import business_utcnow
 
 def get_payments_by_user(db: Session, user_id: int):
     """
@@ -51,7 +52,7 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
         )
 
     if not payment:
-        payment = Payment(user_id=user_id, amount=amount, status="completed", type="booking")
+        payment = Payment(user_id=user_id, amount=amount, status="completed", type="booking", date=business_utcnow())
         db.add(payment)
     else:
         payment.amount = amount

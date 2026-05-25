@@ -131,9 +131,11 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
+import { useAppClockStore } from '../stores/appClock'
 import PaymentModal from '../components/PaymentModal.vue'
 
 const auth = useAuthStore()
+const clock = useAppClockStore()
 const bookings = ref([])
 const loading = ref(false)
 const successMessage = ref('')
@@ -182,7 +184,7 @@ const isBookingExpired = (booking) => {
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return false
 
   bookingDate.setHours(hours, minutes, 0, 0)
-  const now = new Date()
+  const now = clock.effectiveNow
   return now > bookingDate
 }
 
@@ -365,6 +367,7 @@ async function onGatewayResult(result) {
 }
 
 onMounted(() => {
+  clock.hydrateFromStorage()
   if (!auth.isAuthenticated) {
     return
   }
