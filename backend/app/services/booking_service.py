@@ -196,6 +196,8 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
         instance_id=instance_id,
         status="Confirmed" if is_abonado else "Pending",
         subscription_id=active_subscription.id if active_subscription else None,
+        amount_paid=0,
+        payment_status="paid" if is_abonado else "partial",
     )
     
     db.add(booking)

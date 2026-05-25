@@ -108,6 +108,136 @@ def _subscription_already_purchased_this_month(db: Session, *, user_id: int, tem
     return False
 
 
+def _previous_month_date_range(today: date) -> tuple[date, date]:
+    """Return the inclusive date range for the previous calendar month."""
+    first_this_month = date(today.year, today.month, 1)
+    last_prev_month = first_this_month - timedelta(days=1)
+    first_prev_month = date(last_prev_month.year, last_prev_month.month, 1)
+    return first_prev_month, last_prev_month
+
+
+def _count_cancelled_subscription_bookings_prev_month(
+    db: Session, *, user_id: int, template_id: int, today: date
+) -> int:
+    start_prev, end_prev = _previous_month_date_range(today)
+
+    return (
+        db.query(Booking)
+        .join(ShiftInstance, Booking.instance_id == ShiftInstance.id)
+        .filter(
+            and_(
+                Booking.user_id == user_id,
+                Booking.status == "Cancelled",
+                Booking.subscription_id != None,
+                ShiftInstance.template_id == template_id,
+                ShiftInstance.date >= start_prev,
+                ShiftInstance.date <= end_prev,
+            )
+        )
+        .count()
+    )
+
+
+@dataclass
+class SubscriptionQuote:
+    template_id: int
+    valid_to: date
+    remaining_classes: int
+    base_amount: float
+    amount: float
+    discount_percent: int
+    discount_applied: bool
+    pay_now_required: bool
+    discount_reason: str
+    instances_created: int
+
+
+def get_subscription_quote(
+    db: Session, *, user_id: int, template_id: int, today: date | None = None
+) -> SubscriptionQuote:
+    today = today or business_today()
+
+    if today.day < 1 or today.day > 30:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El abono mensual solo se permite entre el día 1 y el 30 de cada mes.",
+        )
+
+    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template no encontrado")
+
+    valid_to = last_day_of_month(today)
+    instances_created = ensure_shift_instances_until(db, template, start=today, until=valid_to)
+
+    instances = (
+        db.query(ShiftInstance)
+        .filter(
+            and_(
+                ShiftInstance.template_id == template_id,
+                ShiftInstance.date >= today,
+                ShiftInstance.date <= valid_to,
+                ShiftInstance.is_cancelled == False,
+            )
+        )
+        .order_by(ShiftInstance.date.asc())
+        .all()
+    )
+
+    remaining_classes = len(instances)
+    if remaining_classes <= 0:
+        raise HTTPException(status_code=400, detail="No hay turnos disponibles para calcular el abono mensual.")
+
+    unit_price = float(template.price or 0)
+    base_amount = unit_price * remaining_classes
+    if base_amount <= 0:
+        raise HTTPException(status_code=400, detail="No se pudo determinar el precio mensual")
+
+    pay_now_required = today.day >= 11
+
+    discount_percent = 0
+    discount_applied = False
+    discount_reason = "Sin descuento."
+
+    if today.day >= 15:
+        if remaining_classes <= 1:
+            discount_reason = "Sin descuento: solo queda una clase disponible."
+        else:
+            cancelled_prev = _count_cancelled_subscription_bookings_prev_month(
+                db, user_id=user_id, template_id=template_id, today=today
+            )
+            if cancelled_prev >= 3:
+                discount_reason = "Sin descuento: perdiste el beneficio por cancelar 3 clases el mes anterior."
+            else:
+                discount_percent = 20
+                discount_applied = True
+                discount_reason = "Descuento 20% aplicado (desde el 15)."
+    elif 11 <= today.day <= 14:
+        discount_reason = "Sin descuento: entre el 11 y el 14 no aplica descuento."
+    else:
+        discount_reason = "Sin descuento: entre el 1 y el 10 no aplica descuento."
+
+    amount = base_amount
+    if discount_applied:
+        amount = round(base_amount * 0.8, 2)
+    else:
+        amount = round(base_amount, 2)
+    base_amount = round(base_amount, 2)
+
+    return SubscriptionQuote(
+        template_id=template_id,
+        valid_to=valid_to,
+        remaining_classes=remaining_classes,
+        base_amount=base_amount,
+        amount=amount,
+        discount_percent=discount_percent,
+        discount_applied=discount_applied,
+        pay_now_required=pay_now_required,
+        discount_reason=discount_reason,
+        instances_created=instances_created,
+    )
+
+
 @dataclass
 class PurchaseResult:
     subscription_id: int
@@ -125,7 +255,7 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
     if today.day < 1 or today.day > 30:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El pago del abono mensual solo se permite entre el día 1 y el 30 de cada mes.",
+            detail="El abono mensual solo se permite entre el día 1 y el 30 de cada mes.",
         )
 
     template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
@@ -138,9 +268,10 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
             detail="Ya tienes un abono activo para este horario este mes.",
         )
 
-    valid_to = last_day_of_month(today)
+    quote = get_subscription_quote(db, user_id=user_id, template_id=template_id, today=today)
 
-    instances_created = ensure_shift_instances_until(db, template, start=today, until=valid_to)
+    valid_to = quote.valid_to
+    instances_created = quote.instances_created
 
     instances = (
         db.query(ShiftInstance)
@@ -156,12 +287,7 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
         .all()
     )
 
-    if not instances:
-        raise HTTPException(status_code=400, detail="No hay turnos disponibles para calcular el abono mensual.")
-
-    monthly_price = float(template.price or 0) * len(instances)
-    if monthly_price <= 0:
-        raise HTTPException(status_code=400, detail="No se pudo determinar el precio mensual")
+    monthly_price = float(quote.amount)
 
     purchase_dt = business_utcnow()
 
@@ -178,7 +304,7 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
     payment = Payment(
         user_id=user_id,
         amount=monthly_price,
-        status="completed",
+        status="completed" if quote.pay_now_required else "pending",
         type="subscription",
         date=purchase_dt,
     )
@@ -238,6 +364,8 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
                     instance_id=instance.id,
                     status="Confirmed",
                     subscription_id=subscription.id,
+                    amount_paid=0,
+                    payment_status="paid",
                 )
             )
             bookings_created += 1

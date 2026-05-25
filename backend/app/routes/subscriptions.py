@@ -54,6 +54,34 @@ def get_my_subscription_status(
     return {"suspended": is_user_suspended(db, user_id)}
 
 
+@router.get("/quote")
+def get_subscription_quote(
+    template_id: int,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    user_id = _extract_user_id(authorization)
+
+    quote = subscription_service.get_subscription_quote(
+        db,
+        user_id=user_id,
+        template_id=template_id,
+    )
+
+    return {
+        "template_id": quote.template_id,
+        "valid_to": str(quote.valid_to),
+        "remaining_classes": quote.remaining_classes,
+        "base_amount": quote.base_amount,
+        "amount": quote.amount,
+        "discount_percent": quote.discount_percent,
+        "discount_applied": quote.discount_applied,
+        "pay_now_required": quote.pay_now_required,
+        "discount_reason": quote.discount_reason,
+        "instances_created": quote.instances_created,
+    }
+
+
 @router.post("/purchase")
 def purchase_subscription(
     payload: dict,

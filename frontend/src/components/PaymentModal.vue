@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <div v-if="modelValue" class="modal-root" role="dialog" aria-modal="true">
-      <div class="overlay" @click="close('dismiss')"></div>
+      <div class="overlay" @click="isBusy ? null : close('dismiss')"></div>
 
       <div class="modal" tabindex="-1">
         <header class="modal-header">
@@ -9,7 +9,7 @@
             <h2 class="title">{{ titleText }}</h2>
             <p class="subtitle">{{ subtitleText }} <strong>{{ formattedAmount }}</strong>.</p>
           </div>
-          <button class="icon-btn" type="button" @click="close('dismiss')" aria-label="Cerrar">✕</button>
+          <button class="icon-btn" type="button" @click="close('dismiss')" :disabled="isBusy" aria-label="Cerrar">✕</button>
         </header>
 
         <section class="modal-body">
@@ -86,14 +86,15 @@
         </section>
 
         <footer class="modal-footer">
-          <button class="ghost" type="button" @click="close('cancel')" :disabled="isProcessing">Cancelar</button>
+          <button class="ghost" type="button" @click="close('cancel')" :disabled="isBusy">Cancelar</button>
           <button
             class="primary"
             type="button"
             @click="pay"
             :disabled="!canPay"
           >
-            {{ isProcessing ? 'Procesando…' : 'Pagar' }}
+            <span v-if="isBusy" class="spinner" aria-hidden="true"></span>
+            {{ isBusy ? 'Procesando…' : 'Pagar' }}
           </button>
         </footer>
       </div>
@@ -105,6 +106,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useAppClockStore } from '../stores/appClock'
 import axios from 'axios'
 import { gatewayService } from '../utils/gatewayService'
 
@@ -114,13 +116,15 @@ const props = defineProps({
   depositAmount: { type: Number, default: null },
   fullAmount: { type: Number, default: null },
   payeeName: { type: String, default: '' },
-  isAbono: { type: Boolean, default: false }
+  isAbono: { type: Boolean, default: false },
+  busy: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:modelValue', 'result'])
 
 const router = useRouter()
 const auth = useAuthStore()
+const appClock = useAppClockStore()
 
 const linkedCard = ref(null)
 const isProcessing = ref(false)
@@ -195,7 +199,7 @@ function loadLinkedCard() {
     })
 }
 
-function expiryIsValid(mmYY) {
+function expiryIsValid(mmYY, nowDate) {
   if (!mmYY || mmYY.length !== 5) return false
   const parts = mmYY.split('/')
   if (parts.length !== 2) return false
@@ -206,7 +210,7 @@ function expiryIsValid(mmYY) {
   if (mm < 1 || mm > 12) return false
 
   const year = 2000 + yy
-  const now = new Date()
+  const now = nowDate instanceof Date ? nowDate : new Date()
   const currentYear = now.getFullYear()
   const currentMonth = now.getMonth() + 1
 
@@ -218,12 +222,14 @@ function expiryIsValid(mmYY) {
 
 const isCardExpired = computed(() => {
   if (!linkedCard.value?.expiry) return true
-  return !expiryIsValid(linkedCard.value.expiry)
+  return !expiryIsValid(linkedCard.value.expiry, appClock.effectiveNow)
 })
+
+const isBusy = computed(() => isProcessing.value || props.busy)
 
 const canPay = computed(() => {
   if (!props.modelValue) return false
-  if (isProcessing.value) return false
+  if (isBusy.value) return false
   if (!linkedCard.value) return false
   if (isCardExpired.value) return false
   return Number.isFinite(effectiveAmount.value) && effectiveAmount.value > 0
@@ -255,6 +261,7 @@ const shortToken = computed(() => {
 })
 
 function close(source) {
+  if (isBusy.value) return
   message.value = ''
   messageType.value = ''
   emit('update:modelValue', false)
@@ -304,8 +311,6 @@ async function pay() {
         amount: effectiveAmount.value,
         paymentType: showPaymentOptions.value ? selectedPaymentType.value : null
       })
-      // autocierre suave
-      setTimeout(() => emit('update:modelValue', false), 650)
       return
     }
 
@@ -350,6 +355,7 @@ watch(
 )
 
 onMounted(() => {
+  appClock.hydrateFromStorage?.()
   loadLinkedCard()
 })
 </script>
@@ -600,6 +606,24 @@ onMounted(() => {
   gap: 10px;
   padding: 12px 18px 18px;
   border-top: 1px solid rgba(13, 18, 74, 0.08);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: rgba(255, 255, 255, 0.95);
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: -3px;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ghost {
