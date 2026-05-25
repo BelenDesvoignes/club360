@@ -3,7 +3,7 @@
     <header class="booking-header">
       <div class="booking-header-main">
         <div class="booking-header-left">
-          <h1>{{ selectedSportId ? 'Reservar Turno' : 'Reservar' }}</h1>
+          <h1>Reservar</h1>
           <div class="booking-stepline">
             <span class="step-pill">Paso {{ selectedSportId ? '2' : '1' }}</span>
             <span class="step-text">{{ selectedSportId ? 'Elegí el tipo de reserva y horario' : 'Elegí el deporte' }}</span>
@@ -1081,10 +1081,10 @@ onMounted(() => {
 }
 
 .booking-header h1 {
-  font-size: 2rem;
-  color: #0d124a;
+  font-size: 2.5rem;
+  color: #2d658d;
   font-weight: 900;
-  margin: 0;
+  margin: 0 0 10px;
 }
 
 .booking-stepline {
@@ -1106,9 +1106,9 @@ onMounted(() => {
 }
 
 .step-text {
-  color: rgba(13, 18, 74, 0.7);
-  font-weight: 700;
-  font-size: 0.95rem;
+  color: #5a8849;
+  font-weight: 400;
+  font-size: 1.1rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1635,7 +1635,7 @@ onMounted(() => {
   }
 
   .booking-header h1 {
-    font-size: 2.2rem;
+    font-size: 2.5rem;
   }
 
   .sports-step {

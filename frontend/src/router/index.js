@@ -31,7 +31,7 @@ const routes = [
     path: '/mis-pagos',
     name: 'UserPayments',
     component: UserPayments,
-    meta: { requiresAuth: true, headerTitle: 'Mis pagos' }
+    meta: { requiresAuth: true, headerTitle: 'Mis Pagos' }
   },
 
   // RUTAS DE ADMINISTRADOR

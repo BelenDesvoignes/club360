@@ -25,20 +25,17 @@
   <!-- CLIENTE -->
   <div v-if="auth.isAuthenticated && !auth.isAdmin && !auth.isEmployee" class="menu-section">
     <p class="section-title">MI CUENTA</p>
-    <router-link to="/reservar" @click="closeSidebar">
+    <router-link to="/reservar" @click="closeSidebar" class="menu-link menu-link--primary">
       <span class="icon"></span> Reservar clase
     </router-link>
     <router-link to="/reservas" @click="closeSidebar">
       <span class="icon"></span> Mis reservas
     </router-link>
-    <router-link to="/mis-pagos" @click="closeSidebar">
+    <router-link to="/agregar-tarjeta" @click="closeSidebar" class="menu-link menu-link--primary">
+      <span class="icon"></span> Mis tarjetas
+    </router-link>
+    <router-link to="/mis-pagos" @click="closeSidebar" class="menu-link menu-link--primary">
       <span class="icon"></span> Mis pagos
-    </router-link>
-    <router-link to="/agregar-tarjeta" @click="closeSidebar">
-      <span class="icon"></span> Mis Tarjetas
-    </router-link>
-    <router-link to="/mis-pagos" @click="closeSidebar">
-      <span class="icon"></span> Mis Pagos
     </router-link>
   </div>
 
@@ -224,6 +221,12 @@ onMounted(() => {
   border-radius: 10px;
   transition: all 0.2s;
   margin-bottom: 4px;
+}
+
+.menu-link--primary {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
 }
 
 .sidebar a:hover {
