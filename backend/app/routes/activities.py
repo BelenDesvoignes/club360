@@ -199,3 +199,14 @@ def create_activity(data: dict, db: Session = Depends(get_db)):
     shifts_incoming = data.get('shifts', [])
     seen = set()
     ...
+
+
+@router.patch("/{activity_id}/price")
+def update_activity_price(activity_id: int, price: float, db: Session = Depends(get_db)):
+    templates = db.query(ShiftTemplate).filter(ShiftTemplate.activity_id == activity_id).all()
+    if not templates:
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    for t in templates:
+        t.price = price
+    db.commit()
+    return {"message": "Precio actualizado en todos los turnos", "price": price}
