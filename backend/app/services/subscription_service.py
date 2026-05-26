@@ -14,78 +14,11 @@ from app.models.shift_instance import ShiftInstance
 from app.models.shift_template import ShiftTemplate
 from app.models.subscription import Subscription
 from app.models.suspension import Suspension
-
 from app.time_override import business_today, business_utcnow
-
-
-DAYS_MAP = {
-    "Lunes": 0,
-    "Martes": 1,
-    "Miércoles": 2,
-    "Miercoles": 2,
-    "Jueves": 3,
-    "Viernes": 4,
-    "Sábado": 5,
-    "Sabado": 5,
-    "Domingo": 6,
-}
 
 
 def last_day_of_month(d: date) -> date:
     return date(d.year, d.month, monthrange(d.year, d.month)[1])
-
-
-def ensure_shift_instances_until(db: Session, template: ShiftTemplate, *, start: date, until: date) -> int:
-    """Ensure weekly ShiftInstances exist from start..until inclusive.
-
-    This function only creates missing instances; it never deletes existing ones.
-    """
-    if until < start:
-        return 0
-
-    target_weekday = DAYS_MAP.get(template.day_of_week)
-    if target_weekday is None:
-        return 0
-
-    existing_dates = {
-        row[0]
-        for row in db.query(ShiftInstance.date)
-        .filter(
-            and_(
-                ShiftInstance.template_id == template.id,
-                ShiftInstance.date >= start,
-                ShiftInstance.date <= until,
-            )
-        )
-        .all()
-    }
-
-    created = 0
-    cursor = start
-    while cursor.weekday() != target_weekday:
-        cursor += timedelta(days=1)
-        if cursor > until:
-            return 0
-
-    to_create: list[ShiftInstance] = []
-    while cursor <= until:
-        if cursor not in existing_dates:
-            to_create.append(
-                ShiftInstance(
-                    template_id=template.id,
-                    date=cursor,
-                    capacity=template.capacity,
-                    is_cancelled=False,
-                )
-            )
-            created += 1
-        cursor += timedelta(days=7)
-
-    if to_create:
-        db.add_all(to_create)
-        db.flush()
-
-    return created
 
 
 def _subscription_already_purchased_this_month(db: Session, *, user_id: int, template_id: int, today: date) -> bool:
@@ -162,7 +95,9 @@ def get_subscription_quote(
         raise HTTPException(status_code=404, detail="Template no encontrado")
 
     valid_to = last_day_of_month(today)
-    instances_created = ensure_shift_instances_until(db, template, start=today, until=valid_to)
+
+    # IMPORTANT: Instancias se crean desde templates (admin), no desde abonos.
+    instances_created = 0
 
     instances = (
         db.query(ShiftInstance)
@@ -243,7 +178,9 @@ class PurchaseResult:
     instances_created: int
 
 
-def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id: int, today: date | None = None) -> PurchaseResult:
+def purchase_subscription_and_reserve(
+    db: Session, *, user_id: int, template_id: int, today: date | None = None
+) -> PurchaseResult:
     today = today or business_today()
 
     template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
@@ -343,7 +280,10 @@ def purchase_subscription_and_reserve(db: Session, *, user_id: int, template_id:
             if booked_count >= capacity:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"No hay cupos disponibles para asegurar el mes completo en este horario (sin cupo el {instance.date}).",
+                    detail=(
+                        "No hay cupos disponibles para asegurar el mes completo en este horario "
+                        f"(sin cupo el {instance.date})."
+                    ),
                 )
 
             db.add(
@@ -542,10 +482,6 @@ def ensure_user_suspension_if_unpaid(db: Session, *, user_id: int, today: date |
 
 
 def purchase_half_month_subscription_and_reserve(
-    #Toma las instancias del mes ordenadas por fecha.
-#Se queda solo con las 2 últimas.
-#El precio es price * 4 * 0.8 (80% del abono completo).
-#valid_to igual, fin de mes.
     db: Session, *, user_id: int, template_id: int, today: date | None = None
 ) -> PurchaseResult:
     today = today or business_today()
@@ -562,8 +498,7 @@ def purchase_half_month_subscription_and_reserve(
 
     valid_to = last_day_of_month(today)
 
-    # Asegurar que existan las instancias del mes
-    ensure_shift_instances_until(db, template, start=today, until=valid_to)
+    # IMPORTANT: Instancias se crean desde templates (admin), no desde abonos.
 
     # Traer TODAS las instancias del mes ordenadas por fecha
     all_instances = (
@@ -583,7 +518,7 @@ def purchase_half_month_subscription_and_reserve(
     if len(all_instances) < 2:
         raise HTTPException(
             status_code=400,
-            detail="No hay suficientes turnos en el mes para registrar un abono a mitad de mes."
+            detail="No hay suficientes turnos en el mes para registrar un abono a mitad de mes.",
         )
 
     # Solo las 2 últimas instancias
