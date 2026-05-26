@@ -180,6 +180,12 @@ def update_activity(activity_id: int, data: dict, db: Session = Depends(get_db))
                 template.start_time = s_data['start_time']
                 template.capacity = s_data['capacity']
                 template.price = s_data.get('price', template.price)
+
+                db.query(ShiftInstance).filter(
+                    ShiftInstance.template_id == shift_id,
+                    ShiftInstance.date >= date.today(),
+                    ShiftInstance.is_cancelled == False
+                ).update({"capacity": s_data['capacity']})
         else:
             new_template = ShiftTemplate(
                 activity_id=activity_id,
@@ -193,7 +199,6 @@ def update_activity(activity_id: int, data: dict, db: Session = Depends(get_db))
 
     db.commit()
     return {"message": "Actualización exitosa"}
-
 
 @router.patch("/{activity_id}/price")
 def update_activity_price(activity_id: int, price: float, db: Session = Depends(get_db)):
