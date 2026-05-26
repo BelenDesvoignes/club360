@@ -22,27 +22,29 @@
             </div>
 
             <div class="form-grid-row">
-              <div class="field">
-                <label class="label">Día</label>
-                <div class="control">
-                  <select v-model="form.shifts[0].day_of_week" required>
-                    <option v-for="day in days" :key="day" :value="day">{{ day }}</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field">
-                <label class="label">Hora</label>
-                <div class="control">
-                  <input type="time" v-model="form.shifts[0].start_time" required />
-                </div>
-              </div>
-              <div class="field">
-                <label class="label">Cupo</label>
-                <div class="control">
-                  <input type="number" v-model="form.shifts[0].capacity" min="1" required />
-                </div>
-              </div>
-            </div>
+  <div class="field">
+    <label class="label">Día</label>
+    <div class="control">
+      <select v-model="form.shifts[0].day_of_week" required>
+        <option v-for="day in days" :key="day" :value="day">{{ day }}</option>
+      </select>
+    </div>
+  </div>
+  <div class="field">
+    <label class="label">Hora</label>
+    <div class="control">
+      <select v-model="form.shifts[0].start_time" required>
+      <option v-for="h in hours" :key="h" :value="h">{{ h }}hs</option>
+    </select>
+    </div>
+  </div>
+  <div class="field">
+    <label class="label">Cupo</label>
+    <div class="control">
+      <input type="number" v-model="form.shifts[0].capacity" min="1" required />
+    </div>
+  </div>
+</div>
 
             <div class="form-actions">
               <button type="submit" class="primary" :disabled="loading">
@@ -150,6 +152,12 @@
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 
+const hours = [
+  '08:00','09:00','10:00','11:00','12:00','13:00',
+  '14:00','15:00','16:00','17:00','18:00','19:00',
+  '20:00','21:00'
+]
+
 const activityMap = {
   'Fútbol': 'Cancha 1',
   'Vóley': 'Cancha 2',
@@ -157,7 +165,7 @@ const activityMap = {
   'Básquet': 'Cancha 4'
 }
 
-const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
 // ── refs ──────────────────────────────────────────────────────────────────────
 const activities     = ref([])
@@ -171,7 +179,7 @@ const messageType    = ref('')
 const form = ref({
   name: '',
   court: '',
-  shifts: [{ day_of_week: 'Lunes', start_time: '18:00', capacity: 20 }]
+  shifts: [{ day_of_week: 'Lunes', start_time: '18:00', capacity: 20, price: null }]
 })
 
 // ── fetch ─────────────────────────────────────────────────────────────────────
@@ -365,7 +373,7 @@ onMounted(fetchActivities)
 
 .card {
   width: 100%;
-  max-width: 450px;
+  max-width: 600px;
   background: #ffffff;
   border-radius: 18px;
   overflow: hidden;
@@ -401,9 +409,7 @@ select, input {
 select:disabled { color: #9ca3af; cursor: not-allowed; }
 
 .form-grid-row {
-  display: grid;
   grid-template-columns: 2fr 1.5fr 1fr;
-  gap: 10px;
 }
 
 .primary {
@@ -526,4 +532,9 @@ select:disabled { color: #9ca3af; cursor: not-allowed; }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+@media (max-width: 540px) {
+  .form-grid-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
 </style>
