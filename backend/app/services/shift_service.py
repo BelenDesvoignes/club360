@@ -16,6 +16,12 @@ def _last_day_of_month(d: date) -> date:
     return date(d.year, d.month, monthrange(d.year, d.month)[1])
 
 
+def _first_day_of_next_month(d: date) -> date:
+    if d.month == 12:
+        return date(d.year + 1, 1, 1)
+    return date(d.year, d.month + 1, 1)
+
+
 def _normalize_day_of_week(value: str | None) -> str | None:
     if not value:
         return None
@@ -29,11 +35,11 @@ def _normalize_day_of_week(value: str | None) -> str | None:
     return v
 
 
-def create_instances_for_month(db: Session, template: ShiftTemplate):
-    """Create weekly ShiftInstances for the remainder of the current month.
+def create_instances_for_month(db: Session, template: ShiftTemplate, *, commit: bool = True):
+    """Ensure weekly ShiftInstances exist for the remainder of this month + next month.
 
-    IMPORTANT: This generation uses real date (`date.today()`), not business_today().
-    The simulated date header is for user flows (booking/subscriptions), not for data creation.
+    IMPORTANT: uses real date (`date.today()`), not business_today().
+    Idempotent: creates missing instances and updates capacity safely.
     """
 
     days_map = {
@@ -55,7 +61,7 @@ def create_instances_for_month(db: Session, template: ShiftTemplate):
 
     today = date.today()
     start = today
-    end = _last_day_of_month(today)
+    end = _last_day_of_month(_first_day_of_next_month(today))
 
     # Find the first occurrence in [start..end]
     cursor = start
@@ -72,25 +78,48 @@ def create_instances_for_month(db: Session, template: ShiftTemplate):
     if not found_dates:
         return []
 
-    # Recreate only within the current month range to avoid touching historical instances.
-    db.query(ShiftInstance).filter(
-        ShiftInstance.template_id == template.id,
-        ShiftInstance.date >= start,
-        ShiftInstance.date <= end,
-    ).delete(synchronize_session=False)
+    existing = (
+        db.query(ShiftInstance)
+        .filter(
+            ShiftInstance.template_id == template.id,
+            ShiftInstance.date >= start,
+            ShiftInstance.date <= end,
+        )
+        .all()
+    )
+    existing_by_date = {inst.date: inst for inst in existing}
 
     new_instances: list[ShiftInstance] = []
     for instance_date in found_dates:
-        db_instance = ShiftInstance(
-            template_id=template.id,
-            date=instance_date,
-            capacity=template.capacity,
-            is_cancelled=False,
-        )
-        db.add(db_instance)
-        new_instances.append(db_instance)
+        inst = existing_by_date.get(instance_date)
+        if inst is None:
+            db_instance = ShiftInstance(
+                template_id=template.id,
+                date=instance_date,
+                capacity=template.capacity,
+                is_cancelled=False,
+            )
+            db.add(db_instance)
+            new_instances.append(db_instance)
+            continue
 
-    db.commit()
+        # Update capacity only if safe (never below booked count)
+        booked_count = (
+            db.query(Booking)
+            .filter(
+                Booking.instance_id == inst.id,
+                Booking.status != "Cancelled",
+            )
+            .count()
+        )
+        if template.capacity >= booked_count:
+            inst.capacity = template.capacity
+
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+
     return new_instances
 
 
