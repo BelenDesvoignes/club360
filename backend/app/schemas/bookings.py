@@ -20,6 +20,10 @@ class BookingListOut(BaseModel):
     user_id: int
     instance_id: int
     status: str
+    subscription_id: Optional[int] = None
+    is_subscription: bool = False
+    amount_paid: Optional[float] = None
+    payment_status: Optional[str] = None
     created_at: datetime
     activity_name: Optional[str] = None
     date: Optional[dt_date] = None

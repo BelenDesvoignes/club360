@@ -4,16 +4,19 @@
 
     <main :class="['main-content', { 'full-width': !isSidebarOpen || !auth.isAuthenticated }]">
       <div class="app-mobile-header">
-        <BackButton variant="icon" />
         <div class="app-mobile-header-text">
           <div class="app-mobile-title">{{ headerTitle }}</div>
           <div v-if="headerSubtitle" class="app-mobile-subtitle">{{ headerSubtitle }}</div>
         </div>
-        <div class="app-mobile-header-spacer"></div>
+        <div class="app-mobile-header-right">
+          <SimulatedDateControl compact />
+        </div>
       </div>
 
       <div class="app-toolbar">
-        <BackButton variant="pill" />
+        <div class="app-toolbar-right">
+          <SimulatedDateControl />
+        </div>
       </div>
       <router-view />
     </main>
@@ -24,7 +27,7 @@
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar.vue'
-import BackButton from './components/BackButton.vue'
+import SimulatedDateControl from './components/SimulatedDateControl.vue'
 import { useAuthStore } from './stores/auth'
 
 const auth = useAuthStore()
@@ -79,6 +82,11 @@ body {
 
 .app-toolbar {
   padding: 18px 20px 0;
+}
+
+.app-toolbar-right {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .app-mobile-header {
@@ -147,6 +155,13 @@ body {
 
   .app-mobile-header-spacer {
     width: 40px;
+  }
+
+  .app-mobile-header-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 40px;
   }
 }
 </style>

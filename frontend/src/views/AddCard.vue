@@ -424,23 +424,37 @@ onMounted(() => {
 <style scoped>
 .page {
   width: 100%;
-  padding: 32px 16px;
+  padding: 28px 40px 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: transparent;
 }
 
 .container {
-  max-width: 980px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 18px;
 }
 
 .header h1 {
-  margin: 0;
-  font-size: 1.6rem;
+  font-size: 2.5rem;
   color: #2d658d;
+  font-weight: 900;
+  margin: 0 0 10px;
 }
 
 .subtitle {
-  margin: 8px 0 0;
-  color: #5f6b76;
+  margin: 0;
+  color: #5a8849;
+  font-weight: 400;
+  font-size: 1.1rem;
 }
 
 .section-title {

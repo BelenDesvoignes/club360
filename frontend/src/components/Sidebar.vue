@@ -1,9 +1,9 @@
 <template>
   <div>
     <button
+      v-show="!isOpen"
       @click="isOpen = !isOpen"
       class="menu-toggle"
-      :class="{ 'is-active': isOpen }"
     >
       <div class="bar"></div>
       <div class="bar"></div>
@@ -17,6 +17,7 @@
         <router-link to="/" @click="closeSidebar" class="logo-link">
           <h2 class="logo">CLUB<span>360</span></h2>
         </router-link>
+        <button class="close-btn" @click="closeSidebar">✕</button>
       </div>
 
       <nav class="menu-content">
@@ -24,13 +25,16 @@
   <!-- CLIENTE -->
   <div v-if="auth.isAuthenticated && !auth.isAdmin && !auth.isEmployee" class="menu-section">
     <p class="section-title">MI CUENTA</p>
-    <router-link to="/reservar" @click="closeSidebar">
+    <router-link to="/reservar" @click="closeSidebar" class="menu-link menu-link--primary">
       <span class="icon"></span> Reservar clase
     </router-link>
     <router-link to="/reservas" @click="closeSidebar">
       <span class="icon"></span> Mis reservas
     </router-link>
-    <router-link to="/mis-pagos" @click="closeSidebar">
+    <router-link to="/agregar-tarjeta" @click="closeSidebar" class="menu-link menu-link--primary">
+      <span class="icon"></span> Mis tarjetas
+    </router-link>
+    <router-link to="/mis-pagos" @click="closeSidebar" class="menu-link menu-link--primary">
       <span class="icon"></span> Mis pagos
     </router-link>
   </div>
@@ -47,6 +51,7 @@
     <router-link to="/clientes" @click="closeSidebar">
       <span class="icon"></span> Gestión de clientes
     </router-link>
+  
   </div>
 
   <!-- ADMIN -->
@@ -93,6 +98,7 @@ const emit = defineEmits(['toggle'])
 
 const closeSidebar = () => {
   isOpen.value = false
+
 }
 
 const handleLogout = () => {
@@ -162,7 +168,22 @@ onMounted(() => {
   padding: 40px 20px 20px;
   background: #ffffff;
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #374151;
 }
 
 .logo-link { text-decoration: none; }
@@ -200,6 +221,12 @@ onMounted(() => {
   border-radius: 10px;
   transition: all 0.2s;
   margin-bottom: 4px;
+}
+
+.menu-link--primary {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
 }
 
 .sidebar a:hover {

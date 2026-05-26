@@ -3,7 +3,7 @@
     <header class="booking-header">
       <div class="booking-header-main">
         <div class="booking-header-left">
-          <h1>{{ selectedSportId ? 'Reservar Turno' : 'Reservar' }}</h1>
+          <h1>Reservar</h1>
           <div class="booking-stepline">
             <span class="step-pill">Paso {{ selectedSportId ? '2' : '1' }}</span>
             <span class="step-text">{{ selectedSportId ? 'Elegí el tipo de reserva y horario' : 'Elegí el deporte' }}</span>
@@ -84,9 +84,11 @@
 
     <div v-if="loading" class="loading-spinner">Cargando clases disponibles...</div>
 
-      <div v-if="successMessage" :class="['booking-feedback', bookingStatus]">
+    <div v-else-if="isRefreshing" class="loading-refresh">Actualizando...</div>
+
+    <div v-if="successMessage" :class="['booking-feedback', bookingStatus]">
       <div>
-        <strong>{{ bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : bookingStatus === 'cancelled' ? 'Reserva cancelada' : 'Reserva pendiente de pago' }}</strong>
+        <strong>{{ bookingStatus === 'confirmed' || bookingStatus === 'completed' ? '¡Reserva confirmada!' : bookingStatus === 'cancelled' ? 'Reserva cancelada' : 'Reserva pendiente de pago' }}</strong>
         <p>{{ successMessage }}</p>
       </div>
       <button type="button" class="booking-feedback-close" @click="successMessage = ''">Cerrar</button>
@@ -173,106 +175,14 @@
       </div>
     </div>
 
-    <!-- Modal para confirmar reserva y pago -->
-    <transition name="fade">
-      <div v-if="showPaymentModal" class="modal-overlay" @click.self="closePaymentModal">
-        <div class="modal-content payment-modal" @click.stop>
-          <button class="modal-close" @click="closePaymentModal">✕</button>
-          
-          <h2>Confirmar Reserva</h2>
-          
-          <div class="payment-info">
-            <div class="info-row">
-              <span class="label">Clase:</span>
-              <span class="value">{{ selectedInstance?.activity_name || 'Clase seleccionada' }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Fecha:</span>
-              <span class="value">{{ formatDate(selectedInstance?.date) }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Horario:</span>
-              <span class="value">{{ selectedInstance?.template.start_time }}hs</span>
-            </div>
-            <div class="info-row highlight">
-              <span class="label">Precio:</span>
-              <span class="value price-amount">${{ selectedInstance?.template.price }}</span>
-            </div>
-          </div>
-
-          <div v-if="!isUserAbonado" class="payment-options">
-            <h3>Opciones de Pago</h3>
-            <p class="payment-note">Como cliente no abonado, debes abonar al menos el 50% (seña)</p>
-            
-            <div class="option">
-              <input
-                type="radio"
-                id="payment-seña"
-                v-model="paymentType"
-                value="seña"
-              />
-              <label for="payment-seña">
-                <strong>Pagar 50% (Seña)</strong>
-                <span>${{ (selectedInstance?.template.price * 0.5).toFixed(2) }}</span>
-              </label>
-            </div>
-
-            <div class="option">
-              <input
-                type="radio"
-                id="payment-full"
-                v-model="paymentType"
-                value="full"
-              />
-              <label for="payment-full">
-                <strong>Pagar 100% (Completo)</strong>
-                <span>${{ selectedInstance?.template.price }}</span>
-              </label>
-            </div>
-
-            <div class="option">
-              <input
-                type="radio"
-                id="payment-monthly"
-                v-model="paymentType"
-                value="monthly"
-                :disabled="!isSubscriptionWindowOpen"
-              />
-              <label for="payment-monthly">
-                <strong>Pagar mensualidad (Abono)</strong>
-                <span>${{ (Number(selectedInstance?.template?.price || 0) * countRemainingMonthlyOccurrences(selectedInstance?.template?.day_of_week)).toFixed(2) }}</span>
-              </label>
-            </div>
-
-            <p v-if="paymentType === 'monthly'" class="payment-note">
-              El abono se paga al 100% y asegura cupo automático en este horario durante el mes.
-            </p>
-
-            <p v-if="!isSubscriptionWindowOpen" class="payment-warning">
-              ⚠️ El abono mensual solo puede pagarse entre el día 1 y el 30.
-            </p>
-
-            <p class="payment-warning">⚠️ Sin pagar ahora, la reserva quedará pendiente de pago y podrá cancelarse.</p>
-          </div>
-
-          <div v-else class="abonado-info">
-            <p class="success-text">✓ Como cliente abonado, tu reserva será confirmada automáticamente.</p>
-          </div>
-
-          <div class="modal-actions">
-            <button @click="closePaymentModal" class="btn btn-secondary">Cancelar</button>
-            <button @click="confirmBooking" :disabled="bookingInProgress || !confirmReady" class="btn btn-primary">
-              {{ bookingInProgress ? 'Procesando...' : 'Confirmar Reserva' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </transition>
-
     <PaymentModal
       v-model="showGatewayModal"
       :amount="pendingPaymentAmount"
+      :depositAmount="Number(selectedInstance?.template?.price || 0) * 0.5"
+      :fullAmount="Number(selectedInstance?.template?.price || 0)"
       :payeeName="selectedInstance?.activity_name || 'Reserva'"
+      :isAbono="paymentType === 'monthly'"
+      :busy="finalizingPayment"
       @result="onGatewayResult"
     />
 
@@ -366,10 +276,14 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useAppClockStore } from '../stores/appClock'
 import PaymentModal from '../components/PaymentModal.vue'
 
 const auth = useAuthStore()
+const clock = useAppClockStore()
+const router = useRouter()
 const dayOrder = {
   Lunes: 1,
   Martes: 2,
@@ -396,20 +310,43 @@ const activities = ref([])
 const instances = ref([])
 const loading = ref(false)
 const bookingInProgress = ref(false)
+const bookingStatus = ref('')
 const successMessage = ref('')
 const errorMessage = ref('')
+const isRefreshing = ref(false)
 const userSuspended = ref(false)
 const isUserAbonado = ref(false)
 
-const showPaymentModal = ref(false)
+const myBookings = ref([])
+const myBookingsLoaded = ref(false)
+
+const isAuthError = (e) => {
+  const status = e?.response?.status
+  const detail = String(e?.response?.data?.detail || '')
+  return status === 401 || detail.toLowerCase().includes('token')
+}
+
+const handleAuthError = (e) => {
+  if (!isAuthError(e)) return false
+  auth.logout()
+  router.push('/login')
+  errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+  return true
+}
+
 const showTurnosModal = ref(false)
 const selectedActivity = ref(null)
 const selectedInstance = ref(null)
 const paymentType = ref('seña')
 
-const confirmReady = ref(false)
 const showGatewayModal = ref(false)
 const pendingPaymentAmount = ref(0)
+const finalizingPayment = ref(false)
+
+// Subscription quote state (backend is source of truth)
+const subscriptionQuoteAmount = ref(0)
+const subscriptionPayNowRequired = ref(true)
+const subscriptionQuoteReason = ref('')
 
 // Reservation UI state
 const reservationType = ref('class') // 'class' or 'subscription'
@@ -499,7 +436,7 @@ const countRemainingMonthlyOccurrences = (dayOfWeek) => {
   const targetDay = weekdayToJsIndex[dayOfWeek]
   if (targetDay === undefined) return 0
 
-  const today = new Date()
+  const today = clock.effectiveNow
   const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
   let count = 0
 
@@ -516,15 +453,15 @@ function computeAmountToPay() {
   const price = Number(selectedInstance.value?.template?.price || 0)
   if (!Number.isFinite(price) || price <= 0) return 0
   if (paymentType.value === 'monthly') {
+    if (Number.isFinite(subscriptionQuoteAmount.value) && subscriptionQuoteAmount.value > 0) {
+      return subscriptionQuoteAmount.value
+    }
     return price * countRemainingMonthlyOccurrences(selectedInstance.value?.template?.day_of_week)
   }
   return paymentType.value === 'full' ? price : price * 0.5
 }
 
-const isSubscriptionWindowOpen = computed(() => {
-  const day = new Date().getDate()
-  return day >= 1 && day <= 30
-})
+const isSubscriptionWindowOpen = computed(() => true)
 
 const groupedActivities = computed(() => {
   const groups = new Map()
@@ -640,7 +577,8 @@ const activityFill = (activity) => {
   return Math.round((booked / activity.instances.length) * 100)
 }
 
-const fetchInstances = async () => {
+const fetchInstances = async ({ showRefresh = false } = {}) => {
+  if (showRefresh) isRefreshing.value = true
   try {
     // Add cache busting and timeout to prevent slow loads
     const res = await axios.get('/shifts/instances', {
@@ -650,6 +588,8 @@ const fetchInstances = async () => {
   } catch (e) {
     console.error('Error al cargar clases:', e)
     instances.value = []
+  } finally {
+    if (showRefresh) isRefreshing.value = false
   }
 }
 
@@ -687,11 +627,45 @@ const checkUserStatus = async () => {
 
     userSuspended.value = Boolean(res.data?.suspended)
   } catch (e) {
+    if (handleAuthError(e)) return
     console.error('Error al verificar estado:', e)
   }
 }
 
-const selectInstanceForBooking = (instance) => {
+const fetchMyBookings = async ({ showRefresh = false } = {}) => {
+  if (showRefresh) isRefreshing.value = true
+  try {
+    auth.hydrateFromToken()
+    const token = auth.token || localStorage.getItem('token')
+    if (!token) {
+      myBookings.value = []
+      myBookingsLoaded.value = true
+      return
+    }
+
+    const res = await axios.get('/bookings/me', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+
+    myBookings.value = Array.isArray(res.data) ? res.data : []
+    myBookingsLoaded.value = true
+  } catch (e) {
+    if (handleAuthError(e)) return
+    myBookings.value = []
+    myBookingsLoaded.value = true
+  } finally {
+    if (showRefresh) isRefreshing.value = false
+  }
+}
+
+const hasActiveBookingForInstance = (instanceId) => {
+  if (!instanceId) return false
+  return myBookings.value.some((b) => b?.instance_id === instanceId && b?.status !== 'Cancelled')
+}
+
+const selectInstanceForBooking = async (instance) => {
   if (isFullyBooked(instance)) {
     joinWaitlist(instance)
     return
@@ -703,18 +677,26 @@ const selectInstanceForBooking = (instance) => {
       .find(a => a.activity_id === instance.template.activity_id)
       ?.activity_name
   }
-  
-  // Check if user is abonado for this template (day+hour)
-  checkAbonado(instance.template.id)
 
-  confirmReady.value = false
-  showPaymentModal.value = true
-  setTimeout(() => {
-    confirmReady.value = true
-  }, 300)
+  if (!myBookingsLoaded.value) {
+    await fetchMyBookings({ showRefresh: true })
+  }
+
+  if (hasActiveBookingForInstance(instance.id)) {
+    errorMessage.value = 'Ya tenés una reserva para este turno.'
+    selectedInstance.value = null
+    return
+  }
+
+  // Flujo directo: abonado reserva, no abonado abre modal de pago.
+  paymentType.value = 'seña'
+  await checkAbonado(instance.template.id)
+  await confirmBooking()
 }
 
-const selectTemplateForSubscription = (template, activity_name) => {
+const selectTemplateForSubscription = async (template, activity_name) => {
+  if (bookingInProgress.value) return
+
   // prepare selectedInstance shape similar to instance for reuse in modal
   selectedInstance.value = {
     template: template,
@@ -723,14 +705,65 @@ const selectTemplateForSubscription = (template, activity_name) => {
     date: null,
   }
 
-  // mark payment type monthly by default
+  // Compra de abono: se paga al 100% (sin "reserva" previa).
   paymentType.value = 'monthly'
-  // check abonado for this template
-  checkAbonado(template.id)
+  await checkAbonado(template.id)
+  if (isUserAbonado.value) {
+    errorMessage.value = 'Ya tenés un abono activo para este horario.'
+    closePaymentModal()
+    return
+  }
 
-  confirmReady.value = false
-  showPaymentModal.value = true
-  setTimeout(() => { confirmReady.value = true }, 300)
+  // Ask backend for the quote (discount + remaining classes + pay-now rule)
+  try {
+    auth.hydrateFromToken()
+    const token = auth.token || localStorage.getItem('token')
+    if (!token) {
+      errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+      closePaymentModal()
+      return
+    }
+
+    const quoteRes = await axios.get('/subscriptions/quote', {
+      params: { template_id: template.id },
+      headers: { Authorization: `Bearer ${token}` }
+    })
+
+    subscriptionQuoteAmount.value = Number(quoteRes.data?.amount || 0)
+    subscriptionPayNowRequired.value = Boolean(quoteRes.data?.pay_now_required)
+    subscriptionQuoteReason.value = String(quoteRes.data?.discount_reason || '')
+  } catch (e) {
+    if (handleAuthError(e)) return
+    const detail = e.response?.data?.detail || 'No se pudo calcular el abono.'
+    errorMessage.value = detail
+    closePaymentModal()
+    return
+  }
+
+  pendingPaymentAmount.value = computeAmountToPay()
+  if (!pendingPaymentAmount.value) {
+    errorMessage.value = 'No se pudo determinar el monto a pagar.'
+    closePaymentModal()
+    return
+  }
+
+  // Days 1–10: pago pendiente permitido -> NO mostrar modal de pago.
+  if (subscriptionPayNowRequired.value === false) {
+    bookingInProgress.value = true
+    finalizeSubscriptionPurchase()
+      .catch((e) => {
+        if (handleAuthError(e)) return
+        const detail = e.response?.data?.detail || 'Error al procesar la operación'
+        errorMessage.value = detail
+      })
+      .finally(() => {
+        bookingInProgress.value = false
+      })
+    return
+  }
+
+  // Day 11+: pago en el momento -> mostrar modal.
+  showGatewayModal.value = true
 }
 
 const checkAbonado = async (template_id) => {
@@ -740,12 +773,12 @@ const checkAbonado = async (template_id) => {
     
     if (!token) {
       isUserAbonado.value = false
-      return
+      return false
     }
     
     if (!token) {
       isUserAbonado.value = false
-      return
+      return false
     }
 
     const res = await axios.get('/subscriptions/me/active', {
@@ -756,8 +789,11 @@ const checkAbonado = async (template_id) => {
     })
 
     isUserAbonado.value = Boolean(res.data?.active)
+    return isUserAbonado.value
   } catch (e) {
+    if (handleAuthError(e)) return false
     isUserAbonado.value = false
+    return false
   }
 }
 
@@ -776,29 +812,46 @@ async function finalizeSubscriptionPurchase() {
     return
   }
 
-  const res = await axios.post(
-    '/subscriptions/purchase',
-    { template_id: templateId },
-    { headers: { Authorization: `Bearer ${token}` } }
-  )
+  let res
+  try {
+    res = await axios.post(
+      '/subscriptions/purchase',
+      { template_id: templateId },
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+  } catch (e) {
+    if (handleAuthError(e)) return
+    throw e
+  }
 
   bookingStatus.value = 'completed'
-  successMessage.value = `¡Abono mensual comprado! Reservas creadas: ${res.data.bookings_created}. ` +
-    `Saltadas (sin cupo): ${res.data.skipped_full}. Ya existentes: ${res.data.skipped_existing}. Vigencia hasta: ${res.data.valid_to}.`
+  errorMessage.value = ''
+  const pagoTxt = subscriptionPayNowRequired.value
+    ? 'Pago registrado.'
+    : `Pago pendiente: $${pendingPaymentAmount.value}.`
+  const reglaTxt = subscriptionQuoteReason.value ? ` ${subscriptionQuoteReason.value}` : ''
+
+  successMessage.value = `¡Abono mensual registrado! ${pagoTxt}${reglaTxt} ` +
+    `Reservas creadas: ${res.data.bookings_created}. ` +
+    `Saltadas (sin cupo): ${res.data.skipped_full}. Ya existentes: ${res.data.skipped_existing}. ` +
+    `Vigencia hasta: ${res.data.valid_to}.`
 
   closePaymentModal()
   showGatewayModal.value = false
 
   setTimeout(() => {
-    fetchInstances()
+    fetchInstances({ showRefresh: true })
+    fetchMyBookings({ showRefresh: true })
   }, 800)
 }
 
 const closePaymentModal = () => {
-  showPaymentModal.value = false
   selectedInstance.value = null
   paymentType.value = 'seña'
-  confirmReady.value = false
+  isUserAbonado.value = false
+  subscriptionQuoteAmount.value = 0
+  subscriptionPayNowRequired.value = true
+  subscriptionQuoteReason.value = ''
 }
 
 async function finalizeBookingWithPayment() {
@@ -810,39 +863,84 @@ async function finalizeBookingWithPayment() {
     return
   }
 
-  const res = await axios.post('/bookings/', {
-    instance_id: selectedInstance.value.id
-  }, {
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  })
+  let res
+  try {
+    res = await axios.post('/bookings/', {
+      instance_id: selectedInstance.value.id
+    }, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+  } catch (e) {
+    if (handleAuthError(e)) return
+    throw e
+  }
 
   if (pendingPaymentAmount.value > 0) {
-    await axios.post(
-      '/payments/me/complete-booking',
-      { amount: pendingPaymentAmount.value, booking_id: res.data.id },
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
+    try {
+      await axios.post(
+        '/payments/me/complete-booking',
+        { amount: pendingPaymentAmount.value, booking_id: res.data.id },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+    } catch (e) {
+      if (handleAuthError(e)) return
+      throw e
+    }
   }
 
   bookingStatus.value = 'completed'
+  errorMessage.value = ''
   successMessage.value = `¡Tu reserva fue confirmada y el pago fue exitoso! Número de reserva: ${res.data.id}`
   closePaymentModal()
 
   setTimeout(() => {
-    fetchInstances()
+    fetchInstances({ showRefresh: true })
+    fetchMyBookings({ showRefresh: true })
   }, 1500)
 }
 
 function onGatewayResult(result) {
   if (!result) return
+  const isSubscription = paymentType.value === 'monthly'
+
   if (result.status === 'Aprobado') {
+    if (Number.isFinite(result.amount) && result.amount > 0) {
+      pendingPaymentAmount.value = result.amount
+    }
+
+    if (result.paymentType === 'full') {
+      paymentType.value = 'full'
+    } else if (result.paymentType === 'deposit') {
+      paymentType.value = 'seña'
+    }
+
     const afterApproved = paymentType.value === 'monthly'
       ? finalizeSubscriptionPurchase
       : finalizeBookingWithPayment
 
-    afterApproved().catch((e) => {
+    finalizingPayment.value = true
+    afterApproved()
+      .then(() => {
+        showGatewayModal.value = false
+      })
+      .catch((e) => {
+        if (handleAuthError(e)) return
+        const detail = e.response?.data?.detail || 'Error al procesar la operación'
+        errorMessage.value = detail
+      })
+      .finally(() => {
+        finalizingPayment.value = false
+      })
+    return
+  }
+
+  // Days 1-10: allow subscription purchase even if payment isn't effective (pending payment).
+  if (isSubscription && subscriptionPayNowRequired.value === false) {
+    showGatewayModal.value = false
+    finalizeSubscriptionPurchase().catch((e) => {
+      if (handleAuthError(e)) return
       const detail = e.response?.data?.detail || 'Error al procesar la operación'
       errorMessage.value = detail
     })
@@ -899,6 +997,7 @@ const confirmBooking = async () => {
       })
 
       bookingStatus.value = res.data.status === 'Confirmed' ? 'completed' : 'pending'
+      errorMessage.value = ''
       successMessage.value =
         bookingStatus.value === 'completed'
           ? `¡Tu reserva ha sido confirmada! Número de reserva: ${res.data.id}`
@@ -906,22 +1005,22 @@ const confirmBooking = async () => {
 
       closePaymentModal()
       setTimeout(() => {
-        fetchInstances()
+        fetchInstances({ showRefresh: true })
+        fetchMyBookings({ showRefresh: true })
       }, 1500)
       return
     }
 
-    // No abonado: abrir PaymentModal (requiere apretar "Pagar").
+    // No abonado: abrir PaymentModal.
     pendingPaymentAmount.value = computeAmountToPay()
     if (!pendingPaymentAmount.value) {
       errorMessage.value = 'No se pudo determinar el monto a pagar.'
       return
     }
-
-    showPaymentModal.value = false
     showGatewayModal.value = true
   } catch (e) {
     const detail = e.response?.data?.detail || 'Error al procesar la reserva'
+    successMessage.value = ''
     errorMessage.value = detail
     console.error('Error al crear reserva:', e)
   } finally {
@@ -953,6 +1052,7 @@ onMounted(() => {
       loading.value = false
     })
   checkUserStatus()
+  fetchMyBookings({ showRefresh: true })
 })
 </script>
 
@@ -981,10 +1081,10 @@ onMounted(() => {
 }
 
 .booking-header h1 {
-  font-size: 2rem;
-  color: #0d124a;
+  font-size: 2.5rem;
+  color: #2d658d;
   font-weight: 900;
-  margin: 0;
+  margin: 0 0 10px;
 }
 
 .booking-stepline {
@@ -1006,9 +1106,9 @@ onMounted(() => {
 }
 
 .step-text {
-  color: rgba(13, 18, 74, 0.7);
-  font-weight: 700;
-  font-size: 0.95rem;
+  color: #5a8849;
+  font-weight: 400;
+  font-size: 1.1rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1254,6 +1354,16 @@ onMounted(() => {
   font-size: 1.2rem;
   color: #6c757d;
   padding: 60px 20px;
+}
+
+.loading-refresh {
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(45, 101, 141, 0.08);
+  border: 1px solid rgba(45, 101, 141, 0.18);
+  color: #2d658d;
+  font-weight: 900;
 }
 
 .booking-feedback {
@@ -1525,7 +1635,7 @@ onMounted(() => {
   }
 
   .booking-header h1 {
-    font-size: 2.2rem;
+    font-size: 2.5rem;
   }
 
   .sports-step {

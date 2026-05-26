@@ -7,6 +7,7 @@ from ..models.shift_template import ShiftTemplate
 from ..models.shift_instance import ShiftInstance
 from ..models.booking import Booking
 from ..services import shift_service
+from ..time_override import business_today
 
 router = APIRouter(prefix="/activities", tags=["activities"])
 
@@ -39,7 +40,8 @@ def create_activity(data: dict, db: Session = Depends(get_db)):
             activity_id=activity.id,
             day_of_week=s['day_of_week'],
             start_time=s['start_time'],
-            capacity=s['capacity']
+            capacity=s['capacity'],
+            price=activity.price
         )
         db.add(new_template)
         db.flush()
@@ -89,7 +91,7 @@ def delete_shift_template(
     # Solo instancias futuras
     future_instances = db.query(ShiftInstance).filter(
         ShiftInstance.template_id == template_id,
-        ShiftInstance.date >= date.today(),
+        ShiftInstance.date >= business_today(),
         ShiftInstance.is_cancelled == False
     ).all()
     inst_ids = [i.id for i in future_instances]
@@ -177,6 +179,7 @@ def update_activity(activity_id: int, data: dict, db: Session = Depends(get_db))
                 template.day_of_week = s_data['day_of_week']
                 template.start_time = s_data['start_time']
                 template.capacity = s_data['capacity']
+                template.price = s_data.get('price', template.price)
         else:
             new_template = ShiftTemplate(
                 activity_id=activity_id,
@@ -191,10 +194,18 @@ def update_activity(activity_id: int, data: dict, db: Session = Depends(get_db))
     db.commit()
     return {"message": "Actualización exitosa"}
 
-@router.post("/")
-def create_activity(data: dict, db: Session = Depends(get_db)):
-    print("NAME recibido:", repr(data.get('name')))  # ← acá
 
-    shifts_incoming = data.get('shifts', [])
-    seen = set()
-    ...
+@router.patch("/{activity_id}/price")
+def update_activity_price(activity_id: int, price: float, db: Session = Depends(get_db)):
+    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+
+    activity.price = price  # ← actualiza en Activity
+
+    templates = db.query(ShiftTemplate).filter(ShiftTemplate.activity_id == activity_id).all()
+    for t in templates:
+        t.price = price  # ← sincroniza templates existentes
+
+    db.commit()
+    return {"message": "Precio actualizado", "price": price}

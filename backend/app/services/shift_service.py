@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from ..models.shift_instance import ShiftInstance
 from ..models.shift_template import ShiftTemplate
 from ..models.activity import Activity
+from ..time_override import business_today
 
 def create_instances_for_month(db: Session, template: ShiftTemplate):
     days_map = {
@@ -14,7 +15,7 @@ def create_instances_for_month(db: Session, template: ShiftTemplate):
     if target_day is None:
         return []
 
-    today = date.today()
+    today = business_today()
     found_dates = []
 
     for i in range(90):
@@ -63,7 +64,7 @@ def update_template_and_recreate_instances(db: Session, template_id: int, new_da
     template.capacity = new_data.capacity
     db.commit()
 
-    db.query(ShiftInstance).filter(ShiftInstance.template_id == template_id, ShiftInstance.date >= date.today()).delete(synchronize_session=False)
+    db.query(ShiftInstance).filter(ShiftInstance.template_id == template_id, ShiftInstance.date >= business_today()).delete(synchronize_session=False)
     create_instances_for_month(db, template)
 
     return template

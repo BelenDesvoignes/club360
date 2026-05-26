@@ -10,6 +10,7 @@ from app.database import get_db
 from app.services import subscription_service
 from app.services.booking_service import get_active_subscription
 from app.services.booking_service import is_user_suspended
+from app.time_override import business_today
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
@@ -33,7 +34,7 @@ def get_my_active_subscription(
     db: Session = Depends(get_db),
 ):
     user_id = _extract_user_id(authorization)
-    subscription = get_active_subscription(db, user_id, template_id, for_date=date.today())
+    subscription = get_active_subscription(db, user_id, template_id, for_date=business_today())
 
     return {
         "active": subscription is not None,
@@ -51,6 +52,34 @@ def get_my_subscription_status(
     # Lazy suspension (TP-friendly): apply rule when user interacts with the system
     subscription_service.ensure_user_suspension_if_unpaid(db, user_id=user_id)
     return {"suspended": is_user_suspended(db, user_id)}
+
+
+@router.get("/quote")
+def get_subscription_quote(
+    template_id: int,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    user_id = _extract_user_id(authorization)
+
+    quote = subscription_service.get_subscription_quote(
+        db,
+        user_id=user_id,
+        template_id=template_id,
+    )
+
+    return {
+        "template_id": quote.template_id,
+        "valid_to": str(quote.valid_to),
+        "remaining_classes": quote.remaining_classes,
+        "base_amount": quote.base_amount,
+        "amount": quote.amount,
+        "discount_percent": quote.discount_percent,
+        "discount_applied": quote.discount_applied,
+        "pay_now_required": quote.pay_now_required,
+        "discount_reason": quote.discount_reason,
+        "instances_created": quote.instances_created,
+    }
 
 
 @router.post("/purchase")
@@ -98,7 +127,7 @@ def get_my_active_subscription_dashboard(
         .filter(
             Subscription.user_id == user_id,
             Subscription.status == "active",
-            Subscription.valid_to >= date.today(),
+            Subscription.valid_to >= business_today(),
         )
         .order_by(Subscription.valid_to.desc())
         .first()
@@ -134,7 +163,7 @@ def get_all_my_active_subscriptions(
         .filter(
             Subscription.user_id == user_id,
             Subscription.status == "active",
-            Subscription.valid_to >= date.today(),
+            Subscription.valid_to >= business_today(),
         )
         .order_by(Subscription.valid_to.asc())
         .all()

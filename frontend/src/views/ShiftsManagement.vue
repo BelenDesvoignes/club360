@@ -167,7 +167,7 @@ const filterDate = ref('')
 const filterDay = ref('') // NUEVO: Estado reactivo para el filtro de día
 
 // NUEVO: Listado estático de días para el select de filtros
-const daysOfWeek = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+const daysOfWeek = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
 const fetchShifts = async () => {
   loading.value = true
