@@ -16,7 +16,7 @@
           <tr>
             <th class="col-date">Fecha de Emisión</th>
             <th class="col-concept">Concepto / Categoría</th>
-            <th class="col-amount text-right">Monto Total</th>
+            <th class="col-amount text-right">Monto</th>
             <th class="col-status text-center">Estado del Pago</th>
           </tr>
         </thead>
@@ -25,15 +25,17 @@
             <td class="cell-date font-medium text-nowrap">
               {{ formatDate(p.date) }}
             </td>
+            <!-- CONCEPTO BASADO EN EL MODELO DE ENTRADA -->
             <td class="cell-concept capitalize font-semibold">
-              {{ p.type === 'booking' ? 'Reserva de clase' : p.type }}
+              {{ formatConcept(p) }}
             </td>
             <td class="cell-amount text-right font-mono font-bold text-base">
               ${{ p.amount }}
             </td>
+            <!-- ESTADO TRADUCIDO AL SOCIO -->
             <td class="cell-status text-center">
               <span :class="['status-badge', getStatusClass(p.status)]">
-                {{ p.status === 'pending' ? 'Pendiente' : p.status }}
+                {{ formatStatusLabel(p.status) }}
               </span>
             </td>
           </tr>
@@ -116,15 +118,53 @@ const formatDate = (dateStr) => {
   return `${d} - ${t}`
 }
 
+const formatConcept = (payment) => {
+  if (payment.type === 'booking') {
+    const s = payment.status ? payment.status.toLowerCase() : ''
+    const amount = Number(payment.amount)
+    
+    // CASO 1: Si el estado general del pago es pendiente en la tabla
+    if (s === 'pending' || s === 'pendiente') {
+      return 'Seña de reserva (50%)'
+    }
+    
+    // CASO 2: Si está pagado/completed pero el monto equivale a la seña (ej: 10000)
+    if ((s === 'completed' || s === 'approved' || s === 'pagado' || s === 'exitoso') && amount === 10000) {
+      return 'Seña de reserva (50%)'
+    }
+    
+    // CASO 3: Si está pagado/completed y el monto es el total del pase (ej: 20000)
+    if ((s === 'completed' || s === 'approved' || s === 'pagado' || s === 'exitoso') && amount > 10000) {
+      return 'Pago Total de Reserva (100%)'
+    }
+    
+    return 'Pago de reserva'
+  }
+  return payment.type
+}
+
+// TRADUCCIÓN VISUAL DE ESTADOS PARA LA GRILLA
+const formatStatusLabel = (status) => {
+  const s = status ? status.toLowerCase() : ''
+  if (s === 'completed' || s === 'approved' || s === 'pagado' || s === 'exitoso') {
+    return 'Pagado'
+  }
+  if (s === 'pending' || s === 'pendiente') {
+    return 'Pendiente'
+  }
+  return status
+}
+
+// ESTILOS DINÁMICOS DE COLORES (BADGES DE INTERFAZ)
 const getStatusClass = (status) => {
   const s = status ? status.toLowerCase() : ''
-  if (s.includes('pagado') || s.includes('approved') || s.includes('exitoso')) {
-    return 'badge-success'
+  if (s.includes('pagado') || s.includes('approved') || s.includes('exitoso') || s.includes('completed')) {
+    return 'badge-success' // Verde para transacciones procesadas con éxito
   }
   if (s.includes('pending') || s.includes('pendiente')) {
-    return 'badge-warning'
+    return 'badge-warning' // Amarillo para transacciones en espera de pago
   }
-  return 'badge-danger'
+  return 'badge-danger' // Rojo para caídas o canceladas
 }
 
 const getUserIdFromExistingToken = () => {
@@ -201,4 +241,3 @@ onMounted(fetchPayments)
 .spinner { border: 3px solid #f3f4f6; border-top: 3px solid #0d124a; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 12px auto; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
-
