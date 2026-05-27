@@ -25,41 +25,45 @@
             <td class="cell-date font-medium text-nowrap">
               {{ formatDate(p.date) }}
             </td>
-            <!-- CONCEPTO BASADO EN EL MODELO DE ENTRADA -->
             <td class="cell-concept capitalize font-semibold">
               {{ formatConcept(p) }}
             </td>
             <td class="cell-amount text-right font-mono font-bold text-base">
               ${{ p.amount }}
             </td>
-            <!-- ESTADO TRADUCIDO AL SOCIO -->
+            
+            <!-- ACCIÓN DE PAGO INTERACTIVA CONECTADA AL BACKEND -->
             <td class="cell-status text-center">
-              <span :class="['status-badge', getStatusClass(p.status)]">
+              <!-- CASO A: Si el estado es exitoso, se muestra como texto estático verde -->
+              <span 
+                v-if="p.status.toLowerCase() === 'completed' || p.status.toLowerCase() === 'approved' || p.status.toLowerCase() === 'pagado'" 
+                :class="['status-badge', getStatusClass(p.status)]"
+              >
                 {{ formatStatusLabel(p.status) }}
               </span>
+              
+              <!-- CASO B: Si el estado es partial o pending, renderiza el BOTÓN interactivo amarillo -->
+              <button 
+                v-else
+                :class="['status-badge', 'badge-warning', 'btn-action-pay']"
+                @click="openPaymentFlow(p)"
+                title="Hacé clic para liquidar este pago con tu tarjeta vinculada"
+              >
+                {{ formatStatusLabel(p.status) }} 💳
+              </button>
             </td>
           </tr>
         </tbody>
       </table>
 
       <div class="pagination-footer" v-if="totalPages !== 1">
-        <button
-          @click="prevPage"
-          :disabled="currentPage === 1"
-          class="page-btn"
-        >
+        <button @click="prevPage" :disabled="currentPage === 1" class="page-btn">
           ← Anterior
         </button>
-
         <span class="page-info">
           Página <strong>{{ currentPage }}</strong> de {{ totalPages }}
         </span>
-
-        <button
-          @click="nextPage"
-          :disabled="currentPage === totalPages"
-          class="page-btn"
-        >
+        <button @click="nextPage" :disabled="currentPage === totalPages" class="page-btn">
           Siguiente →
         </button>
       </div>
@@ -72,6 +76,14 @@
       <h3>Sin pagos registrados</h3>
       <p>No encontramos ningún movimiento financiero asociado a tu cuenta actualmente.</p>
     </div>
+
+    <!-- COMPONENTE MODAL DE PAGO INTEGRADO -->
+    <PaymentModal
+      v-model="isModalOpen"
+      :amount="selectedPaymentAmount"
+      :payeeName="selectedPaymentConcept"
+      @result="handlePaymentResult"
+    />
   </div>
 </template>
 
@@ -79,6 +91,7 @@
 import { ref, onMounted, computed } from 'vue'
 import api from '../utils/api'
 import { useAuthStore } from '../stores/auth'
+import PaymentModal from '../components/PaymentModal.vue' 
 
 const auth = useAuthStore()
 const payments = ref([])
@@ -86,6 +99,11 @@ const loading = ref(false)
 
 const currentPage = ref(1)
 const itemsPerPage = ref(5)
+
+const isModalOpen = ref(false)
+const selectedPaymentAmount = ref(0)
+const selectedPaymentConcept = ref('')
+const activePaymentObject = ref(null)
 
 const totalPages = computed(() => {
   return Math.ceil(payments.value.length / itemsPerPage.value)
@@ -98,15 +116,10 @@ const paginatedPayments = computed(() => {
 })
 
 const nextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
+  if (currentPage.value < totalPages.value) currentPage.value++
 }
-
 const prevPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
+  if (currentPage.value > 1) currentPage.value--
 }
 
 const formatDate = (dateStr) => {
@@ -123,31 +136,29 @@ const formatConcept = (payment) => {
     const s = payment.status ? payment.status.toLowerCase() : ''
     const amount = Number(payment.amount)
     
-    // CASO 1: Si el estado general del pago es pendiente en la tabla
-    if (s === 'pending' || s === 'pendiente') {
+    // Si viene como partial o pending en la base de datos, mapea como seña
+    if (s === 'pending' || s === 'partial' || s === 'pendiente') {
       return 'Seña de reserva (50%)'
     }
-    
-    // CASO 2: Si está pagado/completed pero el monto equivale a la seña (ej: 10000)
-    if ((s === 'completed' || s === 'approved' || s === 'pagado' || s === 'exitoso') && amount === 10000) {
+    if ((s === 'completed' || s === 'approved' || s === 'pagado') && amount === 10000) {
       return 'Seña de reserva (50%)'
     }
-    
-    // CASO 3: Si está pagado/completed y el monto es el total del pase (ej: 20000)
-    if ((s === 'completed' || s === 'approved' || s === 'pagado' || s === 'exitoso') && amount > 10000) {
+    if ((s === 'completed' || s === 'approved' || s === 'pagado') && amount > 10000) {
       return 'Pago Total de Reserva (100%)'
     }
-    
     return 'Pago de reserva'
   }
   return payment.type
 }
 
-// TRADUCCIÓN VISUAL DE ESTADOS PARA LA GRILLA
+// TRADUCCIÓN FIEL A LOS COMENTARIOS DEL MODELO PYTHON
 const formatStatusLabel = (status) => {
   const s = status ? status.toLowerCase() : ''
-  if (s === 'completed' || s === 'approved' || s === 'pagado' || s === 'exitoso') {
+  if (s === 'completed' || s === 'approved' || s === 'pagado') {
     return 'Pagado'
+  }
+  if (s === 'partial') {
+    return 'Pendiente parcial'
   }
   if (s === 'pending' || s === 'pendiente') {
     return 'Pendiente'
@@ -155,16 +166,42 @@ const formatStatusLabel = (status) => {
   return status
 }
 
-// ESTILOS DINÁMICOS DE COLORES (BADGES DE INTERFAZ)
 const getStatusClass = (status) => {
   const s = status ? status.toLowerCase() : ''
-  if (s.includes('pagado') || s.includes('approved') || s.includes('exitoso') || s.includes('completed')) {
-    return 'badge-success' // Verde para transacciones procesadas con éxito
+  if (s.includes('pagado') || s.includes('approved') || s.includes('completed')) {
+    return 'badge-success'
   }
-  if (s.includes('pending') || s.includes('pendiente')) {
-    return 'badge-warning' // Amarillo para transacciones en espera de pago
+  if (s.includes('pending') || s.includes('pendiente') || s.includes('partial')) {
+    return 'badge-warning'
   }
-  return 'badge-danger' // Rojo para caídas o canceladas
+  return 'badge-danger'
+}
+
+const openPaymentFlow = (payment) => {
+  activePaymentObject.value = payment
+  selectedPaymentAmount.value = Number(payment.amount)
+  selectedPaymentConcept.value = formatConcept(payment)
+  isModalOpen.value = true
+}
+
+// RESOLUCIÓN DEL EMIT: Actualiza localmente e intenta impactar en la API del router
+const handlePaymentResult = async (result) => {
+  if (result && result.status === 'Aprobado') {
+    const paymentId = activePaymentObject.value?.id
+    
+    // Transición visual instantánea
+    const target = payments.value.find(p => p.id === paymentId)
+    if (target) {
+      target.status = 'completed' 
+    }
+
+    try {
+      // Endpoint adaptado a la nomenclatura estándar REST para actualizar el registro del pago
+      await api.put(`/payments/${paymentId}`, { status: 'completed' })
+    } catch (err) {
+      console.error("Error al persistir la actualización del pago en FastAPi:", err)
+    }
+  }
 }
 
 const getUserIdFromExistingToken = () => {
@@ -230,10 +267,28 @@ onMounted(fetchPayments)
 .font-medium { font-weight: 500; }
 .capitalize { text-transform: capitalize; }
 .text-base { font-size: 1rem; }
+
 .status-badge { padding: 6px 14px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; display: inline-block; border: 1px solid transparent; }
 .badge-success { background-color: #f0fdf4; color: #166534; border-color: #bbf7d0; }
 .badge-warning { background-color: #fffbeb; color: #92400e; border-color: #fde68a; }
 .badge-danger { background-color: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+
+/* ESTILO DEL BOTÓN DE ACCIÓN PARA EL FLUJO */
+.btn-action-pay {
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.15);
+}
+.btn-action-pay:hover {
+  background-color: #fde68a;
+  color: #78350f;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3);
+}
+.btn-action-pay:active {
+  transform: translateY(0);
+}
+
 .loading-state, .empty-state-card { text-align: center; padding: 60px 20px; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
 .empty-state-card h3 { margin: 0; font-size: 1.2rem; color: #1e293b; font-weight: 700; }
 .empty-state-card p { color: #94a3b8; font-size: 0.85rem; margin-top: 6px; }
