@@ -24,3 +24,4 @@ class Booking(Base):
     instance = relationship("ShiftInstance", back_populates="bookings")
     user = relationship("User", back_populates="bookings")
     subscription = relationship("Subscription", back_populates="bookings")
+    
