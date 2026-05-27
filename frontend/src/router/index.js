@@ -39,7 +39,7 @@ const routes = [
     path: '/clases',
     name: 'GestionClases',
     component: ShiftsManagement,
-    meta: { requiresAuth: true, role: 'admin', headerTitle: 'Gestión de clases' }
+    meta: { requiresAuth: true, role: ['admin', 'empleado'], headerTitle: 'Gestión de clases' }
   },
   {
     path: '/equipo',

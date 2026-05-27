@@ -4,24 +4,26 @@
       <img alt="Fachada Club 360" class="banner-bg-img" :src="'/sports/entrance.png'" />
       <div class="banner-overlay"></div>
       <div class="banner-content">
-        <h1>Bienvenido de nuevo, Admin</h1>
+        <p class="banner-subtitle">Cuenta de administrador</p>
+        <h1 class="user-name">{{ nombreCompleto }}</h1>
       </div>
     </header>
 
     <div class="dashboard-grid">
       <div class="main-column">
-        <!-- SECCIÓN METRICAS -->
-        <section class="metrics-row animate-fade-in">
+        <!-- SECCIÓN MÈTRICAS COMPACTAS -->
+        <section class="metrics-row">
           
           <!-- Reservas de Hoy -->
           <div class="metric-card">
-            <div class="metric-header">
-              <span class="metric-title">RESERVAS DE HOY</span>
+            <div class="card-label">
+              <i class="ti ti-calendar-event" aria-hidden="true"></i>
+              RESERVAS DE HOY
             </div>
             <div class="metric-body">
-              <div v-if="loading" class="skeleton skeleton-text" style="width: 60px; height: 2.4rem;"></div>
+              <div v-if="loading" class="skeleton skeleton-text" style="width: 50px; height: 2.2rem;"></div>
               <template v-else>
-                <span class="metric-value">{{ reservasHoy }}</span>
+                <span class="card-big-number">{{ reservasHoy }}</span>
                 <span class="text-green-change">Activas</span>
               </template>
             </div>
@@ -37,66 +39,74 @@
 
           <!-- Abonos Activos -->
           <div class="metric-card jc-center">
-            <div class="metric-header">
-              <span class="metric-title">ABONOS ACTIVOS</span>
+            <div class="card-label">
+              <i class="ti ti-credit-card" aria-hidden="true"></i>
+              ABONOS ACTIVOS
             </div>
             <div class="metric-body">
-              <div v-if="loading" class="skeleton skeleton-text" style="width: 80px; height: 2.4rem;"></div>
-              <span v-else class="metric-value text-green">{{ totalAbonosActivos }}</span>
+              <div v-if="loading" class="skeleton skeleton-text" style="width: 60px; height: 2.2rem;"></div>
+              <span v-else class="card-big-number text-green">{{ totalAbonosActivos }}</span>
             </div>
           </div>
 
           <!-- Clientes Suspendidos -->
           <div class="metric-card jc-center">
-            <div class="metric-header">
-              <span class="metric-title">CLIENTES SUSPENDIDOS</span>
+            <div class="card-label">
+              <i class="ti ti-user-x" aria-hidden="true"></i>
+              CLIENTES SUSPENDIDOS
             </div>
             <div class="metric-body">
-              <div v-if="loading" class="skeleton skeleton-text" style="width: 50px; height: 2.4rem;"></div>
-              <span v-else class="metric-value text-red">{{ totalSuspensiones }}</span>
+              <div v-if="loading" class="skeleton skeleton-text" style="width: 50px; height: 2.2rem;"></div>
+              <span v-else class="card-big-number text-red">{{ totalSuspensiones }}</span>
             </div>
           </div>
         </section>
 
-        <!-- SECCIÓN CLASES -->
         <section class="classes-section">
           <div class="section-header">
-            <h3>Próximas Clases de Hoy</h3>
-            <router-link to="/clases" class="view-all-link">Ver Agenda Completa</router-link>
+            <h3 class="section-title-grid">PRÓXIMAS ACTIVIDADES DEL DÍA</h3>
+            <router-link to="/clases" class="view-all-link">Ver Agenda Completa →</router-link>
           </div>
-          <div class="classes-grid">
-            <!-- Skeletons para las clases -->
+          
+          <div class="classes-flex-container">
+            <!-- Skeletons Clases -->
             <template v-if="loading">
               <div v-for="i in 2" :key="'sk-clase-' + i" class="class-card">
                 <div class="class-info-main">
-                  <div class="skeleton skeleton-text" style="width: 70%; height: 1.2rem; margin-bottom: 8px;"></div>
-                  <div class="skeleton skeleton-text" style="width: 40%; height: 0.9rem;"></div>
+                  <div class="skeleton skeleton-text" style="width: 70%; height: 1.4rem; margin-bottom: 6px;"></div>
+                  <div class="skeleton skeleton-text" style="width: 50%; height: 0.85rem;"></div>
                 </div>
                 <div class="class-meta">
-                  <div class="skeleton" style="width: 80px; height: 22px; border-radius: 6px;"></div>
-                  <div class="skeleton" style="width: 60px; height: 14px;"></div>
+                  <div class="skeleton" style="width: 50px; height: 12px;"></div>
                 </div>
               </div>
             </template>
 
             <!-- Data Real -->
             <template v-else>
-              <div v-for="clase in proximasClasesFiltradas" :key="clase.id" class="class-card" :class="{ 'border-red': clase.booked_count >= clase.capacity }">
+              <div v-for="clase in proximasClasesFiltradas" :key="clase.id" class="class-card" :class="{ 'border-red': clase.booked_count >= (clase.capacity || clase.max_capacity) }">
                 <div class="class-info-main">
-                  <h4>{{ clase.activity_name }}</h4>
-                  <p class="instructor">{{ clase.court || 'No asignada' }}</p>
+                  <!-- Título de la Actividad -->
+                  <p class="card-value-title">{{ clase.activity_name }}</p>
+                  <!-- Detalles combinados sin iconos que rompan el margen izquierdo inicial -->
+                  <p class="class-details-sub">
+                    {{ clase.template.start_time }} hs
+                  </p>
                 </div>
+                
                 <div class="class-meta">
-                  <span class="time-tag">HOY • {{ clase.template.start_time }}</span>
                   <div class="spots-status">
-                    <span v-if="clase.booked_count >= clase.capacity" class="text-red font-bold">COMPLETO</span>
-                    <span v-else class="spots-text">{{ clase.booked_count }}/{{ clase.capacity }} cupos</span>
-                    <div class="spots-indicator-bar">
-                      <div class="fill" :class="{ 'bg-red': clase.booked_count >= clase.capacity, 'bg-green': (clase.booked_count / clase.capacity) < 0.8 }" :style="{ width: (clase.booked_count / clase.capacity) * 100 + '%' }"></div>
+                    <span v-if="clase.booked_count >= (clase.capacity || clase.max_capacity)" class="text-red font-bold" style="font-size: 11px;">COMPLETO</span>
+                    <span v-else class="spots-text">{{ clase.booked_count }} / {{ clase.capacity || clase.max_capacity }} cupos</span>
+                    <div class="progress-bar-wrap">
+                      <div class="progress-bar">
+                        <div class="progress-fill" :class="{ 'bg-red': clase.booked_count >= (clase.capacity || clase.max_capacity), 'bg-green': (clase.booked_count / (clase.capacity || clase.max_capacity)) < 0.8 }" :style="{ width: (clase.booked_count / (clase.capacity || clase.max_capacity)) * 100 + '%' }"></div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
+              
               <div v-if="proximasClasesFiltradas.length === 0" class="no-data-placeholder">
                 No hay más clases programadas para el resto del día.
               </div>
@@ -105,12 +115,12 @@
         </section>
       </div>
 
-      <!-- SECCIÓN HISTORIAL (ASIDE) -->
+      <!-- SECCIÓN HISTORIAL (ASIDE COMPACTO) -->
       <aside class="activity-column">
         <div class="activity-card-container">
           <div class="activity-header">
             <span class="live-dot"></span>
-            <h3>Historial de Actividad</h3>
+            <h3 class="section-title-grid" style="margin: 0;">HISTORIAL DE ACTIVIDAD</h3>
           </div>
           <div class="activity-timeline-minimal">
             <!-- Skeletons Historial -->
@@ -118,8 +128,8 @@
               <div v-for="i in 3" :key="'sk-act-' + i" class="timeline-node-item">
                 <div class="dot" style="background: #e2e8f0;"></div>
                 <div class="node-content" style="width: 100%;">
-                  <div class="skeleton skeleton-text" style="width: 90%; height: 0.9rem; margin-bottom: 6px;"></div>
-                  <div class="skeleton skeleton-text" style="width: 30%; height: 0.75rem;"></div>
+                  <div class="skeleton skeleton-text" style="width: 90%; height: 0.8rem; margin-bottom: 4px;"></div>
+                  <div class="skeleton skeleton-text" style="width: 30%; height: 0.7rem;"></div>
                 </div>
               </div>
             </template>
@@ -138,18 +148,18 @@
         </div>
       </aside>
 
-      <!-- SECCIÓN EMPLEADOS -->
+      <!-- SECCIÓN EMPLEADOS COMPACTA -->
       <section class="staff-section">
         <div class="section-header">
-          <h3>Empleados</h3>
+          <h3 class="section-title-grid" style="margin: 0;">EQUIPO DE TRABAJO</h3>
           <span v-if="!loading" class="staff-count-badge">{{ staffEquipo.length }} Activos</span>
         </div>
         <div class="staff-grid">
           <!-- Skeletons Staff -->
           <template v-if="loading">
-            <div v-for="i in 3" :key="'sk-staff-' + i" class="staff-member-card">
-              <div class="skeleton" style="width: 40px; height: 40px; border-radius: 50%;"></div>
-              <div class="skeleton skeleton-text" style="width: 80px; height: 1rem;"></div>
+            <div v-for="i in 4" :key="'sk-staff-' + i" class="staff-member-card">
+              <div class="skeleton" style="width: 32px; height: 32px; border-radius: 50%;"></div>
+              <div class="skeleton skeleton-text" style="width: 70px; height: 0.9rem;"></div>
             </div>
           </template>
 
@@ -169,12 +179,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
+import { useAuthStore } from '../stores/auth'
 import { useAppClockStore } from '../stores/appClock'
 
-// Control de carga general
 const loading = ref(true)
+const auth = useAuthStore()
 const clock = useAppClockStore()
 
 // Estados reactivos
@@ -187,7 +198,11 @@ const todasLasClasesDelDia = ref([])
 const proximasClasesFiltradas = ref([])
 let intervaloActualizacion = null
 
-// Desacoplamos el procesamiento local de las clases del fetch puro de red
+const nombreCompleto = computed(() => {
+  if (!auth.user) return 'Personal Club360'
+  return `${auth.user.first_name} ${auth.user.last_name || ''}`.trim()
+})
+
 const procesarFiltroClases = () => {
   reservasHoy.value = todasLasClasesDelDia.value.reduce((acumulador, clase) => {
     return acumulador + (clase.booked_count || 0)
@@ -196,43 +211,53 @@ const procesarFiltroClases = () => {
   const ahora = new Date()
   const horaActualStr = ahora.toTimeString().slice(0, 5)
 
-  proximasClasesFiltradas.value = todasLasClasesDelDia.value
-    .filter(clase => clase.template.start_time >= horaActualStr)
+  const clasesFuturas = todasLasClasesDelDia.value.filter(clase => {
+    return clase.template.start_time >= horaActualStr
+  })
+
+  const mapeoActividades = {}
+  clasesFuturas.forEach(clase => {
+    const nombreActividad = clase.activity_name
+    if (!mapeoActividades[nombreActividad]) {
+      mapeoActividades[nombreActividad] = clase
+    } else {
+      if (clase.template.start_time < mapeoActividades[nombreActividad].template.start_time) {
+        mapeoActividades[nombreActividad] = clase
+      }
+    }
+  })
+
+  proximasClasesFiltradas.value = Object.values(mapeoActividades)
+    .sort((a, b) => a.template.start_time.localeCompare(b.template.start_time))
     .slice(0, 4)
 }
 
 const inicializarDashboard = async () => {
   loading.value = true
   try {
-    // 🚀 PARALELIZACIÓN EXPLICITA: Ambas peticiones viajan al mismo tiempo en la red
     const [resSummary, resShifts] = await Promise.all([
       axios.get('/dashboard/summary'),
       axios.get('/shifts/instances')
     ])
 
-    // Asignar datos de /dashboard/summary
     totalAbonosActivos.value = resSummary.data.active_subscriptions
     totalSuspensiones.value = resSummary.data.suspended_clients
     staffEquipo.value = resSummary.data.staff
     historialActividad.value = resSummary.data.activity_feed
 
-    // Asignar y procesar datos de /shifts/instances
     const hoyStr = clock.effectiveTodayStr
     todasLasClasesDelDia.value = resShifts.data.filter(clase => clase.date === hoyStr)
     
     procesarFiltroClases()
-
   } catch (error) {
     console.error("Error cargando el dashboard:", error)
   } finally {
-    loading.value = false // Apaga los skeletons pase lo que pase
+    loading.value = false
   }
 }
 
 onMounted(() => {
   inicializarDashboard()
-
-  // El intervalo solo recalcula los filtros locales de hora, no vuelve a pegarle a la API sin necesidad
   intervaloActualizacion = setInterval(() => {
     procesarFiltroClases()
   }, 60000)
@@ -244,67 +269,165 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* --- Tus estilos base se mantienen intactos --- */
-.dashboard-layout { padding: 24px; max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; font-family: system-ui, -apple-system, sans-serif; }
-.club-banner { position: relative; height: 280px; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
+.dashboard-layout {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* BANNER COMPACTO ESTILO CLIENTE */
+.club-banner {
+  position: relative;
+  height: 180px;
+  border-radius: 20px;
+  overflow: hidden;
+}
 .banner-bg-img { width: 100%; height: 100%; object-fit: cover; object-position: center 40%; }
-.banner-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.65) 0%, rgba(0, 0, 0, 0.15) 100%); z-index: 1; }
-.banner-content { position: absolute; bottom: 28px; left: 32px; color: white; z-index: 2; }
-.banner-content h1 { margin: 0; font-size: 2.2rem; font-weight: 800; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
-.dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
-.main-column { display: flex; flex-direction: column; gap: 24px; }
-.metrics-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.metric-card { background: white; border: 1px solid #e1e6eb; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; justify-content: space-between; min-height: 140px; }
-.jc-center { justify-content: center !important; }
-.metric-header { display: flex; justify-content: space-between; align-items: center; }
-.metric-title { font-size: 0.75rem; font-weight: 700; color: #718096; letter-spacing: 0.5px; }
-.metric-body { display: flex; align-items: baseline; gap: 10px; margin-top: 12px; }
-.metric-value { font-size: 2.4rem; font-weight: 800; color: #1a202c; }
+.banner-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.2) 100%); }
+.banner-content { position: absolute; bottom: 20px; left: 24px; color: white; z-index: 2; }
+.banner-subtitle { margin: 0 0 2px; font-size: 12px; opacity: 0.85; letter-spacing: 0.5px; text-transform: uppercase; }
+.user-name { margin: 0; font-size: 1.8rem; font-weight: 600; text-shadow: 0 2px 6px rgba(0,0,0,0.4); text-transform: capitalize; }
+
+/* GRID PRINCIPAL */
+.dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+.main-column { display: flex; flex-direction: column; gap: 20px; }
+.metrics-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+
+/* ESTILOS DE TARJETAS MINIATURA */
+.metric-card {
+  background: white;
+  border: 1px solid #e1e6eb;
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 110px;
+}
+.jc-center { justify-content: center !important; gap: 4px; }
+
+.card-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #718096;
+  letter-spacing: 0.5px;
+}
+.card-label i { font-size: 13px; }
+
+.metric-body { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
+.card-big-number { margin: 0; font-size: 2.2rem; font-weight: 600; color: #1a202c; line-height: 1; }
+
 .text-green { color: #48bb78 !important; }
 .text-red { color: #e53e3e !important; }
-.text-green-change { color: #48bb78; font-size: 0.85rem; font-weight: 600; }
-.mini-bar-chart { display: flex; align-items: flex-end; gap: 6px; height: 24px; margin-top: 12px; }
-.mini-bar-chart .bar { flex: 1; background: #edf2f7; border-radius: 2px; }
-.classes-section { background: white; border: 1px solid #e1e6eb; border-radius: 16px; padding: 24px; }
-.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.section-header h3 { margin: 0; font-size: 1.15rem; color: #1a202c; font-weight: 700; }
-.view-all-link { color: #2d658d; font-size: 0.85rem; text-decoration: none; font-weight: 600; }
+.text-green-change { color: #48bb78; font-size: 0.8rem; font-weight: 600; }
+
+.mini-bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 20px; margin-top: 4px; }
+.mini-bar-chart .bar { flex: 1; background: #edf2f7; border-radius: 1px; }
+
+/* SECCIÓN CONTENEDORES DE CONTENIDO */
+.classes-section, .activity-card-container, .staff-section {
+  background: white;
+  border: 1px solid #e1e6eb;
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.section-title-grid { font-size: 11.5px; font-weight: 700; color: #4a5568; letter-spacing: 0.8px; margin-bottom: 12px; text-transform: uppercase; }
+.view-all-link { color: #2d658d; font-size: 0.8rem; text-decoration: none; font-weight: 600; }
 .view-all-link:hover { text-decoration: underline; }
-.classes-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.class-card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; background: #ffffff; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; }
-.class-card h4 { margin: 0 0 4px 0; font-size: 1.05rem; color: #1a202c; }
-.instructor { margin: 0; font-size: 0.85rem; color: #718096; }
-.class-meta { display: flex; justify-content: space-between; align-items: center; }
-.time-tag { background: #edf2f7; padding: 4px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; color: #4a5568; }
-.spots-status { text-align: right; }
-.spots-text { font-size: 0.8rem; color: #4a5568; display: block; margin-bottom: 4px; }
-.spots-indicator-bar { width: 80px; height: 4px; background: #edf2f7; border-radius: 2px; overflow: hidden; display: inline-block; }
-.spots-indicator-bar .fill { height: 100%; background: #2d658d; }
-.no-data-placeholder { grid-column: span 2; padding: 30px; text-align: center; color: #718096; font-size: 0.9rem; }
+
+/* CONTENEDOR FLEXIBLE DE CLASES */
+.classes-flex-container { 
+  display: flex; 
+  flex-wrap: wrap; 
+  gap: 16px; 
+  justify-content: flex-start;
+}
+
+.class-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  flex: 1 1 240px;
+  max-width: 280px; 
+}
+
+.class-info-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start; /* Fuerza a todos los hijos a pegarse al inicio izquierdo */
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.card-value-title { 
+  margin: 0; 
+  font-size: 1.3rem; 
+  font-weight: 700; 
+  color: #1a202c; 
+  letter-spacing: -0.3px;
+  text-align: left;
+}
+
+/* Subtítulo limpio sin márgenes raros */
+.class-details-sub { 
+  margin: 4px 0 0; 
+  font-size: 0.82rem; 
+  color: #718096; 
+  font-weight: 500;
+  text-align: left;
+  line-height: 1.2;
+}
+
+.class-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+.spots-status { width: 100%; }
+.spots-text { font-size: 0.78rem; color: #4a5568; display: block; margin-bottom: 4px; font-weight: 600; }
+
+.progress-bar-wrap { display: flex; align-items: center; width: 100%; }
+.progress-bar { flex: 1; height: 5px; background: #edf2f7; border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; transition: width 0.4s ease; }
+
+.no-data-placeholder { width: 100%; padding: 20px; text-align: center; color: #718096; font-size: 0.85rem; }
+
+/* HISTORIAL COMPACTO */
 .activity-column { grid-column: 2; }
-.activity-card-container { background: white; border: 1px solid #e1e6eb; border-radius: 16px; padding: 24px; height: 100%; }
-.activity-header { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
-.activity-header h3 { margin: 0; font-size: 1.15rem; color: #1a202c; }
-.live-dot { width: 8px; height: 8px; background: #48bb78; border-radius: 50%; }
-.activity-timeline-minimal { display: flex; flex-direction: column; gap: 24px; position: relative; padding-left: 8px; }
-.activity-timeline-minimal::before { content: ''; position: absolute; left: 12px; top: 8px; bottom: 8px; width: 2px; background: #edf2f7; }
-.timeline-node-item { display: flex; gap: 16px; align-items: flex-start; position: relative; }
-.dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; z-index: 1; box-shadow: 0 0 0 4px white; }
+.activity-header { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; }
+.live-dot { width: 6px; height: 6px; background: #48bb78; border-radius: 50%; }
+.activity-timeline-minimal { display: flex; flex-direction: column; gap: 16px; position: relative; padding-left: 4px; }
+.activity-timeline-minimal::before { content: ''; position: absolute; left: 8px; top: 6px; bottom: 6px; width: 2px; background: #edf2f7; }
+.timeline-node-item { display: flex; gap: 12px; align-items: flex-start; position: relative; }
+.dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; z-index: 1; box-shadow: 0 0 0 3px white; }
 .orange-dot { background-color: #ff6f00; }
-.node-content p { margin: 0; font-size: 0.88rem; color: #2d3748; line-height: 1.4; }
-.node-time { font-size: 0.78rem; color: #9ab0c5; display: block; margin-top: 2px; }
-.staff-section { grid-column: span 2; background: white; border: 1px solid #e1e6eb; border-radius: 16px; padding: 24px; }
-.staff-count-badge { background: #e8f5e9; color: #48bb78; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; }
-.staff-grid { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 16px; }
-.staff-member-card { display: flex; align-items: center; gap: 12px; background: #f8fafc; padding: 12px 20px; border-radius: 12px; border: 1px solid #e2e8f0; min-width: 180px; }
-.staff-avatar { width: 40px; height: 40px; background: #e2f0fd; color: #2d658d; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; }
-.staff-details h4 { margin: 0; font-size: 0.95rem; color: #1a202c; font-weight: 600; }
+.node-content p { margin: 0; font-size: 0.82rem; color: #2d3748; line-height: 1.3; }
+.node-time { font-size: 0.75rem; color: #9ab0c5; display: block; margin-top: 1px; }
+
+/* SECCIÓN STAFF */
+.staff-section { grid-column: span 2; }
+.staff-count-badge { background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 700; }
+.staff-grid { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+.staff-member-card { display: flex; align-items: center; gap: 10px; background: #f8fafc; padding: 8px 14px; border-radius: 10px; border: 1px solid #e2e8f0; min-width: 150px; }
+.staff-avatar { width: 32px; height: 32px; background: #e2f0fd; color: #2d658d; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.8rem; flex-shrink: 0; }
+.staff-details h4 { margin: 0; font-size: 0.85rem; color: #1a202c; font-weight: 600; }
+
 .font-bold { font-weight: 700; }
 .border-red { border-color: #fecaca; }
 .bg-red { background-color: #e53e3e !important; }
 .bg-green { background-color: #48bb78 !important; }
 
-/* --- 🌟 NUEVOS ESTILOS PARA EL SKELETON ANIMADO 🌟 --- */
+/* SKELETON ANIMADO */
 .skeleton {
   background: linear-gradient(90deg, #f0f2f5 25%, #e6e8ec 50%, #f0f2f5 75%);
   background-size: 200% 100%;
@@ -312,20 +435,20 @@ onUnmounted(() => {
   border-radius: 4px;
   display: inline-block;
 }
-.skeleton-text {
-  height: 1em;
-  margin-bottom: 4px;
-}
+.skeleton-text { height: 1em; margin-bottom: 4px; }
 @keyframes loading-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
 
+/* RESPONSIVE */
 @media (max-width: 900px) {
-  .dashboard-grid { grid-template-columns: 1fr; }
-  .activity-column { grid-column: 1; }
-  .staff-section { grid-column: 1; }
-  .metrics-row { grid-template-columns: 1fr; }
-  .classes-grid { grid-template-columns: 1fr; }
+  .dashboard-grid { grid-template-columns: 1fr; gap: 16px; }
+  .activity-column, .staff-section { grid-column: 1; }
+  .metrics-row { grid-template-columns: 1fr; gap: 10px; }
+  .classes-flex-container { justify-content: center; }
+  .class-card { max-width: 100%; }
+  .club-banner { height: 140px; }
+  .user-name { font-size: 1.5rem; }
 }
 </style>
