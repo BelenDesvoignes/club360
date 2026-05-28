@@ -181,22 +181,37 @@ const openPaymentFlow = (payment) => {
   isModalOpen.value = true
 }
 
-// RESOLUCIÓN DEL EMIT: Actualiza localmente e intenta impactar en la API del router
+// Resolucion de   Persistencia
 const handlePaymentResult = async (result) => {
   if (result && result.status === 'Aprobado') {
-    const paymentId = activePaymentObject.value?.id
-    
-    // Transición visual instantánea
-    const target = payments.value.find(p => p.id === paymentId)
-    if (target) {
-      target.status = 'completed' 
-    }
+    // Tomamos el ID del booking/reserva real asociado a este movimiento financiero
+    const bookingId = activePaymentObject.value?.booking_id || activePaymentObject.value?.id
+    const amountToPay = selectedPaymentAmount.value
 
     try {
-      // Endpoint adaptado a la nomenclatura estándar REST para actualizar el registro del pago
-      await api.put(`/payments/${paymentId}`, { status: 'completed' })
+      loading.value = true // Mostramos el spinner mientras impacta en la BD
+
+      // 1. Pegarle al endpoint correcto del backend que unificamos con dev
+      await api.post('/payments/me/complete-booking', {
+        booking_id: Number(bookingId),
+        amount: Number(amountToPay)
+      })
+
+      const target = payments.value.find(p => p.id === activePaymentObject.value?.id)
+      if (target) {
+        target.status = 'completed'
+      }
+
+      console.log('¡Pago actualizado')
+
     } catch (err) {
-      console.error("Error al persistir la actualización del pago en FastAPi:", err)
+      console.error("Error crítico al persistir la actualización del pago en FastAPI:", err)
+      alert("Hubo un problema al registrar tu pago en el servidor, pero la transacción fue aprobada.")
+    } finally {
+      // 3. ¡LA CLAVE DE LA PERSISTENCIA! Volvemos a consultar la API 
+      // para traer el estado real asentado en la base de datos
+      await fetchPayments()
+      loading.value = false
     }
   }
 }
