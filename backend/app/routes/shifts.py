@@ -51,25 +51,6 @@ def get_instances(db: Session = Depends(get_db)):
         .all()
     )
 
-    template_ids = [t.id for t in active_templates]
-    templates_with_instances = (
-        db.query(ShiftTemplate.id)
-        .join(ShiftInstance, ShiftInstance.template_id == ShiftTemplate.id)
-        .filter(
-            ShiftTemplate.id.in_(template_ids),
-            ShiftInstance.date >= business_today(),
-            ShiftInstance.is_cancelled == False
-        )
-        .distinct()
-        .all()
-    )
-
-    existing_template_ids = {t[0] for t in templates_with_instances}
-    templates_to_backfill = [t for t in active_templates if t.id not in existing_template_ids]
-
-    for template in templates_to_backfill:
-        shift_service.create_instances_for_month(db, template)
-
     booking_count_sq = (
         db.query(
             Booking.instance_id,
