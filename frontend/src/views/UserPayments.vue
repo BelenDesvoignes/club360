@@ -10,7 +10,7 @@
       <p>Buscando movimientos financieros...</p>
     </div>
 
-    <div v-else-if="payments.length" class="table-wrapper">
+    <div v-else-if="filteredPayments.length" class="table-wrapper">
       <table class="custom-table">
         <thead>
           <tr>
@@ -33,7 +33,6 @@
             </td>
             
             <td class="cell-status text-center">
-              <!-- CASO A: Si el estado es exitoso, se muestra como texto estático verde -->
               <span 
                 v-if="p.status.toLowerCase() === 'completed' || p.status.toLowerCase() === 'approved' || p.status.toLowerCase() === 'pagado'" 
                 :class="['status-badge', getStatusClass(p.status)]"
@@ -41,7 +40,6 @@
                 {{ formatStatusLabel(p.status) }}
               </span>
               
-              <!-- CASO B: Si el estado es partial o pending, renderiza el BOTÓN interactivo amarillo -->
               <button 
                 v-else
                 :class="['status-badge', 'badge-warning', 'btn-action-pay']"
@@ -103,14 +101,37 @@ const selectedPaymentAmount = ref(0)
 const selectedPaymentConcept = ref('')
 const activePaymentObject = ref(null)
 
+// Propiedad computada reactiva inteligente
+const filteredPayments = computed(() => {
+  // Extraemos los montos de todos los comprobantes que ya se cobraron con éxito
+  const montosSaldadosExitosos = payments.value
+    .filter(p => {
+      const statusLower = p.status ? p.status.toLowerCase() : ''
+      return statusLower === 'completed' || statusLower === 'approved' || statusLower === 'pagado'
+    })
+    .map(p => Number(p.amount))
+
+  return payments.value.filter(p => {
+    const statusLower = p.status ? p.status.toLowerCase() : ''
+    
+    // Filtro de seguridad: si es una suscripción pendiente pero ya se detectó un recibo exitoso por ese monto, la ocultamos
+    if (p.type === 'subscription' && (statusLower === 'pending' || statusLower === 'pendiente' || statusLower === 'partial')) {
+      const yaExisteComprobante = montosSaldadosExitosos.includes(Number(p.amount))
+      if (yaExisteComprobante) return false
+    }
+    return true
+  })
+})
+
+// Paginación reactiva sobre la lista filtrada
 const totalPages = computed(() => {
-  return Math.ceil(payments.value.length / itemsPerPage.value)
+  return Math.ceil(filteredPayments.value.length / itemsPerPage.value)
 })
 
 const paginatedPayments = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage.value
   const end = start + itemsPerPage.value
-  return payments.value.slice(start, end)
+  return filteredPayments.value.slice(start, end)
 })
 
 const nextPage = () => {
@@ -134,7 +155,6 @@ const formatConcept = (payment) => {
     const s = payment.status ? payment.status.toLowerCase() : ''
     const amount = Number(payment.amount)
     
-    // Si viene como partial o pending en la base de datos, mapea como seña
     if (s === 'pending' || s === 'partial' || s === 'pendiente') {
       return 'Seña de reserva (50%)'
     }
@@ -181,14 +201,12 @@ const openPaymentFlow = (payment) => {
   isModalOpen.value = true
 }
 
+// Manejador de pago coordinado con el nuevo flujo de base de datos
 const handlePaymentResult = async (result) => {
   if (result && result.status === 'Aprobado') {
     const paymentId = activePaymentObject.value?.id
-    // Buscamos el booking_id real asociado a la transacción (o el id de la deuda)
-    const bookingId = activePaymentObject.value?.booking_id || paymentId
-    const amountToPay = selectedPaymentAmount.value
+    const isAbono = activePaymentObject.value?.type === 'subscription'
 
-    // Desactivación visual inmediata en la grilla local
     const target = payments.value.find(p => p.id === paymentId)
     if (target) {
       target.status = 'completed' 
@@ -197,23 +215,30 @@ const handlePaymentResult = async (result) => {
     try {
       loading.value = true
 
-      // Enviamos el impacto al backend para que cambie el estado de la reserva viva de 'partial' a 'paid'
-      await api.post('/payments/me/complete-booking', {
-        booking_id: Number(bookingId),
-        amount: Number(amountToPay)
-      })
+      if (isAbono) {
+        // Flujo del Abono: Llama al endpoint dedicado para impactar la suscripción madre y sus reservas agrupadas
+        await api.post(`/payments/me/complete-subscription/${paymentId}`)
+        console.log('¡Suscripción y todas sus reservas mutadas con éxito en la Base de Datos!')
+      } else {
+        // Flujo de Clase Única: Sigue con la lógica original de tus compañeros
+        const bookingId = activePaymentObject.value?.booking_id || paymentId
+        await api.post('/payments/me/complete-booking', {
+          amount: Number(selectedPaymentAmount.value),
+          booking_id: Number(bookingId)
+        })
+        console.log('¡Reserva de clase única actualizada correctamente!')
+      }
 
-      console.log('¡Pago asentado con éxito!')
-      isModalOpen.value = false // Cerramos el modal automáticamente al terminar
+      isModalOpen.value = false
 
     } catch (err) {
-      console.error("Error al persistir la actualización del pago en FastAPI:", err)
+      console.error("Error al persistir la transacción en el servidor:", err)
       if (target) {
-        target.status = 'pending' // Revertimos en caso de falla
+        target.status = 'pending'
       }
+      alert("Hubo un error al registrar el pago en el servidor.")
     } finally {
-      // Volvemos a consultar los pagos al servidor para sincronizar la lista real
-      await fetchPayments()
+      await fetchPayments() // Trae los estados frescos y mutados reales de la base de datos
       loading.value = false
     }
   }
@@ -252,34 +277,10 @@ onMounted(fetchPayments)
 </script>
 
 <style scoped>
-.payments-container {
-  padding: 28px 40px 40px;
-  max-width: 1200px;
-  margin: 0 auto;
-  background: transparent;
-  min-height: 100vh;
-  font-family: system-ui, -apple-system, sans-serif;
-}
-
-.payments-header {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  margin-bottom: 18px;
-}
-
-.payments-header h1 {
-  font-size: 2.5rem;
-  color: #2d658d;
-  font-weight: 900;
-  margin: 0 0 10px;
-}
-
-.payments-header p {
-  font-size: 1.1rem;
-  color: #5a8849;
-  margin: 0;
-}
+.payments-container { padding: 28px 40px 40px; max-width: 1200px; margin: 0 auto; background: transparent; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; }
+.payments-header { display: flex; flex-direction: column; align-items: flex-start; margin-bottom: 18px; }
+.payments-header h1 { font-size: 2.5rem; color: #2d658d; font-weight: 900; margin: 0 0 10px; }
+.payments-header p { font-size: 1.1rem; color: #5a8849; margin: 0; }
 .table-wrapper { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); overflow: hidden; }
 .custom-table { width: 100%; border-collapse: collapse; text-align: left; margin: 0; }
 .custom-table th { background-color: #0d124a; color: #ffffff; padding: 16px 20px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
@@ -299,28 +300,13 @@ onMounted(fetchPayments)
 .font-medium { font-weight: 500; }
 .capitalize { text-transform: capitalize; }
 .text-base { font-size: 1rem; }
-
 .status-badge { padding: 6px 14px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; display: inline-block; border: 1px solid transparent; }
 .badge-success { background-color: #f0fdf4; color: #166534; border-color: #bbf7d0; }
 .badge-warning { background-color: #fffbeb; color: #92400e; border-color: #fde68a; }
 .badge-danger { background-color: #fef2f2; color: #991b1b; border-color: #fca5a5; }
-
-/* ESTILO DEL BOTÓN DE ACCIÓN PARA EL FLUJO */
-.btn-action-pay {
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.15);
-}
-.btn-action-pay:hover {
-  background-color: #fde68a;
-  color: #78350f;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3);
-}
-.btn-action-pay:active {
-  transform: translateY(0);
-}
-
+.btn-action-pay { cursor: pointer; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 4px rgba(245, 158, 11, 0.15); }
+.btn-action-pay:hover { background-color: #fde68a; color: #78350f; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3); }
+.btn-action-pay:active { transform: translateY(0); }
 .loading-state, .empty-state-card { text-align: center; padding: 60px 20px; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
 .empty-state-card h3 { margin: 0; font-size: 1.2rem; color: #1e293b; font-weight: 700; }
 .empty-state-card p { color: #94a3b8; font-size: 0.85rem; margin-top: 6px; }

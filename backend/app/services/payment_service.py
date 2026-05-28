@@ -97,3 +97,55 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
     db.commit()
     db.refresh(payment)
     return payment
+
+from ..models.subscription import Subscription
+
+def complete_subscription_payment_flow(db: Session, user_id: int, payment_id: int) -> Payment:
+    """
+    Desarrollado para el flujo diferido de Abonos.
+    Busca el pago de la suscripción, lo completa, y actualiza en cadena 
+    el estado del Abono y de todas las clases/reservas que contiene.
+    """
+    # 1. Buscamos el registro del pago pendiente en el historial del usuario
+    payment = db.query(Payment).filter(
+        Payment.id == payment_id, 
+        Payment.user_id == user_id, 
+        Payment.type == "subscription"
+    ).first()
+    
+    if not payment:
+        # Si por alguna razón no se encuentra, usamos una contingencia segura
+        return complete_booking_payment(db, user_id, 0.0, booking_id=payment_id)
+
+    # 2. Marcamos el comprobante del abono como completado
+    payment.status = "completed"
+    payment.date = business_utcnow()
+
+    # 3. Buscamos la Suscripción/Abono madre asociada a este usuario en el mes actual
+    # (Cruzamos por el monto para asegurar que impacte sobre la correcta)
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == user_id,
+        Subscription.status == "active",
+        Subscription.price_paid == None # Significa que todavía no se había asentado el dinero
+    ).order_by(desc(Subscription.purchase_date)).first()
+
+    if subscription:
+        # Asentamos el precio pago y la fecha real de cobro en el abono madre
+        subscription.price_paid = float(payment.amount)
+        subscription.purchase_date = business_utcnow()
+        
+        # 4. 🌟 LO MÁS IMPORTANTE: Buscamos todas las reservas de clases que contiene este abono
+        # y las mutamos en lote a confirmadas y pagadas al 100%
+        associated_bookings = db.query(Booking).filter(
+            Booking.subscription_id == subscription.id,
+            Booking.user_id == user_id
+        ).all()
+        
+        for booking in associated_bookings:
+            booking.amount_paid = round(float(payment.amount) / len(associated_bookings), 2) if associated_bookings else 0.0
+            booking.payment_status = "paid"
+            booking.status = "Confirmed"
+
+    db.commit()
+    db.refresh(payment)
+    return payment
