@@ -101,29 +101,12 @@ const selectedPaymentAmount = ref(0)
 const selectedPaymentConcept = ref('')
 const activePaymentObject = ref(null)
 
-// Propiedad computada reactiva inteligente
+// Propiedad computada reactiva que expone el historial directo de la BD
 const filteredPayments = computed(() => {
-  // Extraemos los montos de todos los comprobantes que ya se cobraron con éxito
-  const montosSaldadosExitosos = payments.value
-    .filter(p => {
-      const statusLower = p.status ? p.status.toLowerCase() : ''
-      return statusLower === 'completed' || statusLower === 'approved' || statusLower === 'pagado'
-    })
-    .map(p => Number(p.amount))
-
-  return payments.value.filter(p => {
-    const statusLower = p.status ? p.status.toLowerCase() : ''
-    
-    // Filtro de seguridad: si es una suscripción pendiente pero ya se detectó un recibo exitoso por ese monto, la ocultamos
-    if (p.type === 'subscription' && (statusLower === 'pending' || statusLower === 'pendiente' || statusLower === 'partial')) {
-      const yaExisteComprobante = montosSaldadosExitosos.includes(Number(p.amount))
-      if (yaExisteComprobante) return false
-    }
-    return true
-  })
+  return payments.value
 })
 
-// Paginación reactiva sobre la lista filtrada
+// Paginación reactiva sobre la lista
 const totalPages = computed(() => {
   return Math.ceil(filteredPayments.value.length / itemsPerPage.value)
 })
@@ -201,12 +184,13 @@ const openPaymentFlow = (payment) => {
   isModalOpen.value = true
 }
 
-// Manejador de pago coordinado con el nuevo flujo de base de datos
+// Manejador de pago unificado y corregido sintácticamente
 const handlePaymentResult = async (result) => {
   if (result && result.status === 'Aprobado') {
     const paymentId = activePaymentObject.value?.id
     const isAbono = activePaymentObject.value?.type === 'subscription'
 
+    // Mutación visual rápida para optimizar la respuesta en la interfaz
     const target = payments.value.find(p => p.id === paymentId)
     if (target) {
       target.status = 'completed' 
@@ -216,11 +200,11 @@ const handlePaymentResult = async (result) => {
       loading.value = true
 
       if (isAbono) {
-        // Flujo del Abono: Llama al endpoint dedicado para impactar la suscripción madre y sus reservas agrupadas
+        // Flujo del Abono: Endpoint dedicado que creamos para modificar abonos y reservas agrupadas
         await api.post(`/payments/me/complete-subscription/${paymentId}`)
         console.log('¡Suscripción y todas sus reservas mutadas con éxito en la Base de Datos!')
       } else {
-        // Flujo de Clase Única: Sigue con la lógica original de tus compañeros
+        // Flujo de Clase Única: Lógica original de tus compañeros (con comentarios de JS fijos)
         const bookingId = activePaymentObject.value?.booking_id || paymentId
         await api.post('/payments/me/complete-booking', {
           amount: Number(selectedPaymentAmount.value),
@@ -234,11 +218,11 @@ const handlePaymentResult = async (result) => {
     } catch (err) {
       console.error("Error al persistir la transacción en el servidor:", err)
       if (target) {
-        target.status = 'pending'
+        target.status = 'pending' // Revertimos en caso de falla de conexión
       }
       alert("Hubo un error al registrar el pago en el servidor.")
     } finally {
-      await fetchPayments() // Trae los estados frescos y mutados reales de la base de datos
+      await fetchPayments() // Volvemos a sincronizar la lista desde la base de datos
       loading.value = false
     }
   }

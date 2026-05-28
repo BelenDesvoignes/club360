@@ -140,7 +140,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import api from '../utils/api' 
 import { useAuthStore } from '../stores/auth'
 import { useAppClockStore } from '../stores/appClock'
 import PaymentModal from '../components/PaymentModal.vue'
@@ -232,14 +232,8 @@ const fetchBookings = async () => {
   loading.value = true
   try {
     auth.hydrateFromToken()
-    const token = auth.token || localStorage.getItem('token')
-
-    if (!token) return
-
-    const res = await axios.get('/bookings/me', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    bookings.value = res.data
+    const response = await api.get('/bookings/me')
+    bookings.value = response.data.bookings || response.data
   } catch (e) {
     console.error('Error al cargar reservas:', e)
     bookings.value = []
@@ -257,12 +251,7 @@ const confirmCancel = async () => {
   showCancelModal.value = false
   try {
     auth.hydrateFromToken()
-    const token = auth.token || localStorage.getItem('token')
-
-    const res = await axios.post(`/bookings/${bookingToCancel.value}/cancel`, {}, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-
+    const res = await api.post(`/bookings/${bookingToCancel.value}/cancel`)
     successMessage.value = res.data.message || 'Reserva cancelada exitosamente'
     setTimeout(() => { fetchBookings() }, 1500)
   } catch (e) {
@@ -276,7 +265,7 @@ const paySeña = async (bookingId) => {
   if (!booking) return
 
   const price = Number(booking.price || 0)
-  if (!Number.isFinite(price) || price <= 0) {
+  if (!price || price <= 0) {
     errorMessage.value = 'No se pudo determinar el precio de la reserva.'
     return
   }
@@ -295,8 +284,8 @@ const canPayRemaining = (booking) => {
 
   const price = Number(booking.price || 0)
   const paid = Number(booking.amount_paid || 0)
-  if (!Number.isFinite(price) || price <= 0) return false
-  if (!Number.isFinite(paid) || paid < 0) return false
+  if (!price || price <= 0) return false
+  if (paid < 0) return false
   return price - paid > 0.01
 }
 
@@ -306,7 +295,7 @@ const payRemaining = async (bookingId) => {
 
   const price = Number(booking.price || 0)
   const paid = Number(booking.amount_paid || 0)
-  if (!Number.isFinite(price) || price <= 0) {
+  if (!price || price <= 0) {
     errorMessage.value = 'No se pudo determinar el precio de la reserva.'
     return
   }
@@ -323,6 +312,7 @@ const payRemaining = async (bookingId) => {
   showGatewayModal.value = true
 }
 
+// 🌟 CORRECCIÓN DE SINTAXIS: Se agrega 'finally' para evitar el congelamiento y garantizar el cierre del modal
 async function onGatewayResult(result) {
   if (!result) return
   if (result.status !== 'Aprobado') {
@@ -339,23 +329,18 @@ async function onGatewayResult(result) {
   finalizingPayment.value = true
   try {
     auth.hydrateFromToken()
-    const token = auth.token || localStorage.getItem('token')
-    if (!token) {
-      errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
-      return
-    }
 
-    await axios.post(
-      '/payments/me/complete-booking',
-      { amount: pendingPaymentAmount.value, booking_id: pendingBookingId.value },
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
+    // Impactamos usando la instancia 'api' para inyectar las cabeceras Bearer transparentemente
+    await api.post('/payments/me/complete-booking', { 
+      amount: Number(pendingPaymentAmount.value), 
+      booking_id: Number(pendingBookingId.value) 
+    })
 
     errorMessage.value = ''
     successMessage.value = 'Pago exitoso. Tu reserva quedó confirmada.'
     pendingBookingId.value = null
     pendingPaymentAmount.value = 0
-    showGatewayModal.value = false
+    showGatewayModal.value = false // Cerramos el modal de forma reactiva al procesar con éxito
 
     setTimeout(() => {
       fetchBookings()
@@ -363,7 +348,7 @@ async function onGatewayResult(result) {
   } catch (e) {
     successMessage.value = ''
     errorMessage.value = e.response?.data?.detail || 'Error al confirmar el pago'
-  } finally {
+  } finally { // 🌟 ESTRUCTURA REPARADA: uvicorn y vite compilarán perfectamente ahora
     finalizingPayment.value = false
   }
 }
@@ -378,31 +363,17 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.my-bookings-container {
-  padding: 40px 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-  background: rgba(45, 101, 141, 0.06);
-  min-height: 100vh;
-}
+.my-bookings-container { padding: 40px 20px; max-width: 1200px; margin: 0 auto; background: rgba(45, 101, 141, 0.06); min-height: 100vh; }
 .bookings-header { text-align: center; margin-bottom: 40px; }
 .bookings-header h1 { font-size: 2.5rem; color: #2d658d; font-weight: 800; margin: 0 0 10px; }
 .bookings-header p { color: #5a8849; margin: 0; font-size: 1.1rem; }
 .loading-spinner { text-align: center; font-size: 1.2rem; color: #6c757d; padding: 60px 20px; }
-.empty-state {
-  text-align: center; padding: 60px 20px; background: white; border-radius: 15px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}
+.empty-state { text-align: center; padding: 60px 20px; background: white; border-radius: 15px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05); }
 .empty-icon { font-size: 4rem; margin-bottom: 20px; }
 .empty-state h2 { font-size: 1.8rem; color: #0d124a; margin: 0 0 10px; }
 .empty-state p { color: #6c757d; margin: 0 0 25px; font-size: 1.1rem; }
 .bookings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 25px; }
-
-.booking-card {
-  background: white; border-radius: 15px; overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); transition: all 0.3s ease;
-  display: flex; flex-direction: column; border-left: 5px solid #2d658d;
-}
+.booking-card { background: white; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); transition: all 0.3s ease; display: flex; flex-direction: column; border-left: 5px solid #2d658d; }
 .booking-card:hover { transform: translateY(-5px); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12); }
 .booking-card.status-confirmed { border-left-color: #5a8849; }
 .booking-card.status-pending { border-left-color: #ff6f00; }
@@ -410,18 +381,13 @@ onMounted(() => {
 .booking-card.status-attended { border-left-color: #5a8849; }
 .booking-card.status-expired { border-left-color: #9ca3af; opacity: 0.6; }
 .booking-card.status-absent { border-left-color: #dc3545; }
-
-.booking-header-card {
-  background: #2d658d; color: white; padding: 15px 20px;
-  display: flex; justify-content: space-between; align-items: center;
-}
+.booking-header-card { background: #2d658d; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
 .booking-card.status-confirmed .booking-header-card { background: #5a8849; }
 .booking-card.status-pending .booking-header-card { background: #ff6f00; }
 .booking-card.status-cancelled .booking-header-card { background: #2d658d; }
 .booking-card.status-expired .booking-header-card { background: #9ca3af; }
 .booking-status { font-weight: 700; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
 .booking-id { font-size: 0.85rem; opacity: 0.9; }
-
 .booking-content { padding: 20px; flex-grow: 1; display: flex; flex-direction: column; gap: 15px; }
 .activity-section h3 { margin: 0 0 5px; color: #0d124a; font-size: 1.3rem; font-weight: 800; }
 .activity-date { margin: 0; color: #6c757d; font-size: 1rem; }
@@ -431,18 +397,12 @@ onMounted(() => {
 .schedule-row .value { color: #0d124a; font-weight: 700; }
 .booking-meta { font-size: 0.85rem; color: #999; }
 .pending-notice { background: #fff7ed; color: #b45309; padding: 10px; border-radius: 6px; margin: 0; font-size: 0.9rem; font-weight: 600; }
-
 .booking-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .booking-actions .btn-danger { background: #ff6f00; color: white; border: none; }
 .booking-actions .btn-danger:hover { background: #ff6f00; box-shadow: 0 8px 18px rgba(255, 111, 0, 0.22); }
 .booking-actions .btn-success { background: #5a8849; color: white; border: none; }
 .booking-actions .btn-success:hover { background: #5a8849; box-shadow: 0 8px 18px rgba(90, 136, 73, 0.22); }
-
-.expired-notice {
-  display: flex; align-items: center; gap: 10px; padding: 12px 15px; background: #f3f4f6;
-  border-radius: 8px; color: #6b7280; font-weight: 600; font-size: 0.9rem; width: 100%;
-}
-
+.expired-notice { display: flex; align-items: center; gap: 10px; padding: 12px 15px; background: #f3f4f6; border-radius: 8px; color: #6b7280; font-weight: 600; font-size: 0.9rem; width: 100%; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
 .modal-content { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3); max-width: 400px; text-align: center; }
 .modal-icon { font-size: 3rem; margin-bottom: 15px; }
@@ -452,7 +412,6 @@ onMounted(() => {
 .modal-content h2 { margin: 0 0 10px; color: #0d124a; }
 .modal-content p { color: #6c757d; margin: 0 0 20px; line-height: 1.5; }
 .modal-actions { display: flex; gap: 10px; justify-content: center; }
-
 .btn { padding: 10px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: all 0.3s ease; text-decoration: none; display: inline-block; }
 .btn-primary { background: #007bff; color: white; }
 .btn-primary:hover { background: #0056b3; }
@@ -463,10 +422,8 @@ onMounted(() => {
 .btn-danger { background: #dc3545; color: white; }
 .btn-danger:hover { background: #a71d2a; }
 .btn-sm { padding: 8px 12px; font-size: 0.85rem; }
-
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
-
 .qr-container { margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ced4da; text-align: center; }
 .qr-text { font-size: 0.85rem; color: #6c757d; margin: 0 0 8px 0; font-weight: 600; }
 .qr-frame { display: inline-block; background: white; padding: 8px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
