@@ -162,19 +162,7 @@ const pendingPayeeName = ref('Reserva')
 const activeQrId = ref(null)
 const finalizingPayment = ref(false)
 
-const formatDate = (dateStr) => {
-  if (!dateStr) return 'Sin fecha'
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-
-const formatDateTime = (dateStr) => {
-  if (!dateStr) return 'Sin fecha'
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
-
-const parseLocalDate = (dateStr) => {
+function parseLocalDate(dateStr) {
   if (!dateStr) return null
   const rawDate = String(dateStr).split('T')[0]
   const [year, month, day] = rawDate.split('-').map(Number)
@@ -186,6 +174,19 @@ const parseLocalDate = (dateStr) => {
 
   const localDate = new Date(year, month - 1, day)
   return Number.isNaN(localDate.getTime()) ? null : localDate
+}
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'Sin fecha'
+  const date = parseLocalDate(dateStr) || new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return 'Sin fecha'
+  return date.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return 'Sin fecha'
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 const isBookingExpired = (booking) => {

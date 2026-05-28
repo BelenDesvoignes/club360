@@ -86,14 +86,6 @@
 
     <div v-else-if="isRefreshing" class="loading-refresh">Actualizando...</div>
 
-    <div v-if="successMessage" :class="['booking-feedback', bookingStatus]">
-      <div>
-        <strong>{{ bookingStatus === 'confirmed' || bookingStatus === 'completed' ? '¡Reserva confirmada!' : bookingStatus === 'cancelled' ? 'Reserva cancelada' : 'Reserva pendiente de pago' }}</strong>
-        <p>{{ successMessage }}</p>
-      </div>
-      <button type="button" class="booking-feedback-close" @click="successMessage = ''">Cerrar</button>
-    </div>
-
     <div v-else-if="userSuspended" class="suspended-block">
       <p>No puedes hacer reservas mientras tu cuenta esté suspendida.</p>
     </div>
@@ -189,13 +181,36 @@
     <!-- Modal de éxito -->
     <transition name="fade">
       <div v-if="successMessage" class="modal-overlay" @click="successMessage = ''">
-        <div class="modal-content" @click.stop>
-          <div :class="['modal-icon', bookingStatus]">
-            {{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '✓' : bookingStatus === 'cancelled' ? '⨯' : '⏳' }}
+        <div
+          class="modal-content status-modal"
+          :class="{
+            'status-confirmed': bookingStatus === 'completed' || bookingStatus === 'confirmed',
+            'status-pending': bookingStatus === 'pending',
+            'status-cancelled': bookingStatus === 'cancelled'
+          }"
+          @click.stop
+        >
+          <button class="modal-close" type="button" @click="successMessage = ''">✕</button>
+
+          <div class="status-modal-head">
+            <div class="status-modal-icon" aria-hidden="true">
+              {{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '✓' : bookingStatus === 'cancelled' ? '⨯' : '⏳' }}
+            </div>
+            <div class="status-modal-copy">
+              <h2>
+                {{ bookingStatus === 'completed' || bookingStatus === 'confirmed'
+                  ? '¡Reserva confirmada!'
+                  : bookingStatus === 'cancelled'
+                    ? 'Reserva cancelada'
+                    : 'Reserva pendiente de pago' }}
+              </h2>
+              <p>{{ successMessage }}</p>
+            </div>
           </div>
-          <h2>{{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '¡Reserva confirmada!' : bookingStatus === 'cancelled' ? 'Reserva cancelada' : 'Reserva pendiente de pago' }}</h2>
-          <p>{{ successMessage }}</p>
-          <button @click="successMessage = ''" class="btn btn-primary">Cerrar</button>
+
+          <div class="status-modal-actions">
+            <button type="button" class="status-btn" @click="successMessage = ''">Cerrar</button>
+          </div>
         </div>
       </div>
     </transition>
@@ -316,6 +331,7 @@ const errorMessage = ref('')
 const isRefreshing = ref(false)
 const userSuspended = ref(false)
 const isUserAbonado = ref(false)
+const subscriptionPurchasedThisMonth = ref(false)
 
 const myBookings = ref([])
 const myBookingsLoaded = ref(false)
@@ -708,6 +724,15 @@ const selectTemplateForSubscription = async (template, activity_name) => {
   // Compra de abono: se paga al 100% (sin "reserva" previa).
   paymentType.value = 'monthly'
   await checkAbonado(template.id)
+
+  // Regla real del backend: si ya se compró el abono este mes para este horario,
+  // no mostrar el modal de pago.
+  if (subscriptionPurchasedThisMonth.value) {
+    errorMessage.value = 'Ya tenés un abono activo para este horario este mes.'
+    closePaymentModal()
+    return
+  }
+
   if (isUserAbonado.value) {
     errorMessage.value = 'Ya tenés un abono activo para este horario.'
     closePaymentModal()
@@ -789,10 +814,12 @@ const checkAbonado = async (template_id) => {
     })
 
     isUserAbonado.value = Boolean(res.data?.active)
+    subscriptionPurchasedThisMonth.value = Boolean(res.data?.purchased_this_month)
     return isUserAbonado.value
   } catch (e) {
     if (handleAuthError(e)) return false
     isUserAbonado.value = false
+    subscriptionPurchasedThisMonth.value = false
     return false
   }
 }
@@ -846,6 +873,9 @@ async function finalizeSubscriptionPurchase() {
 }
 
 const closePaymentModal = () => {
+  showGatewayModal.value = false
+  pendingPaymentAmount.value = 0
+  subscriptionPurchasedThisMonth.value = false
   selectedInstance.value = null
   paymentType.value = 'seña'
   isUserAbonado.value = false
@@ -929,6 +959,14 @@ function onGatewayResult(result) {
         if (handleAuthError(e)) return
         const detail = e.response?.data?.detail || 'Error al procesar la operación'
         errorMessage.value = detail
+
+        // Si el backend rechaza la operación, no mantener abierto el modal de pago.
+        showGatewayModal.value = false
+
+        // Caso típico: abono ya activo para el horario.
+        if (typeof detail === 'string' && detail.toLowerCase().includes('abono activo')) {
+          closePaymentModal()
+        }
       })
       .finally(() => {
         finalizingPayment.value = false
@@ -954,6 +992,7 @@ function onGatewayResult(result) {
   }
 
   errorMessage.value = 'Pago rechazado.'
+  showGatewayModal.value = false
 }
 
 const openTurnosModal = (activity) => {
@@ -1379,21 +1418,21 @@ onMounted(() => {
 }
 
 .booking-feedback.confirmed {
-  background: #eff6ff;
-  border: 1px solid rgba(45, 101, 141, 0.22);
-  color: #2d658d;
+  background: #5a8849;
+  border: none;
+  color: #ffffff;
 }
 
 .booking-feedback.pending {
-  background: #fff7f0;
-  border: 1px solid rgba(255, 111, 0, 0.22);
-  color: #ff6f00;
+  background: #ff6f00;
+  border: none;
+  color: #ffffff;
 }
 
 .booking-feedback.cancelled {
-  background: #fff7ed;
-  border: 1px solid rgba(255, 111, 0, 0.28);
-  color: #b45309;
+  background: #9ca3af;
+  border: none;
+  color: #ffffff;
 }
 
 .booking-feedback p {
@@ -1403,17 +1442,17 @@ onMounted(() => {
 
 .booking-feedback-close {
   border: none;
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.18);
   color: inherit;
   border-radius: 999px;
   padding: 10px 16px;
-  font-weight: 600;
+  font-weight: 800;
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .booking-feedback-close:hover {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .classes-grid {
@@ -1810,6 +1849,98 @@ onMounted(() => {
   max-height: 90vh;
   overflow-y: auto;
   position: relative;
+}
+
+.status-modal {
+  padding: 22px 22px 18px;
+  border-radius: 18px;
+  max-width: 520px;
+  width: calc(100% - 32px);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.28);
+}
+
+.status-modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.status-modal-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 1.35rem;
+  flex-shrink: 0;
+  background: rgba(13, 18, 74, 0.08);
+  color: rgba(13, 18, 74, 0.75);
+}
+
+.status-modal-copy h2 {
+  margin: 0;
+  font-weight: 900;
+  font-size: 1.25rem;
+  color: #0d124a;
+}
+
+.status-modal-copy p {
+  margin: 8px 0 0;
+  color: rgba(13, 18, 74, 0.7);
+  line-height: 1.5;
+}
+
+.status-modal-actions {
+  margin-top: 18px;
+}
+
+.status-btn {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-weight: 900;
+  cursor: pointer;
+  color: white;
+  background: #2d658d;
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+
+.status-btn:hover {
+  filter: brightness(0.98);
+}
+
+.status-btn:active {
+  transform: translateY(1px);
+}
+
+.status-modal.status-confirmed .status-modal-icon {
+  background: rgba(90, 136, 73, 0.16);
+  color: #5a8849;
+}
+
+.status-modal.status-confirmed .status-btn {
+  background: #5a8849;
+}
+
+.status-modal.status-pending .status-modal-icon {
+  background: rgba(255, 111, 0, 0.16);
+  color: #ff6f00;
+}
+
+.status-modal.status-pending .status-btn {
+  background: #ff6f00;
+}
+
+.status-modal.status-cancelled .status-modal-icon {
+  background: rgba(156, 163, 175, 0.18);
+  color: #6c757d;
+}
+
+.status-modal.status-cancelled .status-btn {
+  background: #9ca3af;
 }
 
 .payment-modal {

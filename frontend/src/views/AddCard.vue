@@ -108,7 +108,7 @@
           </div>
 
           <div class="actions">
-            <button class="primary" type="submit" :disabled="isSubmitting">
+            <button class="primary" type="submit" :disabled="isSubmitting || !isFormValid">
               {{ linkedCard ? 'Reemplazar tarjeta' : 'Vincular tarjeta' }}
             </button>
             <p v-if="submitError" class="submit-error">{{ submitError }}</p>
@@ -311,6 +311,8 @@ const errors = computed(() => {
 
   return next
 })
+
+const isFormValid = computed(() => Object.values(errors.value).every((msg) => !msg))
 
 function hasError(field) {
   return Boolean(errors.value[field])
@@ -624,8 +626,9 @@ onMounted(() => {
 }
 
 .primary:disabled {
-  opacity: 0.6;
+  opacity: 1;
   cursor: not-allowed;
+  background: #9ca3af;
 }
 
 .submit-error {
@@ -636,8 +639,12 @@ onMounted(() => {
 
 .submit-ok {
   margin: 0;
-  color: #5a8849;
-  font-weight: 800;
+  background: #5a8849;
+  color: #ffffff;
+  font-weight: 900;
+  padding: 12px 14px;
+  border-radius: 12px;
+  text-align: center;
 }
 
 @media (min-width: 900px) {
