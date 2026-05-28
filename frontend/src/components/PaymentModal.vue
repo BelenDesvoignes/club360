@@ -307,7 +307,7 @@ async function pay() {
       message.value = 'Pago exitoso.'
       messageType.value = 'success'
       
-      // SOLUCIÓN APAGÓN: Liberamos el estado de procesamiento antes de emitir
+      // 🌟 SOLUCIÓN: Apagamos el procesamiento antes del return para que no se congele
       isProcessing.value = false 
       
       emit('result', {

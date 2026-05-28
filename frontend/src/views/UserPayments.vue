@@ -183,44 +183,36 @@ const openPaymentFlow = (payment) => {
 
 const handlePaymentResult = async (result) => {
   if (result && result.status === 'Aprobado') {
-    // Tomamos el booking_id real de la transacción para que el backend haga UPDATE y no INSERT
-    const bookingId = activePaymentObject.value?.booking_id
     const paymentId = activePaymentObject.value?.id
+    // Buscamos el booking_id real asociado a la transacción (o el id de la deuda)
+    const bookingId = activePaymentObject.value?.booking_id || paymentId
     const amountToPay = selectedPaymentAmount.value
 
-    if (!bookingId) {
-      console.error("⚠️ Alerta: El objeto de pago no contiene un 'booking_id' válido asociado.");
-    }
-
-    // CANDADO VISUAL: Cambiamos el estado local al instante para apagar el botón amarillo
+    // Desactivación visual inmediata en la grilla local
     const target = payments.value.find(p => p.id === paymentId)
     if (target) {
-      target.status = 'completed'
+      target.status = 'completed' 
     }
 
     try {
       loading.value = true
 
-      // Enviamos el POST al endpoint unificado
+      // Enviamos el impacto al backend para que cambie el estado de la reserva viva de 'partial' a 'paid'
       await api.post('/payments/me/complete-booking', {
-        booking_id: bookingId ? Number(bookingId) : Number(paymentId),
+        booking_id: Number(bookingId),
         amount: Number(amountToPay)
       })
 
-      console.log('¡Pago registrado con éxito en el backend!')
-      
-      // SOLUCIÓN CIERRE: Cerramos el modal automáticamente tras el éxito
-      isModalOpen.value = false 
+      console.log('¡Pago asentado con éxito!')
+      isModalOpen.value = false // Cerramos el modal automáticamente al terminar
 
     } catch (err) {
-      console.error("Error al persistir la actualización del pago:", err)
-      // Si el backend falla, restauramos el botón para permitir el reintento
+      console.error("Error al persistir la actualización del pago en FastAPI:", err)
       if (target) {
-        target.status = 'pending'
+        target.status = 'pending' // Revertimos en caso de falla
       }
-      alert("Hubo un error al registrar el pago en el servidor.")
     } finally {
-      // Refrescamos los datos pidiéndolos limpios a la base de datos
+      // Volvemos a consultar los pagos al servidor para sincronizar la lista real
       await fetchPayments()
       loading.value = false
     }
