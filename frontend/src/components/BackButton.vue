@@ -1,5 +1,6 @@
-<template>
+<template >
   <button
+   :disabled="!canShow"
     v-if="canShow"
     type="button"
     :class="buttonClass"

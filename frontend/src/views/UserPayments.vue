@@ -1,9 +1,9 @@
 <template>
   <div class="payments-container">
-    <div class="header-section">
-      <h1 class="main-title">Mis pagos</h1>
-      <p class="subtitle">Historial financiero y comprobantes de tu cuenta en el club.</p>
-    </div>
+    <header class="payments-header">
+      <h1>Mis Pagos</h1>
+      <p>Historial financiero y comprobantes de tu cuenta en el club.</p>
+    </header>
 
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -235,16 +235,33 @@ onMounted(fetchPayments)
 
 <style scoped>
 .payments-container {
-  padding: 32px;
-  max-width: 1100px;
+  padding: 28px 40px 40px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding-top: 100px;
-  padding-left: 90px;
+  background: transparent;
+  min-height: 100vh;
   font-family: system-ui, -apple-system, sans-serif;
 }
-.header-section { margin-bottom: 28px; }
-.main-title { font-size: 1.85rem; font-weight: 800; color: #0d124a; margin: 0; letter-spacing: -0.5px; }
-.subtitle { color: #64748b; font-size: 0.9rem; margin-top: 4px; }
+
+.payments-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.payments-header h1 {
+  font-size: 2.5rem;
+  color: #2d658d;
+  font-weight: 900;
+  margin: 0 0 10px;
+}
+
+.payments-header p {
+  font-size: 1.1rem;
+  color: #5a8849;
+  margin: 0;
+}
 .table-wrapper { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); overflow: hidden; }
 .custom-table { width: 100%; border-collapse: collapse; text-align: left; margin: 0; }
 .custom-table th { background-color: #0d124a; color: #ffffff; padding: 16px 20px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }

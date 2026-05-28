@@ -1,15 +1,22 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { ref } from 'vue'
-import { useAuthStore } from '../stores/auth' 
+import { useAuthStore } from '../stores/auth'
 import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
 import GestionClientes from '../views/ClientManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
+<<<<<<< HEAD
 import ShiftsManagement from '../views/ShiftsManagement.vue'
 
 // TUS IMPORTS (Pagos)
+=======
+import ShiftsManagement from '../views/ShiftsManagement.vue' // <--- 1. IMPORTAR EL NUEVO
+import ClientDashboard from '../views/ClientDashboard.vue'
+
+// TUS IMPORTS (Mantenemos solo Pagos)
+>>>>>>> origin/dev
 import UserPayments from '../views/UserPayments.vue'
 
 // IMPORTS DE DEV (Lo que trajeron tus compañeros)
@@ -30,19 +37,19 @@ const routes = [
   { path: '/reservar', component: ClassBooking, meta: { headerTitle: 'Reservar', headerSubtitle: 'Elegí deporte y tipo' } },
   { path: '/reservas', component: MyBookings, meta: { requiresAuth: true, headerTitle: 'Mis reservas' } },
   { path: '/agregar-tarjeta', component: AddCard, meta: { requiresAuth: true, headerTitle: 'Agregar tarjeta' } },
-  { 
-    path: '/mis-pagos', 
+  {
+    path: '/mis-pagos',
     name: 'UserPayments',
-    component: UserPayments, 
-    meta: { requiresAuth: true, headerTitle: 'Mis pagos' } 
+    component: UserPayments,
+    meta: { requiresAuth: true, headerTitle: 'Mis Pagos' }
   },
 
   // RUTAS DE ADMINISTRADOR
   {
     path: '/clases',
     name: 'GestionClases',
-    component: ShiftsManagement, 
-    meta: { requiresAuth: true, role: 'admin', headerTitle: 'Gestión de clases' }
+    component: ShiftsManagement,
+    meta: { requiresAuth: true, role: ['admin', 'empleado'], headerTitle: 'Gestión de clases' }
   },
   {
     path: '/equipo',
@@ -62,6 +69,7 @@ const routes = [
     component: ActivityManagement,
     meta: { requiresAuth: true, role: 'admin', headerTitle: 'Actividades' }
   },
+<<<<<<< HEAD
 
   // RUTAS EXCLUSIVAS PARA EL EMPLEADO ADMINISTRATIVO (CONSERVADAS)
   {
@@ -76,6 +84,17 @@ const routes = [
     component: ControlAsistencias,
     meta: { requiresAuth: true, role: ['admin', 'empleado'], headerTitle: 'Cerrar Asistencias' }
   },
+=======
+  {
+  path: '/dashboard',
+  name: 'ClientDashboard',
+  component: ClientDashboard,
+  meta: { requiresAuth: true, headerTitle: 'Mi espacio' }
+},
+
+
+
+>>>>>>> origin/dev
 ]
 
 const router = createRouter({
@@ -89,14 +108,27 @@ export const previousRoutePath = ref(null)
 // Navigation Guard Blindado
 router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
+<<<<<<< HEAD
   
   // 1. Control de Autenticación básica
+=======
+
+>>>>>>> origin/dev
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     next('/login')
     return
   }
 
+<<<<<<< HEAD
   // 2. Control Avanzado de Roles (Soporta strings, arrays y minúsculas)
+=======
+  // Si un cliente intenta ir a la raíz, mandarlo a su dashboard
+  if (to.path === '/' && auth.isAuthenticated && auth.role === 'cliente') {
+    next('/dashboard')
+    return
+  }
+
+>>>>>>> origin/dev
   if (to.meta.role) {
     const required = to.meta.role
     const userRole = String(auth.role || '').toLowerCase()
@@ -110,7 +142,10 @@ router.beforeEach((to, from, next) => {
         return
       }
     } else {
+<<<<<<< HEAD
       // Soporte para keyword especial 'employee' para dejar pasar empleado o admin
+=======
+>>>>>>> origin/dev
       if (required === 'employee') {
         if (!auth.isEmployee) {
           next('/')

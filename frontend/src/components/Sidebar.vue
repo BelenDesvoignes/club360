@@ -1,9 +1,9 @@
 <template>
   <div>
     <button
+      v-show="!isOpen"
       @click="isOpen = !isOpen"
       class="menu-toggle"
-      :class="{ 'is-active': isOpen }"
     >
       <div class="bar"></div>
       <div class="bar"></div>
@@ -17,10 +17,12 @@
         <router-link to="/" @click="closeSidebar" class="logo-link">
           <h2 class="logo">CLUB<span>360</span></h2>
         </router-link>
+        <button class="close-btn" @click="closeSidebar">✕</button>
       </div>
 
       <nav class="menu-content">
 
+<<<<<<< HEAD
         <div v-if="auth.isAuthenticated && !auth.isAdmin && !auth.isEmployee" class="menu-section">
           <p class="section-title">MI CUENTA</p>
           <router-link to="/reservar" @click="closeSidebar">
@@ -49,6 +51,39 @@
             <span class="icon"></span> Gestión de clientes
           </router-link>
         </div>
+=======
+  <!-- CLIENTE -->
+  <div v-if="auth.isAuthenticated && !auth.isAdmin && !auth.isEmployee" class="menu-section">
+    <p class="section-title">MI CUENTA</p>
+    <router-link to="/reservar" @click="closeSidebar" class="menu-link menu-link--primary">
+      <span class="icon"></span> Reservar clase
+    </router-link>
+    <router-link to="/reservas" @click="closeSidebar">
+      <span class="icon"></span> Mis reservas
+    </router-link>
+    <router-link to="/agregar-tarjeta" @click="closeSidebar" class="menu-link menu-link--primary">
+      <span class="icon"></span> Mis tarjetas
+    </router-link>
+    <router-link to="/mis-pagos" @click="closeSidebar" class="menu-link menu-link--primary">
+      <span class="icon"></span> Mis pagos
+    </router-link>
+  </div>
+
+  <!-- EMPLEADO -->
+  <div v-if="auth.isEmployee && !auth.isAdmin" class="menu-section">
+    <p class="section-title">OPERACIONES</p>
+    <router-link to="/control-ingreso" @click="closeSidebar">
+      <span class="icon"></span> Control QR
+    </router-link>
+    <router-link to="/clases" @click="closeSidebar">
+      <span class="icon"></span> Gestión de clases
+    </router-link>
+    <router-link to="/clientes" @click="closeSidebar">
+      <span class="icon"></span> Gestión de clientes
+    </router-link>
+  
+  </div>
+>>>>>>> origin/dev
 
         <div v-if="auth.isAdmin" class="menu-section">
           <p class="section-title">OPERACIONES</p>
@@ -93,6 +128,7 @@ const emit = defineEmits(['toggle'])
 
 const closeSidebar = () => {
   isOpen.value = false
+
 }
 
 const handleLogout = () => {
@@ -134,7 +170,7 @@ onMounted(() => {
 
 .menu-toggle.is-active {
   left: 210px;
-  background: #ff6f00;
+  background: #2c303b;
 }
 
 .bar { width: 22px; height: 2px; background: white; border-radius: 2px; }
@@ -162,7 +198,22 @@ onMounted(() => {
   padding: 40px 20px 20px;
   background: #ffffff;
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #374151;
 }
 
 .logo-link { text-decoration: none; }
@@ -174,7 +225,7 @@ onMounted(() => {
   color: #2d658d;
   letter-spacing: 2px;
 }
-.logo span { color: #ff6f00; } /* Naranja para el '360' */
+.logo span { color: #2c303b; } /* el '360' */
 
 .menu-content { flex-grow: 1; padding: 20px; overflow-y: auto; }
 .menu-section { margin-bottom: 25px; }
@@ -202,6 +253,12 @@ onMounted(() => {
   margin-bottom: 4px;
 }
 
+.menu-link--primary {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+}
+
 .sidebar a:hover {
   color: #2d658d;
   background: #f3f4f6;
@@ -210,7 +267,7 @@ onMounted(() => {
 
 .router-link-active {
   background: #f3f4f6;
-  color: #ff6f00 !important;
+  color: #2d658d!important;
 }
 
 .icon { margin-right: 12px; font-size: 1.1rem; }
@@ -224,7 +281,7 @@ onMounted(() => {
 .logout-btn {
   width: 100%;
   background: #ffffff;
-  border: 1px solid #d1d5db;
+  border: 1px solid #b1b3b8;
   color: #4b5563;
   padding: 12px;
   border-radius: 10px;
@@ -239,9 +296,9 @@ onMounted(() => {
 }
 
 .logout-btn:hover {
-  background: #fee2e2;
-  color: #190707;
-  border-color: #fecaca;
+  background: #d0cfcf;
+  color: #4b5563;
+  border-color: #dcdcdc;
 }
 
 /* Overlay de fondo */

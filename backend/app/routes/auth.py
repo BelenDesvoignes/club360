@@ -95,10 +95,9 @@ class ResetPasswordRequest(BaseModel):
 
 @router.post("/forgot-password")
 async def forgot_password(data: EmailRequest, db: Session = Depends(get_db)):
-    # No revelar si el email existe o no (seguridad)
     user = db.query(User).filter(User.email == data.email).first()
     if not user:
-        return {"message": "Si el email existe, recibirás un código."}
+        raise HTTPException(status_code=404, detail="El correo ingresado no se encuentra registrado.")
 
     # Invalidar códigos anteriores del mismo email
     db.query(PasswordResetCode).filter(
@@ -152,3 +151,25 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Contraseña actualizada correctamente."}
+from fastapi import APIRouter, Depends, Header, HTTPException
+from ..models.user import User
+
+@router.get("/me")
+def get_me(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    token = authorization.removeprefix("Bearer ").strip()
+    from ..auth_utils import get_user_id_from_token
+    user_id = get_user_id_from_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token inválido")
+    user = db.query(User).filter(User.id_user == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return {
+        "id": user.id_user,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "email": user.email,
+        "role": user.role.value,
+    }

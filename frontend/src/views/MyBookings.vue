@@ -54,6 +54,13 @@
               <button @click="activeQrId = activeQrId === booking.id ? null : booking.id" class="btn btn-secondary btn-sm">
                 {{ activeQrId === booking.id ? 'Ocultar QR' : 'Ver QR' }}
               </button>
+              <button
+                v-show="canPayRemaining(booking)"
+                @click="payRemaining(booking.id)"
+                class="btn btn-success btn-sm"
+              >
+                Pagar restante
+              </button>
               <button @click="cancelBooking(booking.id)" class="btn btn-danger btn-sm">
                 Cancelar Reserva
               </button>
@@ -70,7 +77,7 @@
             </template>
           </div>
 
-          <div v-if="activeQrId === booking.id" class="qr-container">
+          <div v-if="activeQrId === booking.id && booking.status === 'Confirmed'" class="qr-container">
             <p class="qr-text">Presentá este código en recepción para ingresar:</p>
             <div class="qr-frame">
               <qrcode-vue :value="String(booking.id)" :size="130" level="H" render-as="svg" />
@@ -88,6 +95,8 @@
       v-model="showGatewayModal"
       :amount="pendingPaymentAmount"
       :payeeName="pendingPayeeName"
+      :isAbono="false"
+      :busy="finalizingPayment"
       @result="onGatewayResult"
     />
 
@@ -133,10 +142,12 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
+import { useAppClockStore } from '../stores/appClock'
 import PaymentModal from '../components/PaymentModal.vue'
 import QrcodeVue from 'qrcode.vue'
 
 const auth = useAuthStore()
+const clock = useAppClockStore()
 const bookings = ref([])
 const loading = ref(false)
 const successMessage = ref('')
@@ -149,6 +160,7 @@ const pendingPaymentAmount = ref(0)
 const pendingBookingId = ref(null)
 const pendingPayeeName = ref('Reserva')
 const activeQrId = ref(null)
+const finalizingPayment = ref(false)
 
 const formatDate = (dateStr) => {
   if (!dateStr) return 'Sin fecha'
@@ -185,7 +197,7 @@ const isBookingExpired = (booking) => {
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return false
 
   bookingDate.setHours(hours, minutes, 0, 0)
-  const now = new Date()
+  const now = clock.effectiveNow
   return now > bookingDate
 }
 
@@ -275,13 +287,56 @@ const paySeña = async (bookingId) => {
   showGatewayModal.value = true
 }
 
-async function onGatewayResult(result) {
-  if (!result) return
-  if (result.status !== 'Aprobado') {
-    errorMessage.value = result.status === 'Cancelado' ? 'Pago cancelado.' : 'Pago rechazado.'
+const canPayRemaining = (booking) => {
+  if (!booking) return false
+  if (booking.is_subscription) return false
+  if (booking.status !== 'Confirmed') return false
+  if (String(booking.payment_status || '') !== 'partial') return false
+
+  const price = Number(booking.price || 0)
+  const paid = Number(booking.amount_paid || 0)
+  if (!Number.isFinite(price) || price <= 0) return false
+  if (!Number.isFinite(paid) || paid < 0) return false
+  return price - paid > 0.01
+}
+
+const payRemaining = async (bookingId) => {
+  const booking = bookings.value.find((b) => b.id === bookingId)
+  if (!booking) return
+
+  const price = Number(booking.price || 0)
+  const paid = Number(booking.amount_paid || 0)
+  if (!Number.isFinite(price) || price <= 0) {
+    errorMessage.value = 'No se pudo determinar el precio de la reserva.'
     return
   }
 
+  const remaining = Math.max(0, Math.round((price - paid) * 100) / 100)
+  if (remaining <= 0) {
+    errorMessage.value = 'Esta reserva ya está pagada en su totalidad.'
+    return
+  }
+
+  pendingBookingId.value = bookingId
+  pendingPaymentAmount.value = remaining
+  pendingPayeeName.value = booking.activity_name || 'Reserva'
+  showGatewayModal.value = true
+}
+
+async function onGatewayResult(result) {
+  if (!result) return
+  if (result.status !== 'Aprobado') {
+    if (result.status === 'Cancelado') {
+      errorMessage.value = 'Pago cancelado.'
+      showGatewayModal.value = false
+      return
+    }
+    errorMessage.value = 'Pago rechazado.'
+    showGatewayModal.value = false
+    return
+  }
+
+  finalizingPayment.value = true
   try {
     auth.hydrateFromToken()
     const token = auth.token || localStorage.getItem('token')
@@ -296,17 +351,29 @@ async function onGatewayResult(result) {
       { headers: { Authorization: `Bearer ${token}` } }
     )
 
+    errorMessage.value = ''
     successMessage.value = 'Pago exitoso. Tu reserva quedó confirmada.'
     pendingBookingId.value = null
     pendingPaymentAmount.value = 0
-    setTimeout(() => { fetchBookings() }, 800)
+    showGatewayModal.value = false
+
+    setTimeout(() => {
+      fetchBookings()
+    }, 800)
   } catch (e) {
+    successMessage.value = ''
     errorMessage.value = e.response?.data?.detail || 'Error al confirmar el pago'
+  } finally {
+    finalizingPayment.value = false
   }
 }
 
 onMounted(() => {
-  if (auth.isAuthenticated) fetchBookings()
+  clock.hydrateFromStorage()
+  if (!auth.isAuthenticated) {
+    return
+  }
+  fetchBookings()
 })
 </script>
 

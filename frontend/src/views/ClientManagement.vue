@@ -810,22 +810,22 @@ input, select {
   height: 42px;
 }
 
-input:focus { border-color: #ff6f00; }
+input:focus { border-color: #2d658d; }
 
 .actions-group { display: flex; gap: 12px; align-items: center; }
 
 .btn-clear {
   display: flex; align-items: center; justify-content: center;
-  background: #fff8f5; color: #ff6f00; border: 1px solid #ffbc99;
+  background: #f1f0f0; color: #2d658d; border: 1px solid #f4f4f4;
   padding: 10px 20px; border-radius: 10px; font-weight: 700; font-size: 14px;
   cursor: pointer; height: 42px; text-transform: uppercase;
   transition: all 0.2s ease; white-space: nowrap;
 }
-.btn-clear:hover { background: #ff6f00; color: white; border-color: #ff6f00; }
+.btn-clear:hover { background: #2d658d; color: rgb(218, 217, 217); border-color: #f1f1f1; }
 
 .btn-primary-action {
   display: flex; align-items: center; justify-content: center;
-  background: #ff6f00; color: white; border: none;
+  background: #2d658d; color: white; border: none;
   padding: 10px 20px; border-radius: 10px; font-weight: 700; font-size: 14px;
   cursor: pointer; height: 42px; text-transform: uppercase;
   transition: opacity 0.2s, transform 0.2s; white-space: nowrap;

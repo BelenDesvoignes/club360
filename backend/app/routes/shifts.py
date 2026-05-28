@@ -10,6 +10,7 @@ from ..database import get_db
 from ..schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut, ShiftDetailResponse
 from ..models.shift_template import ShiftTemplate
 from ..services import shift_service
+from ..time_override import business_today
 
 router = APIRouter(prefix="/shifts", tags=["shifts"])
 
@@ -50,25 +51,6 @@ def get_instances(db: Session = Depends(get_db)):
         .all()
     )
 
-    template_ids = [t.id for t in active_templates]
-    templates_with_instances = (
-        db.query(ShiftTemplate.id)
-        .join(ShiftInstance, ShiftInstance.template_id == ShiftTemplate.id)
-        .filter(
-            ShiftTemplate.id.in_(template_ids),
-            ShiftInstance.date >= date.today(),
-            ShiftInstance.is_cancelled == False
-        )
-        .distinct()
-        .all()
-    )
-
-    existing_template_ids = {t[0] for t in templates_with_instances}
-    templates_to_backfill = [t for t in active_templates if t.id not in existing_template_ids]
-
-    for template in templates_to_backfill:
-        shift_service.create_instances_for_month(db, template)
-
     booking_count_sq = (
         db.query(
             Booking.instance_id,
@@ -100,7 +82,7 @@ def get_instances(db: Session = Depends(get_db)):
         .outerjoin(booking_count_sq, ShiftInstance.id == booking_count_sq.c.instance_id)
         .filter(Activity.is_active == True)
         .filter(ShiftTemplate.is_active == True)
-        .filter(ShiftInstance.date >= date.today())
+        .filter(ShiftInstance.date >= business_today())
         .filter(ShiftInstance.is_cancelled == False)
         .order_by(ShiftInstance.date.asc(), ShiftTemplate.start_time.asc())
         .all()
@@ -237,7 +219,7 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
         db.query(ShiftInstance)
         .filter(
             ShiftInstance.template_id == template_id,
-            ShiftInstance.date >= date.today(),
+            ShiftInstance.date >= business_today(),
             ShiftInstance.is_cancelled == False
         )
         .all()

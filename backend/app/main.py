@@ -10,15 +10,40 @@ from .models.attendance import Attendance
 from .models.suspension import Suspension
 from .models.credit import Credit
 from fastapi import FastAPI
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
-from .routes import auth, admin, activities, shifts, bookings, credits, payments, cards, subscriptions
+from fastapi.responses import JSONResponse
+from datetime import date as date_type
+from .routes import auth, admin, activities, shifts, bookings, credits, payments, cards, subscriptions, cron
 from .models.activity import Activity           # Nueva
 from .models.shift_template import ShiftTemplate # Nueva
 from .models.shift_instance import ShiftInstance # Nueva
 from .models.waiting_list import WaitingList
+from .routes import dashboard
+from .time_override import set_business_today_override, reset_business_today_override
 
 # 1. Instancia de FastAPI
 app = FastAPI(title="CLUB360 API", root_path="/api")
+
+
+@app.middleware("http")
+async def business_day_override_middleware(request: Request, call_next):
+    header_value = request.headers.get("x-club360-today")
+    override_date = None
+    if header_value:
+        try:
+            override_date = date_type.fromisoformat(header_value.strip())
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Header X-Club360-Today inválido. Usá formato YYYY-MM-DD."},
+            )
+
+    token = set_business_today_override(override_date)
+    try:
+        return await call_next(request)
+    finally:
+        reset_business_today_override(token)
 
 # 2. Crear las tablas en la base de datos
 # Esto buscará todas las clases que hereden de "Base" y las creará en Supabase
@@ -48,3 +73,8 @@ app.include_router(credits.router)
 app.include_router(payments.router, prefix="/payments", tags=["payments"])
 app.include_router(cards.router)
 app.include_router(subscriptions.router)
+app.include_router(cron.router)
+app.include_router(dashboard.router)
+from .routes import attendances  # ← agregar al import
+app.include_router(attendances.router)  # ← agregar junto a los otros
+

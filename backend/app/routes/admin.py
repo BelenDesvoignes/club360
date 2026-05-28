@@ -14,6 +14,7 @@ from ..models.booking import Booking
 from ..models.subscription import Subscription
 from ..models.payment import Payment
 from datetime import datetime
+from ..time_override import business_today, business_utcnow
 
 class AbonoPayload(BaseModel):
     template_id: int
@@ -169,7 +170,7 @@ def listar_instancias_disponibles(
         db.query(ShiftInstance)
         .join(ShiftTemplate, ShiftInstance.template_id == ShiftTemplate.id)
         .filter(
-            ShiftInstance.date >= date.today(),
+            ShiftInstance.date >= business_today(),
             ShiftInstance.is_cancelled == False,
             ShiftTemplate.is_active == True,
         )
@@ -276,7 +277,7 @@ def reservar_clase_para_cliente(
             amount=payload.amount_paid,
             status=payment_status,
             type="booking",
-            date=datetime.utcnow(),
+            date=business_utcnow(),
         )
         db.add(payment)
 
@@ -329,7 +330,7 @@ def pagar_restante(
             amount=restante,
             status="completed",
             type="booking",
-            date=datetime.utcnow(),
+            date=business_utcnow(),
         )
         db.add(payment)
         db.commit()
@@ -401,7 +402,7 @@ def registrar_abono(
     if not template.is_active:
         raise HTTPException(status_code=400, detail="Este horario no está activo.")
 
-    hoy = datetime.utcnow()
+    hoy = business_utcnow()
     mes_actual = hoy.month
     anio_actual = hoy.year
     ultimo_dia = monthrange(anio_actual, mes_actual)[1]

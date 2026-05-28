@@ -3,6 +3,7 @@ from ..models.payment import Payment
 from ..models.booking import Booking
 from sqlalchemy import desc
 from datetime import timedelta
+from ..time_override import business_utcnow
 
 def get_payments_by_user(db: Session, user_id: int):
     """
@@ -51,7 +52,7 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
         )
 
     if not payment:
-        payment = Payment(user_id=user_id, amount=amount, status="completed", type="booking")
+        payment = Payment(user_id=user_id, amount=amount, status="completed", type="booking", date=business_utcnow())
         db.add(payment)
     else:
         payment.amount = amount
@@ -65,8 +66,33 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
             .first()
         )
 
-    if booking is not None and booking.status == "Pending":
-        booking.status = "Confirmed"
+    if booking is not None:
+        # Update booking payment fields
+        total_price = None
+        try:
+            if booking.instance and booking.instance.template and booking.instance.template.price is not None:
+                total_price = float(booking.instance.template.price)
+        except Exception:
+            total_price = None
+
+        current_paid = float(booking.amount_paid or 0)
+        new_paid = round(current_paid + float(amount), 2)
+
+        if total_price is not None and total_price > 0:
+            if new_paid >= total_price:
+                booking.amount_paid = total_price
+                booking.payment_status = "paid"
+                booking.status = "Confirmed"
+            else:
+                booking.amount_paid = new_paid
+                booking.payment_status = "partial"
+                # paying a deposit confirms the booking spot
+                booking.status = "Confirmed"
+        else:
+            # Fallback: keep previous semantics but ensure confirmed if payment was completed
+            booking.amount_paid = new_paid
+            if booking.status == "Pending":
+                booking.status = "Confirmed"
 
     db.commit()
     db.refresh(payment)
