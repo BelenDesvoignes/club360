@@ -181,35 +181,39 @@ const openPaymentFlow = (payment) => {
   isModalOpen.value = true
 }
 
-// Resolucion de   Persistencia
+// Resolución definitiva contra pagos duplicados y filas infinitas
 const handlePaymentResult = async (result) => {
   if (result && result.status === 'Aprobado') {
-    // Tomamos el ID del booking/reserva real asociado a este movimiento financiero
-    const bookingId = activePaymentObject.value?.booking_id || activePaymentObject.value?.id
+    const paymentId = activePaymentObject.value?.id
+    const bookingId = activePaymentObject.value?.booking_id || paymentId
     const amountToPay = selectedPaymentAmount.value
 
-    try {
-      loading.value = true // Mostramos el spinner mientras impacta en la BD
+    // CANDADO 1: Deshabilitar visualmente el botón al instante para evitar el doble click
+    const target = payments.value.find(p => p.id === paymentId)
+    if (target) {
+      target.status = 'completed' // Pasa a verde estático 'Pagado' en la interfaz inmediatamente
+    }
 
-      // 1. Pegarle al endpoint correcto del backend que unificamos con dev
+    try {
+      loading.value = true
+
+      // 1. Pegarle al endpoint enviando la información para asentar el saldo
       await api.post('/payments/me/complete-booking', {
         booking_id: Number(bookingId),
         amount: Number(amountToPay)
       })
 
-      const target = payments.value.find(p => p.id === activePaymentObject.value?.id)
-      if (target) {
-        target.status = 'completed'
-      }
-
-      console.log('¡Pago actualizado')
+      console.log('¡Pago asentado y guardado con éxito!')
 
     } catch (err) {
-      console.error("Error crítico al persistir la actualización del pago en FastAPI:", err)
-      alert("Hubo un problema al registrar tu pago en el servidor, pero la transacción fue aprobada.")
+      console.error("Error al persistir la actualización del pago:", err)
+      // Si falló el backend, revertimos el botón a pendiente para que pueda reintentar
+      if (target) {
+        target.status = 'pending'
+      }
+      alert("Hubo un error al registrar el pago en el servidor.")
     } finally {
-      // 3. ¡LA CLAVE DE LA PERSISTENCIA! Volvemos a consultar la API 
-      // para traer el estado real asentado en la base de datos
+      // 2. Traemos los datos limpios del servidor
       await fetchPayments()
       loading.value = false
     }
