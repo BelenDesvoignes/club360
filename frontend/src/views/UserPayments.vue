@@ -32,7 +32,6 @@
               ${{ p.amount }}
             </td>
             
-            <!-- ACCIÓN DE PAGO INTERACTIVA CONECTADA AL BACKEND -->
             <td class="cell-status text-center">
               <!-- CASO A: Si el estado es exitoso, se muestra como texto estático verde -->
               <span 
@@ -77,7 +76,6 @@
       <p>No encontramos ningún movimiento financiero asociado a tu cuenta actualmente.</p>
     </div>
 
-    <!-- COMPONENTE MODAL DE PAGO INTEGRADO -->
     <PaymentModal
       v-model="isModalOpen"
       :amount="selectedPaymentAmount"
@@ -151,7 +149,6 @@ const formatConcept = (payment) => {
   return payment.type
 }
 
-// TRADUCCIÓN FIEL A LOS COMENTARIOS DEL MODELO PYTHON
 const formatStatusLabel = (status) => {
   const s = status ? status.toLowerCase() : ''
   if (s === 'completed' || s === 'approved' || s === 'pagado') {
