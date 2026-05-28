@@ -306,6 +306,10 @@ async function pay() {
     if (res.status === 'approved') {
       message.value = 'Pago exitoso.'
       messageType.value = 'success'
+      
+      // SOLUCIÓN APAGÓN: Liberamos el estado de procesamiento antes de emitir
+      isProcessing.value = false 
+      
       emit('result', {
         status: 'Aprobado',
         amount: effectiveAmount.value,

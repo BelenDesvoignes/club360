@@ -181,39 +181,46 @@ const openPaymentFlow = (payment) => {
   isModalOpen.value = true
 }
 
-// Resolución definitiva contra pagos duplicados y filas infinitas
 const handlePaymentResult = async (result) => {
   if (result && result.status === 'Aprobado') {
+    // Tomamos el booking_id real de la transacción para que el backend haga UPDATE y no INSERT
+    const bookingId = activePaymentObject.value?.booking_id
     const paymentId = activePaymentObject.value?.id
-    const bookingId = activePaymentObject.value?.booking_id || paymentId
     const amountToPay = selectedPaymentAmount.value
 
-    // CANDADO 1: Deshabilitar visualmente el botón al instante para evitar el doble click
+    if (!bookingId) {
+      console.error("⚠️ Alerta: El objeto de pago no contiene un 'booking_id' válido asociado.");
+    }
+
+    // CANDADO VISUAL: Cambiamos el estado local al instante para apagar el botón amarillo
     const target = payments.value.find(p => p.id === paymentId)
     if (target) {
-      target.status = 'completed' // Pasa a verde estático 'Pagado' en la interfaz inmediatamente
+      target.status = 'completed'
     }
 
     try {
       loading.value = true
 
-      // 1. Pegarle al endpoint enviando la información para asentar el saldo
+      // Enviamos el POST al endpoint unificado
       await api.post('/payments/me/complete-booking', {
-        booking_id: Number(bookingId),
+        booking_id: bookingId ? Number(bookingId) : Number(paymentId),
         amount: Number(amountToPay)
       })
 
-      console.log('¡Pago asentado y guardado con éxito!')
+      console.log('¡Pago registrado con éxito en el backend!')
+      
+      // SOLUCIÓN CIERRE: Cerramos el modal automáticamente tras el éxito
+      isModalOpen.value = false 
 
     } catch (err) {
       console.error("Error al persistir la actualización del pago:", err)
-      // Si falló el backend, revertimos el botón a pendiente para que pueda reintentar
+      // Si el backend falla, restauramos el botón para permitir el reintento
       if (target) {
         target.status = 'pending'
       }
       alert("Hubo un error al registrar el pago en el servidor.")
     } finally {
-      // 2. Traemos los datos limpios del servidor
+      // Refrescamos los datos pidiéndolos limpios a la base de datos
       await fetchPayments()
       loading.value = false
     }
