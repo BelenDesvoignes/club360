@@ -11,6 +11,7 @@ from .models.suspension import Suspension
 from .models.credit import Credit
 from fastapi import FastAPI
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from datetime import date as date_type
@@ -24,6 +25,24 @@ from .time_override import set_business_today_override, reset_business_today_ove
 
 # 1. Instancia de FastAPI
 app = FastAPI(title="CLUB360 API", root_path="/api")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    for error in exc.errors():
+        location = error.get("loc", [])
+        field = location[-1] if location else ""
+
+        if field == "email":
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "El correo electrónico no es válido. Revisá que no termine en punto o tenga espacios de más."},
+            )
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Revisá los datos ingresados porque hay campos que no son válidos."},
+    )
 
 
 @app.middleware("http")

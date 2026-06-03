@@ -22,6 +22,13 @@
 
       <nav class="menu-content">
 
+  <div v-if="auth.isAuthenticated" class="menu-section">
+    <p class="section-title">MI PERFIL</p>
+    <router-link to="/mi-perfil" @click="closeSidebar" class="menu-link menu-link--primary">
+      <span class="icon"></span> Ver mi perfil
+    </router-link>
+  </div>
+
   <!-- CLIENTE -->
   <div v-if="auth.isAuthenticated && !auth.isAdmin && !auth.isEmployee" class="menu-section">
     <p class="section-title">MI CUENTA</p>

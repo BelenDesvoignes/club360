@@ -5,12 +5,12 @@ from datetime import date
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth_utils import get_user_id_from_token
-from app.database import get_db
-from app.services import subscription_service
-from app.services.booking_service import get_active_subscription
-from app.services.booking_service import is_user_suspended
-from app.time_override import business_today
+from ..auth_utils import get_user_id_from_token
+from ..database import get_db
+from ..services import subscription_service
+from ..services.booking_service import get_active_subscription
+from ..services.booking_service import is_user_suspended
+from ..time_override import business_today
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
@@ -115,9 +115,9 @@ def get_my_active_subscription_dashboard(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    from app.models.subscription import Subscription
-    from app.models.shift_template import ShiftTemplate
-    from app.models.activity import Activity
+    from ..models.subscription import Subscription
+    from ..models.shift_template import ShiftTemplate
+    from ..models.activity import Activity
     from datetime import date
 
     user_id = _extract_user_id(authorization)
@@ -151,9 +151,9 @@ def get_all_my_active_subscriptions(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    from app.models.subscription import Subscription
-    from app.models.shift_template import ShiftTemplate
-    from app.models.activity import Activity
+    from ..models.subscription import Subscription
+    from ..models.shift_template import ShiftTemplate
+    from ..models.activity import Activity
     from datetime import date
 
     user_id = _extract_user_id(authorization)

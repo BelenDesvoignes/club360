@@ -5,7 +5,7 @@ from ..models.user import User, UserRole
 from ..schemas.user import UserRegister, UserResponse
 from ..auth_utils import get_password_hash
 from ..auth_utils import get_user_id_from_token
-from app.services import subscription_service
+from ..services import subscription_service
 from pydantic import BaseModel
 from datetime import date
 from ..models.shift_template import ShiftTemplate

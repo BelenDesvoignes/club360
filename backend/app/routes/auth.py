@@ -3,7 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.user import User,UserRole
-from ..schemas.user import UserRegister, UserResponse, UserLogin, Token
+from ..schemas.user import UserRegister, UserResponse, UserLogin, Token, UserProfileResponse, UserProfileUpdate
 from ..auth_utils import get_password_hash, verify_password, create_access_token
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
@@ -154,7 +154,7 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
 from fastapi import APIRouter, Depends, Header, HTTPException
 from ..models.user import User
 
-@router.get("/me")
+@router.get("/me", response_model=UserProfileResponse)
 def get_me(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="No autenticado")
@@ -168,8 +168,55 @@ def get_me(authorization: str | None = Header(default=None), db: Session = Depen
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return {
         "id": user.id_user,
+        "id_user": user.id_user,
         "first_name": user.first_name,
         "last_name": user.last_name,
+        "dni": user.dni,
         "email": user.email,
+        "profile_photo_url": user.profile_photo_url,
+        "role": user.role.value,
+    }
+
+
+@router.patch("/me", response_model=UserProfileResponse)
+def update_me(
+    payload: UserProfileUpdate,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    token = authorization.removeprefix("Bearer ").strip()
+    from ..auth_utils import get_user_id_from_token
+
+    user_id = get_user_id_from_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    user = db.query(User).filter(User.id_user == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if payload.email != user.email:
+        existing_user = db.query(User).filter(User.email == payload.email, User.id_user != user.id_user).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese correo electrónico.")
+
+    user.email = payload.email
+    if "profile_photo_url" in payload.model_fields_set:
+        user.profile_photo_url = payload.profile_photo_url
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "id": user.id_user,
+        "id_user": user.id_user,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "dni": user.dni,
+        "email": user.email,
+        "profile_photo_url": user.profile_photo_url,
         "role": user.role.value,
     }

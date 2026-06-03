@@ -8,13 +8,13 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from app.models.booking import Booking
-from app.models.payment import Payment
-from app.models.shift_instance import ShiftInstance
-from app.models.shift_template import ShiftTemplate
-from app.models.subscription import Subscription
-from app.models.suspension import Suspension
-from app.time_override import business_today, business_utcnow
+from ..models.booking import Booking
+from ..models.payment import Payment
+from ..models.shift_instance import ShiftInstance
+from ..models.shift_template import ShiftTemplate
+from ..models.subscription import Subscription
+from ..models.suspension import Suspension
+from ..time_override import business_today, business_utcnow
 
 
 def last_day_of_month(d: date) -> date:

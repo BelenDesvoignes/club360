@@ -6,10 +6,10 @@ from datetime import date, timedelta
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.activity import Activity
-from app.models.booking import Booking
-from app.models.shift_instance import ShiftInstance
-from app.models.shift_template import ShiftTemplate
+from ..models.activity import Activity
+from ..models.booking import Booking
+from ..models.shift_instance import ShiftInstance
+from ..models.shift_template import ShiftTemplate
 
 
 def _last_day_of_month(d: date) -> date:
