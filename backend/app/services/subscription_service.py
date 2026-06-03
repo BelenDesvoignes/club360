@@ -115,7 +115,10 @@ def get_subscription_quote(
 
     remaining_classes = len(instances)
     if remaining_classes <= 0:
-        raise HTTPException(status_code=400, detail="No hay turnos disponibles para calcular el abono mensual.")
+        raise HTTPException(
+            status_code=400,
+            detail="No quedan clases disponibles para el abono en este mes. Intentá más adelante.",
+        )
 
     unit_price = float(template.price or 0)
     base_amount = unit_price * remaining_classes

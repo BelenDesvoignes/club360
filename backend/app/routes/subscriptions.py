@@ -34,10 +34,15 @@ def get_my_active_subscription(
     db: Session = Depends(get_db),
 ):
     user_id = _extract_user_id(authorization)
-    subscription = get_active_subscription(db, user_id, template_id, for_date=business_today())
+    today = business_today()
+    subscription = get_active_subscription(db, user_id, template_id, for_date=today)
+    purchased_this_month = subscription_service._subscription_already_purchased_this_month(
+        db, user_id=user_id, template_id=template_id, today=today
+    )
 
     return {
         "active": subscription is not None,
+        "purchased_this_month": purchased_this_month,
         "subscription_id": subscription.id if subscription else None,
         "valid_to": str(subscription.valid_to) if subscription and subscription.valid_to else None,
     }
