@@ -140,18 +140,6 @@ def update_instance_capacity(instance_id: int, capacity: int, db: Session = Depe
 
     return {"message": "Cupo de la clase actualizado", "new_capacity": instance.capacity}
 
-@router.patch("/instances/{instance_id}/cancel")
-def cancel_shift_instance(instance_id: int, db: Session = Depends(get_db)):
-    instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
-
-    if not instance:
-        raise HTTPException(status_code=404, detail="La clase no existe")
-
-    instance.is_cancelled = True
-    db.commit()
-
-    return {"message": "Clase cancelada exitosamente", "id": instance_id}
-
 import asyncio
 from ..mail import send_shift_cancellation, send_template_cancellation
 
