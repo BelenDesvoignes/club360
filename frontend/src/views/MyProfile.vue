@@ -49,10 +49,6 @@
               <input v-model.trim="form.email" type="email" autocomplete="email" required />
             </dd>
           </div>
-          <div>
-            <dt>Rol</dt>
-            <dd>{{ profile.role || 'cliente' }}</dd>
-          </div>
         </dl>
       </article>
     </section>
