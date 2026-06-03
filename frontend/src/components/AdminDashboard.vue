@@ -64,7 +64,7 @@
 
         <section class="classes-section">
           <div class="section-header">
-            <h3 class="section-title-grid">PRÓXIMAS ACTIVIDADES DEL DÍA</h3>
+            <h3 class="section-title-grid">PRÓXIMAS CLASES DEL DÍA</h3>
             <router-link to="/clases" class="view-all-link">Ver Agenda Completa →</router-link>
           </div>
           

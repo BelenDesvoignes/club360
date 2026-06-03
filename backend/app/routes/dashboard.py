@@ -44,16 +44,17 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         for emp in empleados
     ]
 
-    # 4. Traer el Historial reciente (Optimizado con JOINs para evitar N+1)
+    # 4. Traer el Historial reciente 
     resultados = (
         db.query(Booking, User, Activity)
         .join(User, Booking.user_id == User.id_user)
         .join(ShiftInstance, Booking.instance_id == ShiftInstance.id)
-        .join(ShiftInstance.template) 
-        .join(Activity) 
+        .join(ShiftInstance.template)
+        .outerjoin(Activity)
         .filter(Booking.status == "Confirmed")
-        .order_by(Booking.created_at.desc())
-        .limit(4)
+        .order_by(Booking.id.desc()) 
+        
+        .limit(8)
         .all()
     )
     
