@@ -208,5 +208,5 @@ def validate_unique_shift(db: Session, activity_id, day_of_week, start_time, exc
     if duplicate:
         raise HTTPException(
             status_code=400,
-            detail=f"Ya existe un turno el {day_of_week} a las {start_time}.",
+            detail="Este turno ya existe",
         )
