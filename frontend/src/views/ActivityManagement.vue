@@ -70,7 +70,7 @@
           <span class="price-label">{{ act.name }}</span>
           <div class="control price-input-wrap">
             <span style="color:#6b7280; margin-right:4px;">$</span>
-            <input type="number" v-model.number="act.editPrice" min="0" step="0.01" />
+            <input type="number" v-model.number="act.editPrice" min="1" step="0.01" />
           </div>
           <button @click="savePrice(act)" class="price-btn">Guardar</button>
         </div>
@@ -150,7 +150,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import axios from 'axios'
+import api from '../utils/api'
 
 const hours = [
   '08:00','09:00','10:00','11:00','12:00','13:00',
@@ -185,7 +185,7 @@ const form = ref({
 // ── fetch ─────────────────────────────────────────────────────────────────────
 const fetchActivities = async () => {
   try {
-    const res = await axios.get('/activities/')
+    const res = await api.get('/activities/')
     activities.value = res.data
     activitiesBase.value = res.data.map(act => ({
       ...act,
@@ -230,10 +230,10 @@ const handleSubmit = async () => {
     }
 
     if (isEditing.value) {
-      await axios.put(`/activities/${editingId.value}`, payload)
+      await api.put(`/activities/${editingId.value}`, payload)
       message.value = 'Turno actualizado'
     } else {
-      await axios.post('/activities/', payload)
+      await api.post('/activities/', payload)
       message.value = 'Turno creado con éxito'
     }
 
@@ -243,7 +243,7 @@ const handleSubmit = async () => {
   } catch (e) {
     console.error(e)
     messageType.value = 'error'
-    message.value = e.response?.data?.detail || 'Error al procesar la solicitud.'
+    message.value = e.response?.data?.detail || e.response?.data?.message || 'Error al procesar la solicitud.'
   } finally {
     loading.value = false
     setTimeout(() => { message.value = '' }, 3000)
@@ -290,7 +290,7 @@ const deleteActivity = async (id) => {
   hasConfirmedBookings.value = false
 
   try {
-    const res = await axios.get(`/activities/templates/${id}/check-bookings`)
+    const res = await api.get(`/activities/templates/${id}/check-bookings`)
     hasConfirmedBookings.value = res.data.has_confirmed_bookings
   } catch (e) {
     message.value         = 'Error al verificar reservas.'
@@ -304,7 +304,7 @@ const deleteActivity = async (id) => {
 const executeDelete = async (cancelBookings) => {
   showConfirmModal.value = false
   try {
-    await axios.delete(`/activities/templates/${idToDelete.value}`, {
+    await api.delete(`/activities/templates/${idToDelete.value}`, {
       params: { cancel_bookings: cancelBookings }
     })
     await fetchActivities()
@@ -321,14 +321,14 @@ const executeDelete = async (cancelBookings) => {
 // ── precios ───────────────────────────────────────────────────────────────────
 const savePrice = async (act) => {
   try {
-    await axios.patch(`/activities/${act.id}/price`, null, {
+    await api.patch(`/activities/${act.id}/price`, null, {
       params: { price: act.editPrice }
     })
-    message.value     = `Precio de ${act.name} actualizado`
+    message.value     = 'Precio actualizado'
     messageType.value = 'success'
     await fetchActivities()
   } catch (e) {
-    message.value     = 'Error al actualizar precio'
+    message.value     = e.response?.data?.detail || e.response?.data?.message || 'Error al actualizar precio'
     messageType.value = 'error'
   } finally {
     setTimeout(() => { message.value = '' }, 3000)

@@ -6,7 +6,7 @@ const resolveApiBaseUrl = () => {
 
   const hostname = window.location.hostname
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://127.0.0.1:8000/api'
+    return 'http://127.0.0.1:8000'
   }
 
   return `${window.location.origin}/api`

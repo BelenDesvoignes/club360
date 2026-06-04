@@ -198,13 +198,16 @@ def update_activity(activity_id: int, data: dict, db: Session = Depends(get_db))
             shift_service.create_instances_for_month(db, new_template)
 
     db.commit()
-    return {"message": "Actualización exitosa"}
+    return {"message": "Turno actualizado"}
 
 @router.patch("/{activity_id}/price")
 def update_activity_price(activity_id: int, price: float, db: Session = Depends(get_db)):
     activity = db.query(Activity).filter(Activity.id == activity_id).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
+
+    if price < 1:
+        raise HTTPException(status_code=400, detail="El valor debe ser mayor o igual que 1")
 
     activity.price = price  # ← actualiza en Activity
 
