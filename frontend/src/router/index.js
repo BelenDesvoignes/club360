@@ -17,10 +17,7 @@ import UserPayments from '../views/UserPayments.vue'
 import MyBookings from '../views/MyBookings.vue'
 import ClassBooking from '../views/ClassBooking.vue'
 import AddCard from '../views/AddCard.vue'
-
-// NUEVOS IMPORTS: Vistas del Empleado Administrativo
-import ControlIngreso from '../views/ControlIngreso.vue'
-import ControlAsistencias from '../views/ControlAsistencias.vue'
+import MyProfile from '../views/MyProfile.vue'
 
 const routes = [
   { path: '/', component: Home, meta: { headerTitle: 'CLUB360' } },
@@ -31,8 +28,9 @@ const routes = [
   { path: '/reservar', component: ClassBooking, meta: { headerTitle: 'Reservar', headerSubtitle: 'Elegí deporte y tipo' } },
   { path: '/reservas', component: MyBookings, meta: { requiresAuth: true, headerTitle: 'Mis reservas' } },
   { path: '/agregar-tarjeta', component: AddCard, meta: { requiresAuth: true, headerTitle: 'Agregar tarjeta' } },
-  { 
-    path: '/mis-pagos', 
+  { path: '/mi-perfil', component: MyProfile, meta: { requiresAuth: true, headerTitle: 'Mi perfil', hideDateControl: true, hideHeaderTitle: true } },
+  {
+    path: '/mis-pagos',
     name: 'UserPayments',
     component: UserPayments, 
     meta: { requiresAuth: true, headerTitle: 'Mis Pagos' } 

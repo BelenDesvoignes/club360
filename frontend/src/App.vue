@@ -5,15 +5,15 @@
     <main :class="['main-content', { 'full-width': !isSidebarOpen || !auth.isAuthenticated }]">
       <div class="app-mobile-header">
         <div class="app-mobile-header-text">
-          <div class="app-mobile-title">{{ headerTitle }}</div>
+          <div v-if="!hideHeaderTitle" class="app-mobile-title">{{ headerTitle }}</div>
           <div v-if="headerSubtitle" class="app-mobile-subtitle">{{ headerSubtitle }}</div>
         </div>
-        <div class="app-mobile-header-right">
+        <div v-if="!hideDateControl" class="app-mobile-header-right">
           <SimulatedDateControl compact />
         </div>
       </div>
 
-      <div class="app-toolbar">
+      <div v-if="!hideDateControl" class="app-toolbar">
         <div class="app-toolbar-right">
           <SimulatedDateControl />
         </div>
@@ -36,6 +36,8 @@ const route = useRoute()
 
 const headerTitle = computed(() => route.meta?.headerTitle || 'CLUB360')
 const headerSubtitle = computed(() => route.meta?.headerSubtitle || '')
+const hideDateControl = computed(() => Boolean(route.meta?.hideDateControl))
+const hideHeaderTitle = computed(() => Boolean(route.meta?.hideHeaderTitle))
 
 // Actualiza el estado local para expandir/contraer el contenido
 const handleSidebarToggle = (state) => {

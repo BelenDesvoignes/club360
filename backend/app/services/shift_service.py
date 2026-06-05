@@ -6,10 +6,10 @@ from datetime import date, timedelta
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.activity import Activity
-from app.models.booking import Booking
-from app.models.shift_instance import ShiftInstance
-from app.models.shift_template import ShiftTemplate
+from ..models.activity import Activity
+from ..models.booking import Booking
+from ..models.shift_instance import ShiftInstance
+from ..models.shift_template import ShiftTemplate
 
 
 def _last_day_of_month(d: date) -> date:
@@ -208,5 +208,5 @@ def validate_unique_shift(db: Session, activity_id, day_of_week, start_time, exc
     if duplicate:
         raise HTTPException(
             status_code=400,
-            detail=f"Ya existe un turno el {day_of_week} a las {start_time}.",
+            detail="Este turno ya existe",
         )
