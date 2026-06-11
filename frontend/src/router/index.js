@@ -7,13 +7,10 @@ import Register from '../views/Register.vue'
 import GestionEquipo from '../views/TeamManagement.vue'
 import GestionClientes from '../views/ClientManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
-import ShiftsManagement from '../views/ShiftsManagement.vue' // <--- 1. IMPORTAR EL NUEVO
+import ShiftsManagement from '../views/ShiftsManagement.vue'
 import ClientDashboard from '../views/ClientDashboard.vue'
-
-// TUS IMPORTS (Mantenemos solo Pagos)
 import UserPayments from '../views/UserPayments.vue'
-
-// IMPORTS DE DEV (Lo que trajeron tus compañeros)
+import MisCreditos from '../views/MyCredits.vue' 
 import MyBookings from '../views/MyBookings.vue'
 import ClassBooking from '../views/ClassBooking.vue'
 import AddCard from '../views/AddCard.vue'
@@ -34,6 +31,12 @@ const routes = [
     name: 'UserPayments',
     component: UserPayments,
     meta: { requiresAuth: true, headerTitle: 'Mis Pagos' }
+  },
+  {
+    path: '/mis-creditos',
+    name: 'MisCreditos',
+    component: MisCreditos,
+    meta: { requiresAuth: true, headerTitle: 'Mis Créditos' } 
   },
 
   // RUTAS DE ADMINISTRADOR
@@ -62,14 +65,11 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin', headerTitle: 'Actividades' }
   },
   {
-  path: '/dashboard',
-  name: 'ClientDashboard',
-  component: ClientDashboard,
-  meta: { requiresAuth: true, headerTitle: 'Mi espacio' }
-},
-
-
-
+    path: '/dashboard',
+    name: 'ClientDashboard',
+    component: ClientDashboard, 
+    meta: { requiresAuth: true, headerTitle: 'Mi espacio' }
+  },
 ]
 
 const router = createRouter({

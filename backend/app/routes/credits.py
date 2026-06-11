@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import Optional
+from datetime import datetime, date  
 
 from ..auth_utils import get_user_id_from_token
 from ..database import get_db
 from ..models.credit import Credit
 from ..models.user import User, UserRole
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator  
 
 router = APIRouter(prefix="/credits", tags=["credits"])
 
@@ -21,6 +22,13 @@ class CreditOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @field_validator("expiry_date", mode="before")
+    @classmethod
+    def serialize_expiry_date(cls, value):
+        if isinstance(value, (datetime, date)):
+            return value.strftime("%Y-%m-%d")
+        return value
 
 
 class CreditCreate(BaseModel):
