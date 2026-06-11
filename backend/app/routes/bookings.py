@@ -198,26 +198,22 @@ def debug_user_info(user_id: int, db: Session = Depends(get_db)):
         "role": user.role.value if user.role else None,
     }
 
-
 @router.post("/{booking_id}/cancel", response_model=dict)
-def cancel_booking(booking_id: int, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    from ..models.user import UserRole
-
+def cancel_booking(
+    booking_id: int, 
+    authorization: str | None = Header(default=None), 
+    db: Session = Depends(get_db)
+):
     user_id = _extract_user_id(authorization)
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Reserva no encontrada")
-
-    # Solo puede cancelar el dueño de la reserva o un admin
-    requester = db.query(User).filter(User.id_user == user_id).first()
-    if booking.user_id != user_id and (not requester or requester.role != UserRole.ADMIN):
-        raise HTTPException(status_code=403, detail="No autorizado para cancelar esta reserva")
-
-    booking.status = 'Cancelled'
-    db.commit()
-
-    return {"message": "Reserva cancelada exitosamente"}
+    try:
+        booking_service.cancel_booking(db, booking_id, user_id)
+        return {"message": "Reserva cancelada exitosamente"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al procesar la cancelación: {str(e)}")
 
 @router.get("/my-next")
 def get_my_next_booking(

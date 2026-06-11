@@ -29,7 +29,6 @@
     </router-link>
   </div>
 
-  <!-- CLIENTE -->
   <div v-if="auth.isAuthenticated && !auth.isAdmin && !auth.isEmployee" class="menu-section">
     <p class="section-title">MI CUENTA</p>
     <router-link to="/reservar" @click="closeSidebar" class="menu-link menu-link--primary">
@@ -44,9 +43,11 @@
     <router-link to="/mis-pagos" @click="closeSidebar" class="menu-link menu-link--primary">
       <span class="icon"></span> Mis pagos
     </router-link>
+    <router-link to="/mis-creditos" @click="closeSidebar" class="menu-link menu-link--primary">
+      <span class="icon"></span> Mis créditos
+    </router-link>
   </div>
 
-  <!-- EMPLEADO -->
   <div v-if="auth.isEmployee && !auth.isAdmin" class="menu-section">
     <p class="section-title">OPERACIONES</p>
     <router-link to="/control-ingreso" @click="closeSidebar">
@@ -58,10 +59,9 @@
     <router-link to="/clientes" @click="closeSidebar">
       <span class="icon"></span> Gestión de clientes
     </router-link>
-  
+   
   </div>
 
-  <!-- ADMIN -->
   <div v-if="auth.isAdmin" class="menu-section">
     <p class="section-title">OPERACIONES</p>
     <router-link to="/control-ingreso" @click="closeSidebar">
