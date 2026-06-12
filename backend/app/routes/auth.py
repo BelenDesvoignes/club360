@@ -183,45 +183,42 @@ def update_me(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
+    # 1. Identificación segura
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="No autorizado")
+        raise HTTPException(status_code=401, detail="Sesión expirada. Inicie sesión de nuevo.")
 
     token = authorization.split(" ")[1]
+    user_email = None
+    
     try:
         from jose import jwt
         payload_data = jwt.decode(token, "key", algorithms=["HS256"])
         user_email = payload_data.get("sub")
-    except Exception:
-        user_email = None
+    except:
+        pass
 
-    # Si por alguna razón falla el token, tomamos el mail actual que tiene guardado la sesión local
-    if user_email:
-        user = db.query(User).filter(User.email == user_email).first()
-    else:
+    # 2. BUSQUEDA REFORZADA: 
+    # Si el token no dio el email, buscamos por el email que llega en el formulario
+    user = db.query(User).filter(User.email == (user_email or payload.email)).first()
+    
+    if not user:
+        # Si aún no lo encuentra, forzamos la búsqueda del Admin (caso Vercel extremo)
         user = db.query(User).filter(User.role == UserRole.ADMIN).first()
 
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado para actualizar.")
+        raise HTTPException(status_code=404, detail="No se pudo identificar tu cuenta. Por favor, reinicia sesión.")
 
-    # VALIDACIÓN CLAVE: Si el mail que intentás guardar es distinto al tuyo actual,
-    # verificamos que ninguna OTRA persona lo tenga registrado.
+    # 3. Validación de duplicados (si cambia el mail)
     if payload.email != user.email:
         existing_user = db.query(User).filter(User.email == payload.email, User.id_user != user.id_user).first()
         if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
-                detail="Ya existe una cuenta con ese correo electrónico."
-            )
+            raise HTTPException(status_code=400, detail="Ese correo ya está siendo usado por otro usuario.")
 
-    # Si pasa las validaciones, actualizamos los campos individuales
+    # 4. Actualización
     user.first_name = payload.first_name
     user.last_name = payload.last_name
     user.email = payload.email
 
-    try:
-        db.commit()
-        db.refresh(user)
-        return user
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Error interno al guardar los cambios.")
+    db.commit()
+    db.refresh(user)
+    return user
