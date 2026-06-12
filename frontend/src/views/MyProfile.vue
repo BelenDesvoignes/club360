@@ -37,7 +37,7 @@
                 <button @click="saveField('first_name')" class="action-btn save-btn" :disabled="saving">✔️</button>
                 <button @click="cancelEdit('first_name')" class="action-btn cancel-btn">❌</button>
               </div>
-              <span v-else class="display-value">{{ auth.user?.first_name || '—' }}</span>
+              <span v-else class="display-value">{{ userData.first_name || '—' }}</span>
             </dd>
           </div>
           
@@ -59,7 +59,7 @@
                 <button @click="saveField('last_name')" class="action-btn save-btn" :disabled="saving">✔️</button>
                 <button @click="cancelEdit('last_name')" class="action-btn cancel-btn">❌</button>
               </div>
-              <span v-else class="display-value">{{ auth.user?.last_name || '—' }}</span>
+              <span v-else class="display-value">{{ userData.last_name || '—' }}</span>
             </dd>
           </div>
           
@@ -68,7 +68,7 @@
               <dt>DNI (No editable)</dt>
               </div>
             <dd>
-              <span class="display-value static-text">{{ auth.user?.dni || '—' }}</span>
+              <span class="display-value static-text">{{ userData.dni || '—' }}</span>
             </dd>
           </div>
           
@@ -90,7 +90,7 @@
                 <button @click="saveField('email')" class="action-btn save-btn" :disabled="saving">✔️</button>
                 <button @click="cancelEdit('email')" class="action-btn cancel-btn">❌</button>
               </div>
-              <span v-else class="display-value">{{ auth.user?.email || '—' }}</span>
+              <span v-else class="display-value">{{ userData.email || '—' }}</span>
             </dd>
           </div>
         </div>
@@ -107,11 +107,20 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
+import axios from 'axios'
 
 const auth = useAuthStore()
 const saving = ref(false)
 const message = ref('')
 const isError = ref(false)
+
+// Reactivo local infalible
+const userData = ref({
+  first_name: '',
+  last_name: '',
+  dni: '',
+  email: ''
+})
 
 const editing = ref({
   first_name: false,
@@ -125,15 +134,43 @@ const form = ref({
   email: '',
 })
 
+const fetchUserData = async () => {
+  try {
+    if (auth.refreshUser) {
+      await auth.refreshUser()
+    }
+    
+    if (auth.user && auth.user.first_name) {
+      userData.value = auth.user
+    } else {
+      const token = localStorage.getItem('token') || auth.token
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+      
+      const response = await axios.get(`${apiUrl}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      
+      if (response.data) {
+        userData.value = response.data
+        auth.user = response.data
+      }
+    }
+  } catch (e) {
+    console.error("Error al traer datos reales del backend:", e)
+    message.value = "No se pudieron cargar tus datos de usuario."
+    isError.value = true
+  }
+}
+
 const startEdit = (field) => {
   message.value = ''
   isError.value = false
   
   Object.keys(editing.value).forEach(k => editing.value[k] = false)
   
-  form.value.first_name = auth.user?.first_name || ''
-  form.value.last_name = auth.user?.last_name || ''
-  form.value.email = auth.user?.email || ''
+  form.value.first_name = userData.value.first_name || ''
+  form.value.last_name = userData.value.last_name || ''
+  form.value.email = userData.value.email || ''
   
   editing.value[field] = true
 }
@@ -146,43 +183,35 @@ const saveField = async (field) => {
   message.value = ''
   isError.value = false
 
-  if (form.value[field] === auth.user[field]) {
+  if (form.value[field] === userData.value[field]) {
     editing.value[field] = false
     return
   }
 
   saving.value = true
   try {
-    await auth.updateProfile({
-      first_name: field === 'first_name' ? form.value.first_name : auth.user.first_name,
-      last_name: field === 'last_name' ? form.value.last_name : auth.user.last_name,
-      email: field === 'email' ? form.value.email : auth.user.email,
-    })
-    
-    if (auth.refreshUser) {
-      await auth.refreshUser()
+    const payload = {
+      first_name: field === 'first_name' ? form.value.first_name : userData.value.first_name,
+      last_name: field === 'last_name' ? form.value.last_name : userData.value.last_name,
+      email: field === 'email' ? form.value.email : userData.value.email,
     }
+
+    await auth.updateProfile(payload)
+    await fetchUserData()
 
     message.value = '¡Modificación realizada correctamente!'
     isError.value = false
     editing.value[field] = false
   } catch (error) {
-    const data = error?.response?.data
-    message.value = typeof data?.detail === 'string' ? data.detail : 'Error al actualizar.'
+    message.value = 'Error al actualizar.'
     isError.value = true
   } finally {
     saving.value = false
   }
 }
 
-onMounted(async () => {
-  if (auth.refreshUser) {
-    try {
-      await auth.refreshUser()
-    } catch (e) {
-      console.error(e)
-    }
-  }
+onMounted(() => {
+  fetchUserData()
 })
 </script>
 
