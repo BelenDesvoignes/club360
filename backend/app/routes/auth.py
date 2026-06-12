@@ -183,38 +183,36 @@ def update_me(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    # 1. Identificación segura
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Sesión expirada. Inicie sesión de nuevo.")
+        raise HTTPException(status_code=401, detail="Sesión expirada.")
 
     token = authorization.split(" ")[1]
-    user_email = None
-    
     try:
         from jose import jwt
         payload_data = jwt.decode(token, "key", algorithms=["HS256"])
         user_email = payload_data.get("sub")
     except:
-        pass
+        user_email = None
 
-    # 2. BUSQUEDA REFORZADA: 
-    # Si el token no dio el email, buscamos por el email que llega en el formulario
+    # Buscamos al usuario
     user = db.query(User).filter(User.email == (user_email or payload.email)).first()
+    if not user:
+        user = db.query(User).filter(User.role == UserRole.ADMIN).first()
     
     if not user:
-        # Si aún no lo encuentra, forzamos la búsqueda del Admin (caso Vercel extremo)
-        user = db.query(User).filter(User.role == UserRole.ADMIN).first()
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
-    if not user:
-        raise HTTPException(status_code=404, detail="No se pudo identificar tu cuenta. Por favor, reinicia sesión.")
-
-    # 3. Validación de duplicados (si cambia el mail)
+    # --- AQUÍ ESTÁ LA MAGIA ---
+    # Solo validamos duplicados si el correo del formulario es DISTINTO al que el usuario tiene ahora
     if payload.email != user.email:
-        existing_user = db.query(User).filter(User.email == payload.email, User.id_user != user.id_user).first()
+        existing_user = db.query(User).filter(User.email == payload.email).first()
         if existing_user:
-            raise HTTPException(status_code=400, detail="Ese correo ya está siendo usado por otro usuario.")
+            raise HTTPException(
+                status_code=400, 
+                detail="Ese correo electrónico ya está registrado por otro usuario."
+            )
 
-    # 4. Actualización
+    # Actualizamos los datos
     user.first_name = payload.first_name
     user.last_name = payload.last_name
     user.email = payload.email
