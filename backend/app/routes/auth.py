@@ -148,9 +148,23 @@ def get_me(authorization: str | None = Header(default=None), db: Session = Depen
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="No autorizado. Inicie sesión nuevamente.")
     
-    # Para evitar romper servidores en la nube sin configuración de variables:
-    # Usamos la sesión activa del usuario para identificarlo de forma directa y segura.
-    user = db.query(User).filter(User.id_user == User.id_user).first()
+    token = authorization.split(" ")[1]
+    
+    try:
+        import jwt
+        SECRET_KEY = "key"
+        ALGORITHM = "HS256"
+        
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_email: str = payload.get("sub")
+        if user_email is None:
+            raise HTTPException(status_code=401, detail="El token no contiene un usuario válido.")
+            
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Sesión inválida o expirada. Vuelva a ingresar.")
+
+    # BUSCADOR EXACTO: Filtra por el email real del token (ej: admin@gmail.com)
+    user = db.query(User).filter(User.email == user_email).first() 
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
