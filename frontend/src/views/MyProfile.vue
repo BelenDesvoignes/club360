@@ -4,7 +4,7 @@
       <div class="hero-copy">
         <p class="eyebrow">Cuenta personal</p>
         <h1>Mi perfil</h1>
-        <p class="hero-text">Revisá tus datos y actualizá tu información personal cuando quieras.</p>
+        <p class="hero-text">Revisá tus datos personales y editalos de forma individual si lo necesitás.</p>
       </div>
     </section>
 
@@ -12,56 +12,87 @@
       <article class="panel">
         <div class="panel-header">
           <div>
-            <p class="panel-kicker">Datos visibles</p>
+            <p class="panel-kicker">Datos de usuario</p>
             <h3>Tu información</h3>
           </div>
         </div>
 
-        <form @submit.prevent="saveProfile" class="info-list" novalidate>
-          <div class="editable-row">
-            <dt>Nombre</dt>
+        <div class="info-list">
+          <div class="profile-row">
+            <div class="row-header">
+              <dt>Nombre</dt>
+              <button 
+                v-if="!editing.first_name" 
+                @click="startEdit('first_name')" 
+                class="edit-icon-btn"
+                title="Editar nombre"
+              >
+                ✏️
+              </button>
+            </div>
             <dd>
-              <input 
-                v-model.trim="form.first_name" 
-                type="text" 
-                placeholder="Tu nombre" 
-              />
+              <div v-if="editing.first_name" class="edit-input-group">
+                <input v-model.trim="form.first_name" type="text" ref="firstNameInput" />
+                <button @click="saveField('first_name')" class="action-btn save-btn" :disabled="saving">✔️</button>
+                <button @click="cancelEdit('first_name')" class="action-btn cancel-btn">❌</button>
+              </div>
+              <span v-else class="display-value">{{ auth.user?.first_name || 'Cargando...' }}</span>
             </dd>
           </div>
           
-          <div class="editable-row">
-            <dt>Apellido</dt>
+          <div class="profile-row">
+            <div class="row-header">
+              <dt>Apellido</dt>
+              <button 
+                v-if="!editing.last_name" 
+                @click="startEdit('last_name')" 
+                class="edit-icon-btn"
+                title="Editar apellido"
+              >
+                ✏️
+              </button>
+            </div>
             <dd>
-              <input 
-                v-model.trim="form.last_name" 
-                type="text" 
-                placeholder="Tu apellido" 
-              />
+              <div v-if="editing.last_name" class="edit-input-group">
+                <input v-model.trim="form.last_name" type="text" />
+                <button @click="saveField('last_name')" class="action-btn save-btn" :disabled="saving">✔️</button>
+                <button @click="cancelEdit('last_name')" class="action-btn cancel-btn">❌</button>
+              </div>
+              <span v-else class="display-value">{{ auth.user?.last_name || 'Cargando...' }}</span>
             </dd>
           </div>
           
-          <div>
-            <dt>DNI (No editable)</dt>
-            <dd class="static-value">{{ auth.user?.dni || 'Sin dato' }}</dd>
-          </div>
-          
-          <div class="editable-row">
-            <dt>Correo electrónico</dt>
+          <div class="profile-row static-row">
+            <div class="row-header">
+              <dt>DNI (No editable)</dt>
+            </div>
             <dd>
-              <input 
-                v-model.trim="form.email" 
-                type="email" 
-                placeholder="usuario@correo.com" 
-              />
+              <span class="display-value static-text">{{ auth.user?.dni || 'Cargando...' }}</span>
             </dd>
           </div>
-
-          <div class="save-section-inline">
-            <button type="submit" class="primary save-button" :disabled="saving">
-              {{ saving ? 'Guardando...' : 'Guardar cambios' }}
-            </button>
+          
+          <div class="profile-row">
+            <div class="row-header">
+              <dt>Correo electrónico</dt>
+              <button 
+                v-if="!editing.email" 
+                @click="startEdit('email')" 
+                class="edit-icon-btn"
+                title="Editar correo"
+              >
+                ✏️
+              </button>
+            </div>
+            <dd>
+              <div v-if="editing.email" class="edit-input-group">
+                <input v-model.trim="form.email" type="email" />
+                <button @click="saveField('email')" class="action-btn save-btn" :disabled="saving">✔️</button>
+                <button @click="cancelEdit('email')" class="action-btn cancel-btn">❌</button>
+              </div>
+              <span v-else class="display-value">{{ auth.user?.email || 'Cargando...' }}</span>
+            </dd>
           </div>
-        </form>
+        </div>
       </article>
     </section>
 
@@ -72,7 +103,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, nextTick } from 'vue'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -80,106 +111,99 @@ const saving = ref(false)
 const message = ref('')
 const isError = ref(false)
 
+// Controla qué campo individual está en modo edición
+const editing = ref({
+  first_name: false,
+  last_name: false,
+  email: false
+})
+
+// Valores temporales del formulario mientras se edita
 const form = ref({
   first_name: '',
   last_name: '',
   email: '',
 })
 
-// Sincroniza los campos de texto basándose estrictamente en el usuario logueado en el Store
-const syncForm = () => {
-  if (auth.user) {
-    form.value.first_name = auth.user.first_name || ''
-    form.value.last_name = auth.user.last_name || ''
-    form.value.email = auth.user.email || ''
-  }
+const firstNameInput = ref(null)
+
+// Activa la edición de un campo específico y precarga su valor actual
+const startEdit = (field) => {
+  message.value = ''
+  isError.value = false
+  
+  // Cerramos cualquier otra edición abierta por las dudas
+  Object.keys(editing.value).forEach(k => editing.value[k] = false)
+  
+  // Cargamos el valor que tiene el usuario en el store actualmente
+  form.value.first_name = auth.user?.first_name || ''
+  form.value.last_name = auth.user?.last_name || ''
+  form.value.email = auth.user?.email || ''
+  
+  editing.value[field] = true
 }
 
-// Escucha activa de cambios en la sesión: si cambia de usuario, se actualizan los inputs al instante
-watch(
-  () => auth.user,
-  (newUser) => {
-    if (newUser) {
-      syncForm()
-    }
-  },
-  { deep: true, immediate: true }
-)
-
-const getReadableErrorMessage = (error) => {
-  const data = error?.response?.data
-  if (typeof data?.detail === 'string') {
-    if (data.detail.includes("already exists") || data.detail.includes("Ya existe")) {
-      return 'El correo electrónico ya está registrado. Por favor, usá otro.'
-    }
-    return data.detail
-  }
-  return 'No fue posible guardar los cambios. Revisá los datos ingresados.'
+const cancelEdit = (field) => {
+  editing.value[field] = false
+  message.value = ''
 }
 
-const validateForm = () => {
-  if (!form.value.first_name) {
-    message.value = 'El campo Nombre es obligatorio.'
+const validateField = (field) => {
+  if (field === 'first_name' && (!form.value.first_name || form.value.first_name.length < 2)) {
+    message.value = 'El nombre es obligatorio y debe tener al menos 2 caracteres.'
     isError.value = true
     return false
   }
-  if (!form.value.last_name) {
-    message.value = 'El campo Apellido es obligatorio.'
+  if (field === 'last_name' && (!form.value.last_name || form.value.last_name.length < 2)) {
+    message.value = 'El apellido es obligatorio y debe tener al menos 2 caracteres.'
     isError.value = true
     return false
   }
-  if (form.value.first_name.length < 2) {
-    message.value = 'El nombre debe tener al menos 2 caracteres.'
-    isError.value = true
-    return false
-  }
-  if (form.value.last_name.length < 2) {
-    message.value = 'El apellido debe tener al menos 2 caracteres.'
-    isError.value = true
-    return false
-  }
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(form.value.email)) {
-    message.value = 'El formato del correo electrónico no es válido.'
-    isError.value = true
-    return false
+  if (field === 'email') {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(form.value.email)) {
+      message.value = 'El formato del correo electrónico no es válido.'
+      isError.value = true
+      return false
+    }
   }
   return true
 }
 
-const saveProfile = async () => {
+// Guarda únicamente el campo que modificó el usuario
+const saveField = async (field) => {
   message.value = ''
   isError.value = false
 
-  if (
-    auth.user &&
-    form.value.first_name === auth.user.first_name &&
-    form.value.last_name === auth.user.last_name &&
-    form.value.email === auth.user.email
-  ) {
+  if (!validateField(field)) return
+
+  // Si el valor no cambió, simplemente cerramos la edición
+  if (form.value[field] === auth.user[field]) {
+    editing.value[field] = false
     return
   }
 
-  if (!validateForm()) return
-
   saving.value = true
   try {
+    // Armamos el payload manteniendo los datos actuales de los otros campos
     await auth.updateProfile({
-      first_name: form.value.first_name,
-      last_name: form.value.last_name,
-      email: form.value.email,
+      first_name: field === 'first_name' ? form.value.first_name : auth.user.first_name,
+      last_name: field === 'last_name' ? form.value.last_name : auth.user.last_name,
+      email: field === 'email' ? form.value.email : auth.user.email,
     })
     
     if (auth.refreshUser) {
       await auth.refreshUser()
     }
 
-    message.value = '¡Modificación realizada de manera correcta!'
+    message.value = '¡Dato actualizado correctamente!'
     isError.value = false
+    editing.value[field] = false // Cerramos el modo edición del campo
   } catch (error) {
-    message.value = getReadableErrorMessage(error)
+    const data = error?.response?.data
+    message.value = typeof data?.detail === 'string' ? data.detail : 'Error al actualizar el campo.'
     isError.value = true
-    console.error("Error al guardar perfil:", error)
+    console.error(error)
   } finally {
     saving.value = false
   }
@@ -187,9 +211,12 @@ const saveProfile = async () => {
 
 onMounted(async () => {
   if (auth.refreshUser) {
-    await auth.refreshUser()
+    try {
+      await auth.refreshUser()
+    } catch (e) {
+      console.error("Error al refrescar usuario:", e)
+    }
   }
-  syncForm()
 })
 </script>
 
@@ -208,12 +235,9 @@ onMounted(async () => {
   border-radius: 24px;
   box-shadow: 0 18px 45px rgba(13, 18, 74, 0.08);
   padding: 32px;
-  position: relative;
-  overflow: hidden;
 }
 
-.eyebrow,
-.panel-kicker {
+.eyebrow, .panel-kicker {
   margin: 0 0 10px;
   text-transform: uppercase;
   letter-spacing: 0.16em;
@@ -222,8 +246,7 @@ onMounted(async () => {
   color: #2d658d;
 }
 
-.hero h1,
-.panel-header h3 {
+.hero h1, .panel-header h3 {
   margin: 0;
   color: #0d124a;
 }
@@ -237,12 +260,6 @@ onMounted(async () => {
   margin: 14px 0 0;
   color: rgba(13, 18, 74, 0.72);
   font-size: 1rem;
-  max-width: 58ch;
-}
-
-.content-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .panel {
@@ -254,26 +271,36 @@ onMounted(async () => {
 }
 
 .panel-header {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .info-list {
-  margin: 0;
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
-.info-list > div, 
-.info-list .editable-row {
-  padding: 16px 18px;
+.profile-row {
+  padding: 16px 20px;
   background: rgba(255, 255, 255, 0.92);
   border-radius: 18px;
   border: 1px solid rgba(45, 101, 141, 0.1);
   box-shadow: 0 10px 24px rgba(13, 18, 74, 0.04);
+  display: grid;
+  gap: 6px;
+}
+
+.static-row {
+  background: rgba(240, 244, 248, 0.5);
+}
+
+.row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .info-list dt {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -283,64 +310,81 @@ onMounted(async () => {
 
 .info-list dd {
   margin: 0;
+}
+
+.display-value {
   color: #0d124a;
   font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.static-text {
+  color: #2d658d;
+}
+
+.edit-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
   font-size: 1rem;
+  padding: 4px;
+  transition: transform 0.2s ease;
 }
 
-.static-value {
-  padding: 4px 0;
-  color: #2d658d !important;
+.edit-icon-btn:hover {
+  transform: scale(1.2);
 }
 
-.editable-row {
-  display: grid;
+.edit-input-group {
+  display: flex;
   gap: 8px;
+  align-items: center;
+  width: 100%;
 }
 
-.editable-row input {
-  width: 100%;
-  border: 1px solid rgba(45, 101, 141, 0.18);
-  border-radius: 14px;
-  padding: 14px 16px;
+.edit-input-group input {
+  flex: 1;
+  border: 1px solid #2d658d;
+  border-radius: 10px;
+  padding: 8px 12px;
   font-size: 1rem;
   color: #0d124a;
-  background: #ffffff;
+  font-weight: 700;
   outline: none;
 }
 
-.editable-row input:focus {
-  border-color: #2d658d;
-  box-shadow: 0 0 0 3px rgba(45, 101, 141, 0.14);
-}
-
-.primary {
+.action-btn {
   border: none;
-  border-radius: 14px;
-  padding: 14px 18px;
-  font-weight: 800;
+  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  background: linear-gradient(135deg, #2d658d, #0d124a);
-  color: white;
-  box-shadow: 0 16px 30px rgba(13, 18, 74, 0.18);
+  font-size: 0.9rem;
+  transition: background 0.2s;
 }
 
-.primary:hover {
-  transform: translateY(-1px);
+.save-btn {
+  background-color: rgba(16, 185, 129, 0.15);
+}
+.save-btn:hover {
+  background-color: rgba(16, 185, 129, 0.3);
 }
 
-.primary:disabled {
-  opacity: 0.7;
-  cursor: progress;
+.cancel-btn {
+  background-color: rgba(239, 68, 68, 0.15);
+}
+.cancel-btn:hover {
+  background-color: rgba(239, 68, 68, 0.3);
 }
 
 .message {
-  margin-top: 4px;
+  margin-top: 12px;
   padding: 14px 16px;
   border-radius: 16px;
   font-weight: 700;
-  box-shadow: 0 10px 22px rgba(13, 18, 74, 0.06);
 }
 
 .message.success {
@@ -351,15 +395,5 @@ onMounted(async () => {
 .message.error {
   background: rgba(239, 68, 68, 0.1);
   color: #991b1b;
-}
-
-.save-section-inline {
-  display: flex;
-  justify-content: center;
-  margin-top: 10px;
-}
-
-.save-button {
-  min-width: min(100%, 280px);
 }
 </style>
