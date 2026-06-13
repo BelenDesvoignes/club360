@@ -9,6 +9,8 @@ import GestionClientes from '../views/ClientManagement.vue'
 import ActivityManagement from '../views/ActivityManagement.vue'
 import ShiftsManagement from '../views/ShiftsManagement.vue'
 import ClientDashboard from '../views/ClientDashboard.vue'
+import ControlIngreso from '../views/ControlIngreso.vue'
+import ControlAsistencias from '../views/ControlAsistencias.vue'
 
 // TUS IMPORTS (Pagos)
 import UserPayments from '../views/UserPayments.vue'
