@@ -175,6 +175,7 @@ const isEditing      = ref(false)
 const editingId      = ref(null)
 const message        = ref('')
 const messageType    = ref('')
+let messageTimer     = null
 
 const form = ref({
   name: '',
@@ -194,6 +195,20 @@ const fetchActivities = async () => {
   } catch (e) {
     console.error('Error al cargar', e)
   }
+}
+
+const showMessage = (text, type = 'success', duration = 5000) => {
+  message.value = text
+  messageType.value = type
+
+  if (messageTimer) {
+    clearTimeout(messageTimer)
+  }
+
+  messageTimer = setTimeout(() => {
+    message.value = ''
+    messageTimer = null
+  }, duration)
 }
 
 // ── computed ──────────────────────────────────────────────────────────────────
@@ -217,6 +232,16 @@ const flatActivities = computed(() => {
 
 // ── turnos: crear / editar ────────────────────────────────────────────────────
 const handleSubmit = async () => {
+  const invalidShift = form.value.shifts.some((shift) => {
+    const capacity = Number(shift.capacity)
+    return !Number.isFinite(capacity) || capacity < 1
+  })
+
+  if (invalidShift) {
+    showMessage('Revisá los datos ingresados porque hay campos que no son válidos.', 'error')
+    return
+  }
+
   loading.value = true
   try {
     const currentCourt = typeof activityMap[form.value.name] === 'object'
@@ -231,22 +256,21 @@ const handleSubmit = async () => {
 
     if (isEditing.value) {
       await api.put(`/activities/${editingId.value}`, payload)
-      message.value = 'Turno actualizado'
+      showMessage('Turno actualizado', 'success')
     } else {
       await api.post('/activities/', payload)
-      message.value = 'Turno creado con éxito'
+      showMessage('Turno creado con éxito', 'success')
     }
-
-    messageType.value = 'success'
     cancelEdit()
     await fetchActivities()
   } catch (e) {
     console.error(e)
-    messageType.value = 'error'
-    message.value = e.response?.data?.detail || e.response?.data?.message || 'Error al procesar la solicitud.'
+    showMessage(
+      e.response?.data?.detail || e.response?.data?.message || 'Error al procesar la solicitud.',
+      'error'
+    )
   } finally {
     loading.value = false
-    setTimeout(() => { message.value = '' }, 3000)
   }
 }
 
@@ -293,8 +317,7 @@ const deleteActivity = async (id) => {
     const res = await api.get(`/activities/templates/${id}/check-bookings`)
     hasConfirmedBookings.value = res.data.has_confirmed_bookings
   } catch (e) {
-    message.value         = 'Error al verificar reservas.'
-    messageType.value     = 'error'
+    showMessage('Error al verificar reservas.', 'error')
     showConfirmModal.value = false
   } finally {
     checkingBookings.value = false
@@ -308,13 +331,9 @@ const executeDelete = async (cancelBookings) => {
       params: { cancel_bookings: cancelBookings }
     })
     await fetchActivities()
-    message.value     = 'Eliminado correctamente'
-    messageType.value = 'success'
+    showMessage('Eliminado correctamente', 'success')
   } catch (e) {
-    messageType.value = 'error'
-    message.value     = e.response?.data?.detail || 'No se pudo eliminar el turno.'
-  } finally {
-    setTimeout(() => { message.value = '' }, 3000)
+    showMessage(e.response?.data?.detail || 'No se pudo eliminar el turno.', 'error')
   }
 }
 
@@ -324,14 +343,13 @@ const savePrice = async (act) => {
     await api.patch(`/activities/${act.id}/price`, null, {
       params: { price: act.editPrice }
     })
-    message.value     = 'Precio actualizado'
-    messageType.value = 'success'
+    showMessage('Precio actualizado', 'success')
     await fetchActivities()
   } catch (e) {
-    message.value     = e.response?.data?.detail || e.response?.data?.message || 'Error al actualizar precio'
-    messageType.value = 'error'
-  } finally {
-    setTimeout(() => { message.value = '' }, 3000)
+    showMessage(
+      e.response?.data?.detail || e.response?.data?.message || 'Error al actualizar precio',
+      'error'
+    )
   }
 }
 
@@ -520,11 +538,19 @@ select:disabled { color: #9ca3af; cursor: not-allowed; }
 /* toast */
 .alert-toast {
   position: fixed;
-  bottom: 20px; right: 20px;
-  padding: 15px 25px;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92vw, 560px);
+  padding: 16px 22px;
   border-radius: 12px;
   color: white;
   font-weight: 600;
+  text-align: center;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+  z-index: 9999;
   box-shadow: 0 10px 20px rgba(0,0,0,0.1);
 }
 .success { background: #2d658d; }

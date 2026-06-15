@@ -20,32 +20,34 @@
         <button class="close-btn" @click="closeSidebar">✕</button>
       </div>
 
-<nav class="menu-content">
+      <nav class="menu-content">
+        <div v-if="auth.isAuthenticated" class="menu-section">
+          <p class="section-title">Mi perfil</p>
+          <router-link to="/mi-perfil" @click="closeSidebar" class="menu-link menu-link--primary">
+            <span class="icon"></span> Mi perfil
+          </router-link>
+        </div>
 
-  <div v-if="auth.isAuthenticated" class="menu-section">
-    <p class="section-title">Mi perfil</p>
-    <router-link to="/mi-perfil" @click="closeSidebar" class="menu-link menu-link--primary">
-      <span class="icon"></span> Mi perfil
-    </router-link>
-  </div>
+        <div v-if="auth.isAuthenticated && !auth.isAdmin && !auth.isEmployee" class="menu-section">
+          <p class="section-title">MI CUENTA</p>
+          <router-link to="/reservar" @click="closeSidebar" class="menu-link menu-link--primary">
+            <span class="icon"></span> Reservar clase
+          </router-link>
+          <router-link to="/reservas" @click="closeSidebar">
+            <span class="icon"></span> Mis reservas
+          </router-link>
+          <router-link to="/agregar-tarjeta" @click="closeSidebar" class="menu-link menu-link--primary">
+            <span class="icon"></span> Mis tarjetas
+          </router-link>
+          <router-link to="/mis-pagos" @click="closeSidebar" class="menu-link menu-link--primary">
+            <span class="icon"></span> Mis pagos
+          </router-link>
+          <router-link to="/mis-creditos" @click="closeSidebar" class="menu-link menu-link--primary">
+            <span class="icon"></span> Mis créditos
+          </router-link>
+        </div>
 
-  <!-- CLIENTE -->
-  <div v-if="auth.isAuthenticated && !auth.isAdmin && !auth.isEmployee" class="menu-section">
-    <p class="section-title">MI CUENTA</p>
-    <router-link to="/reservar" @click="closeSidebar" class="menu-link menu-link--primary">
-      <span class="icon"></span> Reservar clase
-    </router-link>
-    <router-link to="/reservas" @click="closeSidebar">
-      <span class="icon"></span> Mis reservas
-    </router-link>
-    <router-link to="/agregar-tarjeta" @click="closeSidebar" class="menu-link menu-link--primary">
-      <span class="icon"></span> Mis tarjetas
-    </router-link>
-    <router-link to="/mis-pagos" @click="closeSidebar" class="menu-link menu-link--primary">
-      <span class="icon"></span> Mis pagos
-    </router-link>
-  </div>
-
+        <!-- SECCIÓN EMPLEADO (CONSERVANDO CERRAR ASISTENCIAS) -->
         <div v-if="auth.isEmployee && !auth.isAdmin" class="menu-section">
           <p class="section-title">OPERACIONES</p>
           <router-link to="/control-ingreso" @click="closeSidebar">
@@ -62,6 +64,7 @@
           </router-link>
         </div>
 
+        <!-- SECCIÓN ADMINISTRADOR -->
         <div v-if="auth.isAdmin" class="menu-section">
           <p class="section-title">OPERACIONES</p>
           <router-link to="/control-ingreso" @click="closeSidebar">
@@ -80,7 +83,6 @@
             <span class="icon"></span> Gestión de personal
           </router-link>
         </div>
-
       </nav>
 
       <div class="sidebar-footer">
@@ -105,7 +107,6 @@ const emit = defineEmits(['toggle'])
 
 const closeSidebar = () => {
   isOpen.value = false
-
 }
 
 const handleLogout = () => {

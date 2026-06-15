@@ -151,28 +151,26 @@ def get_my_next_booking(
 
 
 @router.post("/{booking_id}/cancel", response_model=dict)
-def cancel_booking(booking_id: int, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    from ..models.user import UserRole
-
+def cancel_booking(
+    booking_id: int, 
+    authorization: str | None = Header(default=None), 
+    db: Session = Depends(get_db)
+):
+    """Cancela la reserva delegando la operación de forma segura a la lógica de servicios"""
     user_id = _extract_user_id(authorization)
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Reserva no encontrada")
-
-    # Solo puede cancelar el dueño de la reserva o un admin
-    requester = db.query(User).filter(User.id_user == user_id).first()
-    if booking.user_id != user_id and (not requester or requester.role != UserRole.ADMIN):
-        raise HTTPException(status_code=403, detail="No autorizado para cancelar esta reserva")
-
-    booking.status = 'Cancelled'
-    db.commit()
-
-    return {"message": "Reserva cancelada exitosamente"}
+    try:
+        booking_service.cancel_booking(db, booking_id, user_id)
+        return {"message": "Reserva cancelada exitosamente"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al procesar la cancelación: {str(e)}")
 
 
 # =========================================================================
-# LÓGICA CONSERVADA: CONTROL DE ASISTENCIA QR Y CIERRE MANUAL DE PLANILLAS
+# CONTROL DE ASISTENCIA QR Y CIERRE MANUAL DE PLANILLAS
 # =========================================================================
 
 @router.post("/verify-qr", response_model=dict)
@@ -210,7 +208,7 @@ def verify_user_qr(
         raise HTTPException(status_code=400, detail="Acceso denegado: El socio ya figura como Absent.")
 
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
-    hoy_local = business_today()  # Sincronizado con el time_override del equipo
+    hoy_local = business_today()
     if not instance or instance.date != hoy_local:
         raise HTTPException(status_code=400, detail=f"Acceso denegado: Esta reserva pertenece al día {instance.date if instance else 'desconocido'}.")
 
@@ -313,7 +311,10 @@ def close_class_instance(
     }
 
 
-# Endpoints de Debug
+# =========================================================================
+# ENDPOINTS DE DEBUG DIAGNÓSTICO
+# =========================================================================
+
 @router.get("/debug/auth", tags=["debug"])
 def debug_auth(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     debug_info = {

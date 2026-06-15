@@ -16,17 +16,15 @@ class UserResponse(BaseModel):
     last_name: str
     dni: str
     email: str
-    profile_photo_url: str | None = None
     role: UserRole
 
     class Config:
         from_attributes = True
 
-
 class UserProfileUpdate(BaseModel):
+    first_name: str
+    last_name: str
     email: EmailStr
-    profile_photo_url: str | None = None
-
 
 class UserProfileResponse(BaseModel):
     id_user: int
@@ -34,12 +32,10 @@ class UserProfileResponse(BaseModel):
     last_name: str
     dni: str
     email: str
-    profile_photo_url: str | None = None
     role: UserRole
 
     class Config:
         from_attributes = True
-
 
 class UserLogin(BaseModel):
     email: EmailStr

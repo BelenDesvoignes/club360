@@ -12,10 +12,9 @@ import ClientDashboard from '../views/ClientDashboard.vue'
 import ControlIngreso from '../views/ControlIngreso.vue'
 import ControlAsistencias from '../views/ControlAsistencias.vue'
 
-// TUS IMPORTS (Pagos)
+// TUS IMPORTS (Pagos y navegación de Socios)
 import UserPayments from '../views/UserPayments.vue'
-
-// IMPORTS DE DEV (Lo que trajeron tus compañeros)
+import MisCreditos from '../views/MyCredits.vue' 
 import MyBookings from '../views/MyBookings.vue'
 import ClassBooking from '../views/ClassBooking.vue'
 import AddCard from '../views/AddCard.vue'
@@ -26,7 +25,7 @@ const routes = [
   { path: '/login', component: Login, meta: { headerTitle: 'Iniciar sesión' } },
   { path: '/register', component: Register, meta: { headerTitle: 'Crear cuenta' } },
 
-  // RUTAS DE SOCIO (Combinadas)
+  // RUTAS DE SOCIO (Unificadas)
   { path: '/reservar', component: ClassBooking, meta: { headerTitle: 'Reservar', headerSubtitle: 'Elegí deporte y tipo' } },
   { path: '/reservas', component: MyBookings, meta: { requiresAuth: true, headerTitle: 'Mis reservas' } },
   { path: '/agregar-tarjeta', component: AddCard, meta: { requiresAuth: true, headerTitle: 'Agregar tarjeta' } },
@@ -36,6 +35,12 @@ const routes = [
     name: 'UserPayments',
     component: UserPayments, 
     meta: { requiresAuth: true, headerTitle: 'Mis Pagos' } 
+  },
+  {
+    path: '/mis-creditos',
+    name: 'MisCreditos',
+    component: MisCreditos,
+    meta: { requiresAuth: true, headerTitle: 'Mis Créditos' } 
   },
   {
     path: '/dashboard',
@@ -70,7 +75,7 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin', headerTitle: 'Actividades' }
   },
 
-  // RUTAS EXCLUSIVAS PARA EL EMPLEADO ADMINISTRATIVO (CONSERVADAS)
+  // RUTAS EXCLUSIVAS PARA EL EMPLEADO ADMINISTRATIVO
   {
     path: '/control-ingreso',
     name: 'ControlIngreso',
@@ -82,7 +87,7 @@ const routes = [
     name: 'ControlAsistencias',
     component: ControlAsistencias,
     meta: { requiresAuth: true, role: ['admin', 'empleado'], headerTitle: 'Cerrar Asistencias' }
-  },
+  }
 ]
 
 const router = createRouter({
