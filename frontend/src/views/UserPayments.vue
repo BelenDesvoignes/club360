@@ -11,14 +11,15 @@
     </div>
 
     <div v-else-if="filteredPayments.length" class="table-wrapper">
-     <table class="custom-table">
+
+    <table class="custom-table">
         <thead>
           <tr>
-            <th class="col-date">Fecha de Emisión</th>
-            <th class="col-concept">Concepto / Categoría</th>
+            <th class="col-date">Fecha</th> <th class="col-concept">Concepto / Categoría</th>
             <th class="col-amount text-right">Monto</th>
             <th class="col-status text-center">Estado</th>
-            <th class="col-actions text-center">Acción</th> </tr>
+            <th class="col-actions text-center">Acción</th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="p in paginatedPayments" :key="p.id" class="table-row">
@@ -28,7 +29,7 @@
             <td class="cell-concept capitalize font-semibold">
               {{ formatConcept(p) }}
             </td>
-            <td class="cell-amount text-right font-mono font-bold text-base">
+            <td class="cell-amount text-right font-mono font-bold text-base price-clean">
               ${{ p.amount }}
             </td>
             
@@ -41,13 +42,13 @@
             <td class="cell-actions text-center">
               <button 
                 v-if="p.status.toLowerCase() === 'pending' || p.status.toLowerCase() === 'pendiente' || p.status.toLowerCase() === 'partial'"
-                class="status-badge badge-warning btn-action-pay"
+                class="btn-primary-pay"
                 @click="openPaymentFlow(p)"
-                title="Hacé clic para liquidar este pago"
+                title="Hacé clic para liquidar este saldo pendiente"
               >
                 Pagar 💳
               </button>
-              <span v-else class="text-muted font-medium" style="color: #94a3b8; font-size: 0.85rem;">
+              <span v-else class="text-disabled">
                 -
               </span>
             </td>
@@ -138,23 +139,35 @@ const formatDate = (dateStr) => {
 }
 
 const formatConcept = (payment) => {
+  // 1. Si es una suscripción o abono mensual
+  if (payment.type === 'subscription' || payment.type === 'suscripcion') {
+    return 'Abono Mensual'
+  }
+
+  // 2. Si es una reserva de turno
   if (payment.type === 'booking') {
     const s = payment.status ? payment.status.toLowerCase() : ''
     const amount = Number(payment.amount)
     
+    // Tomamos el nombre del deporte real que calculó el backend
+    const sportName = payment.sport_name || 'Clase Deportiva' 
+    const sportSuffix = ` - ${sportName}`
+    
     if (s === 'pending' || s === 'partial' || s === 'pendiente') {
-      return 'Seña de reserva (50%)'
+      return `Seña de reserva (50%)${sportSuffix}`
     }
     if ((s === 'completed' || s === 'approved' || s === 'pagado') && amount === 10000) {
-      return 'Seña de reserva (50%)'
+      return `Seña de reserva (50%)${sportSuffix}`
     }
     if ((s === 'completed' || s === 'approved' || s === 'pagado') && amount > 10000) {
-      return 'Pago Total de Reserva (100%)'
+      return `Pago Total de Reserva (100%)${sportSuffix}`
     }
-    return 'Pago de reserva'
+    return `Pago de reserva${sportSuffix}`
   }
-  return payment.type
-}
+  
+  // 3. Salvaguarda por si viene el tipo con mayúscula
+  return payment.type === 'Subscription' ? 'Abono Mensual' : payment.type
+} 
 
 const formatStatusLabel = (status) => {
   const s = status ? status.toLowerCase() : ''
@@ -301,5 +314,47 @@ onMounted(fetchPayments)
 .spinner { border: 3px solid #f3f4f6; border-top: 3px solid #0d124a; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 12px auto; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 .col-actions { width: 120px; }
+.cell-actions { padding: 12px 20px; }
+/* Limpieza definitiva del tachado en los montos */
+.price-clean {
+  text-decoration: none !important;
+  color: #0d124a !important;
+}
+
+/* botón Pagar */
+.btn-primary-pay {
+  background-color: #f59e0b; /* Color ámbar/alerta llamativo */
+  color: #ffffff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 8px; 
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-primary-pay:hover {
+  background-color: #d97706; /* Oscurece al pasar el mouse */
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);
+}
+
+.btn-primary-pay:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(217, 119, 6, 0.2);
+}
+
+.text-disabled {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.col-actions { width: 140px; }
 .cell-actions { padding: 12px 20px; }
 </style>
