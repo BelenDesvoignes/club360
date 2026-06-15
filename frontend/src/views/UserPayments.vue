@@ -11,14 +11,14 @@
     </div>
 
     <div v-else-if="filteredPayments.length" class="table-wrapper">
-      <table class="custom-table">
+     <table class="custom-table">
         <thead>
           <tr>
             <th class="col-date">Fecha de Emisión</th>
             <th class="col-concept">Concepto / Categoría</th>
             <th class="col-amount text-right">Monto</th>
-            <th class="col-status text-center">Estado del Pago</th>
-          </tr>
+            <th class="col-status text-center">Estado</th>
+            <th class="col-actions text-center">Acción</th> </tr>
         </thead>
         <tbody>
           <tr v-for="p in paginatedPayments" :key="p.id" class="table-row">
@@ -33,21 +33,23 @@
             </td>
             
             <td class="cell-status text-center">
-              <span 
-                v-if="p.status.toLowerCase() === 'completed' || p.status.toLowerCase() === 'approved' || p.status.toLowerCase() === 'pagado'" 
-                :class="['status-badge', getStatusClass(p.status)]"
-              >
+              <span :class="['status-badge', getStatusClass(p.status)]">
                 {{ formatStatusLabel(p.status) }}
               </span>
-              
+            </td>
+
+            <td class="cell-actions text-center">
               <button 
-                v-else
-                :class="['status-badge', 'badge-warning', 'btn-action-pay']"
+                v-if="p.status.toLowerCase() === 'pending' || p.status.toLowerCase() === 'pendiente' || p.status.toLowerCase() === 'partial'"
+                class="status-badge badge-warning btn-action-pay"
                 @click="openPaymentFlow(p)"
-                title="Hacé clic para liquidar este pago con tu tarjeta vinculada"
+                title="Hacé clic para liquidar este pago"
               >
-                {{ formatStatusLabel(p.status) }} 💳
+                Pagar 💳
               </button>
+              <span v-else class="text-muted font-medium" style="color: #94a3b8; font-size: 0.85rem;">
+                -
+              </span>
             </td>
           </tr>
         </tbody>
@@ -101,9 +103,11 @@ const selectedPaymentAmount = ref(0)
 const selectedPaymentConcept = ref('')
 const activePaymentObject = ref(null)
 
-// Propiedad computada reactiva que expone el historial directo de la BD
+// Ordenamos los pagos por fecha de emisión (del más reciente al más antiguo) antes de aplicar la paginación:
 const filteredPayments = computed(() => {
-  return payments.value
+  return [...payments.value].sort((a, b) => {
+  return new Date(b.date) - new Date(a.date)
+  })
 })
 
 // Paginación reactiva sobre la lista
@@ -204,7 +208,6 @@ const handlePaymentResult = async (result) => {
         await api.post(`/payments/me/complete-subscription/${paymentId}`)
         console.log('¡Suscripción y todas sus reservas mutadas con éxito en la Base de Datos!')
       } else {
-        // Flujo de Clase Única: Lógica original de tus compañeros (con comentarios de JS fijos)
         const bookingId = activePaymentObject.value?.booking_id || paymentId
         await api.post('/payments/me/complete-booking', {
           amount: Number(selectedPaymentAmount.value),
@@ -297,4 +300,6 @@ onMounted(fetchPayments)
 .empty-icon-circle { width: 56px; height: 56px; background-color: #f1f5f9; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.5rem; margin: 0 auto 16px auto; }
 .spinner { border: 3px solid #f3f4f6; border-top: 3px solid #0d124a; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 12px auto; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.col-actions { width: 120px; }
+.cell-actions { padding: 12px 20px; }
 </style>
