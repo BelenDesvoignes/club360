@@ -117,7 +117,7 @@ def get_instance_booked_count(db: Session, instance_id: int) -> int:
     )
 
 
-def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
+def create_booking(db: Session, user_id: int, instance_id: int | None, subscription_id: int | None = None) -> Booking:
     """
     Create a booking with complete business logic validation.
     
@@ -138,6 +138,9 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
     # Get instance
+    if not instance_id:
+        raise HTTPException(status_code=400, detail="Falta el identificador del turno para procesar la reserva.")
+
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
     if not instance:
         raise HTTPException(status_code=404, detail="Turno no encontrado")
@@ -185,11 +188,17 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
     if not has_instance_capacity(db, instance_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No hay cupos disponibles para este turno. Únetea la lista de espera."
+            detail="No hay cupos disponibles para este turno. Únete a la lista de espera."
         )
     
-    # Rule 3 & 4: Check if user is abonado for this template (and date)
-    active_subscription = get_active_subscription(db, user_id, template.id, for_date=instance.date)
+    # Rule 3 & 4: Check if user is abonado for this template (or if a subscription_id was explicitly passed)
+    active_subscription = None
+    if subscription_id:
+        active_subscription = db.query(Subscription).filter(Subscription.id == subscription_id).first()
+    
+    if not active_subscription:
+        active_subscription = get_active_subscription(db, user_id, template.id, for_date=instance.date)
+        
     is_abonado = active_subscription is not None
     
     # Create booking
