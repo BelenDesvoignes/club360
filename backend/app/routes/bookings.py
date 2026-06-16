@@ -199,6 +199,22 @@ def verify_user_qr(
     if not booking:
         raise HTTPException(status_code=404, detail="Código inválido: La reserva no existe.")
 
+    #CHEQUEO 1: Validar si el cliente dueño de la reserva está suspendido
+    if booking.user_id:
+        if booking_service.is_user_suspended(db, booking.user_id):
+            raise HTTPException(
+                status_code=400, 
+                detail="Error: Cliente Suspendido"
+            )
+
+    #CHEQUEO 2: Validar estado de deuda
+    # Si el estado es 'partial' y no está asociada a un abono mensual, tiene saldo pendiente
+    if booking.payment_status == "partial" and booking.subscription_id is None:
+        raise HTTPException(
+            status_code=400, 
+            detail="Error: Reserva con deuda existente"
+        )
+
     status_curr = _booking_status(booking)
     if status_curr == "Concreted":
         raise HTTPException(status_code=400, detail="Acceso denegado: Esta asistencia ya fue registrada.")
