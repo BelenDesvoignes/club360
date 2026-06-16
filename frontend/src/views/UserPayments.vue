@@ -69,11 +69,9 @@
       </div>
     </div>
 
-    <div v-else class="empty-state-card">
-      <div class="empty-icon-circle">
-        <span role="img" aria-label="tarjeta"></span>
-      </div>
-      <h3>Sin pagos registrados</h3>
+   <div v-else class="empty-state-card-unified">
+      <div class="empty-icon-large">💳</div>
+      <h2>No tienes pagos registrados aún</h2>
       <p>No encontramos ningún movimiento financiero asociado a tu cuenta actualmente.</p>
     </div>
 
@@ -139,35 +137,32 @@ const formatDate = (dateStr) => {
 }
 
 const formatConcept = (payment) => {
-  // 1. Si es una suscripción o abono mensual
+  // 1. Si es una suscripción o abono mensual (lo dejamos tal cual)
   if (payment.type === 'subscription' || payment.type === 'suscripcion') {
     return 'Abono Mensual'
   }
 
-  // 2. Si es una reserva de turno
+  // 2. Si es una reserva de turno (aplicamos tu nuevo criterio momentáneo)
   if (payment.type === 'booking') {
-    const s = payment.status ? payment.status.toLowerCase() : ''
     const amount = Number(payment.amount)
     
-    // Tomamos el nombre del deporte real que calculó el backend
-    const sportName = payment.sport_name || 'Clase Deportiva' 
-    const sportSuffix = ` - ${sportName}`
+    // Si el monto es igual a 10000 (el 50%), unificamos el concepto sin adivinar
+    if (amount === 10000) {
+      return 'Reserva: clase 50%'
+    }
     
-    if (s === 'pending' || s === 'partial' || s === 'pendiente') {
-      return `Seña de reserva (50%)${sportSuffix}`
+    // Si el monto es mayor, asumimos el pago total directo
+    if (amount > 10000) {
+      return 'Reserva: pago total'
     }
-    if ((s === 'completed' || s === 'approved' || s === 'pagado') && amount === 10000) {
-      return `Seña de reserva (50%)${sportSuffix}`
-    }
-    if ((s === 'completed' || s === 'approved' || s === 'pagado') && amount > 10000) {
-      return `Pago Total de Reserva (100%)${sportSuffix}`
-    }
-    return `Pago de reserva${sportSuffix}`
+    
+    // Salvaguarda por si viene un monto menor o diferente
+    return 'Reserva: pago'
   }
   
   // 3. Salvaguarda por si viene el tipo con mayúscula
   return payment.type === 'Subscription' ? 'Abono Mensual' : payment.type
-} 
+}
 
 const formatStatusLabel = (status) => {
   const s = status ? status.toLowerCase() : ''
@@ -357,4 +352,40 @@ onMounted(fetchPayments)
 
 .col-actions { width: 140px; }
 .cell-actions { padding: 12px 20px; }
+.empty-state-card-unified {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 60px 40px;
+  max-width: 1120px; /* Se alinea con el ancho de la tabla principal */
+  margin: 30px auto 0 auto;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  
+  /* Flexbox para centrar absolutamente todo el contenido */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.empty-icon-large {
+  font-size: 4rem;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.empty-state-card-unified h2 {
+  font-size: 1.8rem;
+  color: #0d124a; /* Usamos el azul oscuro de tu paleta del club */
+  font-weight: 800;
+  margin: 0 0 12px 0;
+}
+
+.empty-state-card-unified p {
+  font-size: 1.05rem;
+  color: #64748b;
+  margin: 0;
+  max-width: 600px; /* Evita que el texto se estire demasiado a lo ancho */
+}
 </style>
