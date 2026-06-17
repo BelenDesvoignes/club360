@@ -25,9 +25,19 @@
 
         <div class="booking-content">
           <div class="activity-section">
-            <h3 class="activity-name">{{ booking.activity_name || `Actividad ${booking.instance_id}` }}</h3>
-            <p class="activity-date">{{ formatDate(booking.date) }}</p>
+          <h3 class="activity-name">
+            {{ booking.activity_name || `Actividad ${booking.instance_id}` }}
+          </h3>
+
+          <div
+            class="booking-type-badge"
+            :class="booking.is_subscription ? 'badge-subscription' : 'badge-single'"
+          >
+            {{ booking.is_subscription ? 'ABONO' : 'CLASE SUELTA' }}
           </div>
+
+          <p class="activity-date">{{ formatDate(booking.date) }}</p>
+        </div>
 
           <div class="schedule-section">
             <div class="schedule-row">
@@ -229,12 +239,36 @@ const getCardClass = (booking) => {
   return classes[booking.status] || ''
 }
 
+const sortBookings = (list) => {
+  const getGroup = (booking) => {
+    if (booking.status === 'Cancelled') return 2
+    if (isBookingExpired(booking)) return 3
+    return 1
+  }
+
+  return [...list].sort((a, b) => {
+    const groupA = getGroup(a)
+    const groupB = getGroup(b)
+
+    if (groupA !== groupB) {
+      return groupA - groupB
+    }
+
+    const dateA = new Date(`${a.date}T${a.start_time}`)
+    const dateB = new Date(`${b.date}T${b.start_time}`)
+
+    return dateA - dateB
+  })
+}
+
 const fetchBookings = async () => {
   loading.value = true
   try {
     auth.hydrateFromToken()
     const response = await api.get('/bookings/me')
-    bookings.value = response.data.bookings || response.data
+
+    const data = response.data.bookings || response.data
+    bookings.value = sortBookings(data)
   } catch (e) {
     console.error('Error al cargar reservas:', e)
     bookings.value = []
@@ -254,7 +288,15 @@ const confirmCancel = async () => {
     auth.hydrateFromToken()
     const res = await api.post(`/bookings/${bookingToCancel.value}/cancel`)
     successMessage.value = res.data.message || 'Reserva cancelada exitosamente'
-    setTimeout(() => { fetchBookings() }, 1500)
+  const booking = bookings.value.find(
+    b => b.id === bookingToCancel.value
+  )
+
+  if (booking) {
+    booking.status = 'Cancelled'
+  }
+
+  bookings.value = sortBookings(bookings.value)
   } catch (e) {
     errorMessage.value = e.response?.data?.detail || 'Error al cancelar la reserva'
     console.error('Error al cancelar:', e)
@@ -429,4 +471,23 @@ onMounted(() => {
 .qr-text { font-size: 0.85rem; color: #6c757d; margin: 0 0 8px 0; font-weight: 600; }
 .qr-frame { display: inline-block; background: white; padding: 8px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 .qr-id-display { font-size: 0.95rem; font-weight: 700; color: #0d124a; margin-top: 8px; margin-bottom: 0; }
+.booking-type-badge {
+  display: inline-block;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.badge-subscription {
+  background: #5a8849;
+  color: white;
+}
+
+.badge-single {
+  background: #ff6f00;
+  color: white;
+}
 </style>
