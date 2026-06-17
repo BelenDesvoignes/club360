@@ -228,14 +228,19 @@ const getStatusLabel = (status, booking) => {
 }
 
 const getCardClass = (booking) => {
+  if (isBookingExpired(booking)) {
+    return 'status-expired'
+  }
+
   const classes = {
     'Confirmed': 'status-confirmed',
     'Pending': 'status-pending',
     'Cancelled': 'status-cancelled',
     'Attended': 'status-attended',
     'Concreted': 'status-attended',
-    'Absent': 'status-absent'       
+    'Absent': 'status-absent'
   }
+
   return classes[booking.status] || ''
 }
 
