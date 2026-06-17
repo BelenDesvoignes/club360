@@ -43,10 +43,37 @@ def create_booking(
     inst_id = data.instance_id if (hasattr(data, 'instance_id') and data.instance_id != 0) else None
     sub_id = data.subscription_id if hasattr(data, 'subscription_id') else None
 
-    # Se delega al servicio pasándole los parámetros limpios mapeados desde Pydantic
     booking = booking_service.create_booking(db, user_id=user_id, instance_id=inst_id, subscription_id=sub_id)
     return booking
 
+
+@router.post("/reserve-with-credit", response_model=BookingOut)
+def reserve_with_credit(
+    instance_id: int,
+    credit_id: int,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
+):
+    """Crea una reserva consumiendo un token de crédito individual único."""
+    user_id = _extract_user_id(authorization)
+    
+    try:
+        booking = booking_service.create_booking_with_credit(
+            db=db, 
+            user_id=user_id, 
+            instance_id=instance_id, 
+            credit_id=credit_id
+        )
+        return booking
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Error interno al procesar el crédito: {str(e)}"
+        )
 
 @router.get("/user/{user_id}", response_model=list[BookingListOut])
 def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
@@ -149,19 +176,53 @@ def get_my_next_booking(
     proxima["date"] = str(proxima["date"])
     return proxima
 
-
 @router.post("/{booking_id}/cancel", response_model=dict)
 def cancel_booking(
     booking_id: int, 
     authorization: str | None = Header(default=None), 
     db: Session = Depends(get_db)
 ):
-    """Cancela la reserva delegando la operación de forma segura a la lógica de servicios"""
+    """Cancela la reserva con mensajes dinámicos según las reglas de negocio."""
+    from datetime import datetime, timedelta
+    from ..time_override import business_utcnow
+
     user_id = _extract_user_id(authorization)
 
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Reserva no encontrada")
+        
+    if booking.status == "Cancelled":
+        raise HTTPException(status_code=400, detail="Esta reserva ya se encuentra cancelada")
+
+    instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
+    if not instance:
+        raise HTTPException(status_code=404, detail="Turno no encontrado")
+
+    # 1. Calcular las 48 horas de anticipación
+    class_datetime = datetime.combine(instance.date, datetime.min.time())
+    if instance.template and instance.template.start_time:
+        try:
+            time_parts = list(map(int, instance.template.start_time.split(":")))
+            class_datetime = datetime.combine(instance.date, datetime.min.time().replace(hour=time_parts[0], minute=time_parts[1]))
+        except Exception:
+            pass
+
+    time_difference = class_datetime - business_utcnow()
+    is_in_time = time_difference >= timedelta(hours=48)
+
+    if not is_in_time:
+        msg_exito = "Reserva cancelada exitosamente. No se genera reembolso ni créditos."
+    else:
+        if booking.subscription_id is not None:
+            msg_exito = "Reserva cancelada exitosamente. Se generó 1 crédito válido por 30 días."
+        else:
+            msg_exito = "Reserva cancelada exitosamente. Se generó un reembolso del monto pagado."
+
     try:
+        # El service procesa el crédito individual o el reembolso financiero según corresponda
         booking_service.cancel_booking(db, booking_id, user_id)
-        return {"message": "Reserva cancelada exitosamente"}
+        return {"message": msg_exito}
     except HTTPException as he:
         raise he
     except Exception as e:

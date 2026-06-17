@@ -12,34 +12,40 @@ from ..time_override import business_utcnow
 
 def get_payments_by_user(db: Session, user_id: int):
     """
-    Busca los pagos del usuario e inyecta el deporte real.
-    Si el pago tiene booking_id, trae su deporte exacto. 
-    Si es un pago viejo (NULL), busca la reserva activa más cercana a esa fecha.
+    Busca los pagos del usuario e inyecta el deporte real original 
+    utilizando únicamente las columnas reales de la base de datos (instance_id).
     """
     payments = db.query(Payment).filter(Payment.user_id == user_id).all()
     
     for payment in payments:
-        payment.sport_name = None  # Vacío para Abonos por defecto
+        payment.sport_name = None  
         
+        # 🌟 Si es una devolución, salteamos la búsqueda por tiempo
+        if payment.type in ["refund_partial", "refund_total"]:
+            payment.sport_name = "Devolución"
+            continue
+            
         if payment.type == "booking":
             try:
-                if payment.booking_id:
-                    # 🎯 CASO IDEAL: El pago ya sabe a qué reserva pertenece
+                b_id = getattr(payment, 'booking_id', getattr(payment, 'id_booking', None))
+                
+                if b_id:
+                    # SQL Corregido: Limpiamos el OR b.id_instance erróneo
                     query_sql = text("""
                         SELECT a.name 
                         FROM bookings b
-                        JOIN shift_instances i ON b.instance_id = i.id OR b.id_instance = i.id
+                        JOIN shift_instances i ON b.instance_id = i.id
                         JOIN shift_templates t ON i.template_id = t.id
                         JOIN activities a ON t.activity_id = a.id
                         WHERE b.id = :booking_id
                     """)
-                    result = db.execute(query_sql, {"booking_id": payment.booking_id}).fetchone()
+                    result = db.execute(query_sql, {"booking_id": b_id}).fetchone()
                 else:
-                    # 🔍 CASO CONTINGENCIA (Pagos viejos): Buscamos la reserva más cercana en fecha
+                    # SQL Corregido: Limpiamos el OR b.id_instance erróneo
                     query_sql = text("""
                         SELECT a.name 
                         FROM bookings b
-                        JOIN shift_instances i ON b.instance_id = i.id OR b.id_instance = i.id
+                        JOIN shift_instances i ON b.instance_id = i.id
                         JOIN shift_templates t ON i.template_id = t.id
                         JOIN activities a ON t.activity_id = a.id
                         WHERE b.user_id = :user_id 
@@ -49,7 +55,7 @@ def get_payments_by_user(db: Session, user_id: int):
                         LIMIT 1
                     """)
                     result = db.execute(query_sql, {
-                        "user_id": user_id,
+                        "user_id": user_id, 
                         "payment_date": payment.date
                     }).fetchone()
                 
@@ -63,6 +69,9 @@ def get_payments_by_user(db: Session, user_id: int):
                 print(f"Error al recuperar deporte real por SQL: {str(e)}")
                 payment.sport_name = "Clase Deportiva"
                 
+        elif payment.type in ["subscription", "suscripcion", "Subscription"]:
+            payment.sport_name = "Abono Mensual"
+            
     return payments
 
 def complete_latest_booking_payment(db: Session, user_id: int, amount: float) -> Payment:

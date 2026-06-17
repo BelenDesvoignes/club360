@@ -231,86 +231,100 @@ def create_booking(db: Session, user_id: int, instance_id: int | None, subscript
     
     return booking
 
-
 def cancel_booking(db: Session, booking_id: int, user_id: int) -> Booking:
     """
-    Cancel a booking. Only owner or admin can cancel.
-    Checks time limit (48hs) and payment status to award a credit if valid.
-    Uses business time overrides for demo simulation compatibility.
-    Returns the cancelled booking.
+    Cancela una reserva. Verifica las 48hs y deriva de forma limpia:
+    - Si es abono -> Llama al service de créditos.
+    - Si es clase suelta -> Llama al service de reembolsos.
     """
     from ..models.user import UserRole
+    from .credit_service import otorgar_credito_individual
+    from .refund_service import procesar_reembolso_clase_suelta
     
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
     
-    # Check authorization
+    # Validar Autorización
     user = db.query(User).filter(User.id_user == user_id).first()
     if booking.user_id != user_id and (not user or user.role != UserRole.ADMIN):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No autorizado para cancelar esta reserva"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
         
     if booking.status == "Cancelled":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Esta reserva ya se encuentra cancelada"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ya cancelada")
 
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
     if not instance:
-        raise HTTPException(status_code=404, detail="Instancia de turno no encontrada")
+        raise HTTPException(status_code=404, detail="Turno no encontrado")
 
+    # Calcular anticipación (48hs)
     class_datetime = business_utcnow()
     if instance.date and instance.template and instance.template.start_time:
         try:
             time_parts = list(map(int, instance.template.start_time.split(":")))
-            class_datetime = datetime.combine(
-                instance.date, 
-                datetime.min.time().replace(hour=time_parts[0], minute=time_parts[1])
-            )
+            class_datetime = datetime.combine(instance.date, datetime.min.time().replace(hour=time_parts[0], minute=time_parts[1]))
         except Exception:
             class_datetime = datetime.combine(instance.date, datetime.min.time())
 
     time_difference = class_datetime - business_utcnow()
     is_in_time = time_difference >= timedelta(hours=48)
 
-    is_fully_paid = booking.payment_status == "paid" or booking.subscription_id is not None
-
-    if is_in_time and is_fully_paid:
-        activity_id = instance.template.activity_id if instance.template else 1
-
-      
-        ahora_simulado = business_utcnow()
-        next_month = ahora_simulado.month + 1 if ahora_simulado.month < 12 else 1
-        next_month_year = ahora_simulado.year if ahora_simulado.month < 12 else ahora_simulado.year + 1
-        last_day_next_month = calendar.monthrange(next_month_year, next_month)[1]
-        expiry_date_str = f"{next_month_year}-{str(next_month).zfill(2)}-{str(last_day_next_month).zfill(2)}"
-
-        existing_credit = db.query(Credit).filter(
-            and_(
-                Credit.user_id == booking.user_id,
-                Credit.activity_id == activity_id,
-                Credit.is_used == False
-            )
-        ).first()
-
-        if existing_credit:
-            existing_credit.amount += 1.0
+    if is_in_time:
+        if booking.subscription_id is not None:
+            # Camino Abono
+            activity_id = instance.template.activity_id if instance.template else 1
+            otorgar_credito_individual(db, booking.user_id, activity_id)
         else:
-            new_credit = Credit(
-                user_id=booking.user_id,
-                amount=1.0,
-                activity_id=activity_id,
-                is_used=False,
-                expiry_date=expiry_date_str
-            )
-            db.add(new_credit)
+            # Camino CLase suelta
+            procesar_reembolso_clase_suelta(db, booking, instance)
 
-    # 4. Cambiar estado del booking y aplicar cambios
     booking.status = "Cancelled"
+    db.commit()
+    db.refresh(booking)
+    
+    return booking
+
+def create_booking_with_credit(db: Session, user_id: int, instance_id: int, credit_id: int) -> Booking:
+    """
+    Crea una reserva confirmada utilizando un token de crédito individual único.
+    """
+    from .credit_service import consumir_credito_individual
+
+    instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
+    if not instance:
+        raise HTTPException(status_code=404, detail="Clase no encontrada.")
+        
+    if instance.date < business_today():
+        raise HTTPException(status_code=400, detail="No podés reservar clases pasadas.")
+
+    # 3. Validar capacidad del turno
+    if not has_instance_capacity(db, instance_id):
+        raise HTTPException(status_code=400, detail="No hay cupos disponibles para esta clase.")
+
+    existing = db.query(Booking).filter(
+        and_(
+            Booking.user_id == user_id,
+            Booking.instance_id == instance_id,
+            Booking.status != "Cancelled"
+        )
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya tenés una reserva activa para esta clase.")
+
+    activity_id = instance.template.activity_id if instance.template else 1
+    consumir_credito_individual(db, credit_id=credit_id, user_id=user_id, activity_id=activity_id)
+
+    booking = Booking(
+        user_id=user_id,
+        instance_id=instance_id,
+        created_at=business_utcnow(),
+        status="Confirmed",
+        subscription_id=None,
+        amount_paid=0.0,
+        payment_status="paid"  
+    )
+    
+    db.add(booking)
     db.commit()
     db.refresh(booking)
     
