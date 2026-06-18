@@ -62,14 +62,15 @@
                   <small>{{ shift.booked_count }} / {{ shift.capacity }} cupos</small>
                 </div>
               </td>
+              <!-- 🌟 CAMBIO AQUÍ: Botón en lugar del emoji 🚫 -->
               <td v-if="userRole === 'admin'" class="actions-cell">
                 <button
                   @click="confirmCancel(shift)"
-                  class="icon-btn"
+                  class="btn-table-cancel"
                   :disabled="shift.is_cancelled"
                   :title="shift.is_cancelled ? 'Clase ya cancelada' : 'Cancelar clase'"
                 >
-                  🚫
+                  {{ shift.is_cancelled ? 'Cancelada' : 'Cancelar' }}
                 </button>
               </td>
             </tr>
@@ -251,10 +252,8 @@ const showMsg = (txt, type) => {
 }
 
 onMounted(async () => {
-  // 1. Cargamos las clases
   await fetchShifts()
   
-  // 2. Traemos el rol real y, cuando termine, damos luz verde a la tabla
   try {
     const token = localStorage.getItem('token') 
     if (token) {
@@ -295,14 +294,41 @@ input, select { width: 100%; border: 1px solid #e5e7eb; border-radius: 10px; pad
 .shifts-table td { padding: 15px 12px; border-bottom: 1px solid #f9fafb; color: #374151; font-size: 14px; }
 .day-cell { font-weight: 600; color: #4b5563; }
 .activity-name { font-weight: 700; color: #111827; }
-.row-cancelled { opacity: 0.4; text-decoration: line-through; background: #fff5f5; }
+.row-cancelled { opacity: 0.6; text-decoration: line-through; background: #fff5f5; }
 .occupancy-bar { width: 130px; height: 10px; background: #e5e7eb; border-radius: 10px; position: relative; overflow: visible; margin-bottom: 14px; }
 .occupancy-bar span { position: absolute; height: 100%; background: #ff6f00; border-radius: 10px; left: 0; }
 .occupancy-bar small { position: absolute; top: 14px; left: 0; font-size: 11px; font-weight: 600; color: #6b7280; width: 100%; white-space: nowrap; }
 .actions-cell { display: flex; gap: 10px; align-items: center; }
-.icon-btn { background: none; border: none; cursor: pointer; filter: grayscale(1); opacity: 0.4; font-size: 18px; transition: transform 0.2s, opacity 0.2s; padding: 0; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; }
-.icon-btn:hover:not(:disabled) { transform: scale(1.2); filter: grayscale(0); opacity: 1; }
-.icon-btn:disabled { cursor: not-allowed; opacity: 0.15; }
+
+/* 🌟 ESTILOS NUEVOS PARA EL BOTÓN DE LA TABLA */
+.btn-table-cancel {
+  background-color: #fff5f5;
+  color: #c0392b;
+  border: 1px solid #fcd3d3;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+}
+.btn-table-cancel:hover:not(:disabled) {
+  background-color: #c0392b;
+  color: white;
+  border-color: #c0392b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(192, 57, 43, 0.15);
+}
+.btn-table-cancel:disabled {
+  background-color: #f3f4f6;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(45, 101, 141, 0.8); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 100; }
 .modal-card { background: white; padding: 30px; border-radius: 18px; width: 90%; max-width: 380px; text-align: center; box-shadow: 0 18px 45px rgba(0, 0, 0, 0.15); }

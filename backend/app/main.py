@@ -21,6 +21,7 @@ from .models.shift_template import ShiftTemplate # Nueva
 from .models.shift_instance import ShiftInstance # Nueva
 from .models.waiting_list import WaitingList
 from .routes import dashboard
+from .routes import waiting_lists
 from .time_override import set_business_today_override, reset_business_today_override
 
 # 1. Instancia de FastAPI
@@ -96,4 +97,4 @@ app.include_router(cron.router)
 app.include_router(dashboard.router)
 from .routes import attendances  # ← agregar al import
 app.include_router(attendances.router)  # ← agregar junto a los otros
-
+app.include_router(waiting_lists.router)

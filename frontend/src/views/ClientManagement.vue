@@ -45,15 +45,6 @@
                 </td>
                 <td class="actions-cell justify-center">
                   <button
-                    @click="toggleSuspension(cliente)"
-                    class="icon-btn"
-                    :disabled="loadingSuspension[cliente.id]"
-                    :title="cliente.estado === 'Suspendido' ? 'Levantar suspensión' : 'Suspender cliente'"
-                  >
-                    <span v-if="loadingSuspension[cliente.id]" class="spinner-small"></span>
-                    <span v-else>{{ cliente.estado === 'Suspendido' ? '✅' : '🚫' }}</span>
-                  </button>
-                  <button
                     @click="toggleAccordion(cliente.id)"
                     class="icon-btn"
                     :class="{ 'rotate-arrow': activeAccordion === cliente.id }"
@@ -397,7 +388,6 @@ const filterStatus = ref('')
 // ---- Modales y loadings generales ----
 const showCreateModal = ref(false)
 const loadingForm = ref(false)
-const loadingSuspension = ref({})
 const activeDropdown = ref(null)
 const activeAccordion = ref(null)
 
@@ -472,25 +462,6 @@ const handleSubmitForm = async () => {
 const closeCreateModal = () => {
   showCreateModal.value = false
   form.value = { first_name: '', last_name: '', dni: '', email: '', password: '' }
-}
-
-const toggleSuspension = async (cliente) => {
-  loadingSuspension.value[cliente.id] = true
-  try {
-    const res = await api.patch(`/admin/clientes/${cliente.id}/suspension`)
-    const index = clientes.value.findIndex(c => c.id === cliente.id)
-    if (index !== -1) clientes.value[index].estado = res.data.nuevo_estado
-    showToast(
-      res.data.nuevo_estado === 'Suspendido'
-        ? `Se ha suspendido al cliente ${cliente.nombre}`
-        : `Se levantó la suspensión para ${cliente.nombre}`,
-      res.data.nuevo_estado === 'Suspendido' ? 'error' : 'success'
-    )
-  } catch (error) {
-    showToast(error.response?.data?.detail || 'No se pudo alterar el estado del cliente', 'error')
-  } finally {
-    loadingSuspension.value[cliente.id] = false
-  }
 }
 
 const editCliente = (cliente) => alert(`Editar datos de: ${cliente.nombre}`)
