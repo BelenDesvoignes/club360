@@ -282,6 +282,10 @@ def cancel_booking(db: Session, booking_id: int, user_id: int) -> Booking:
     db.commit()
     db.refresh(booking)
     
+    # Disparador de lista de espera
+    from .waiting_list_service import WaitingListService
+    WaitingListService.process_waiting_list_on_cancellation(db, instance_id=booking.instance_id)
+
     return booking
 
 def create_booking_with_credit(db: Session, user_id: int, instance_id: int, credit_id: int) -> Booking:

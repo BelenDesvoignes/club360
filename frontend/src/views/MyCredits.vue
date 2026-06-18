@@ -84,13 +84,13 @@
             </div>
             
             <div 
-              v-else
-              v-for="instance in filteredInstances"
-              :key="instance.id"
+              v-for="instance in filteredInstances" 
+              :key="instance.id" 
               class="clase-card"
               :class="{ 
                 'selected': selectedInstanceId === instance.id,
-                'already-booked': hasUserBooking(instance.id) 
+                'already-booked': hasUserBooking(instance.id),
+                'class-full-error': selectedInstanceId === instance.id && instance.booked_count >= instance.capacity
               }"
               @click="selectedInstanceId = instance.id"
             >
@@ -108,6 +108,9 @@
 
           <div v-if="hasActiveBooking" class="error-notice-container">
             <span class="error-text-inline">⚠ Ya estás inscripto en esta clase</span>
+          </div>
+          <div v-else-if="isClassFull" class="error-notice-container">
+            <span class="error-text-inline">⚠ No hay cupos disponibles</span>
           </div>
 
           <footer class="modal-actions">
