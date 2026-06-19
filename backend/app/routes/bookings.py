@@ -182,7 +182,7 @@ def cancel_booking(
     authorization: str | None = Header(default=None), 
     db: Session = Depends(get_db)
 ):
-    """Cancela la reserva con mensajes dinámicos según las reglas de negocio."""
+    """Cancela la reserva con mensajes dinámicos según las nuevas reglas de negocio."""
     from datetime import datetime, timedelta
     from ..time_override import business_utcnow
 
@@ -199,7 +199,6 @@ def cancel_booking(
     if not instance:
         raise HTTPException(status_code=404, detail="Turno no encontrado")
 
-    # 1. Calcular las 48 horas de anticipación
     class_datetime = datetime.combine(instance.date, datetime.min.time())
     if instance.template and instance.template.start_time:
         try:
@@ -209,18 +208,21 @@ def cancel_booking(
             pass
 
     time_difference = class_datetime - business_utcnow()
-    is_in_time = time_difference >= timedelta(hours=48)
 
-    if not is_in_time:
-        msg_exito = "Reserva cancelada exitosamente. No se genera reembolso ni créditos."
-    else:
-        if booking.subscription_id is not None:
-            msg_exito = "Reserva cancelada exitosamente. Se generó 1 crédito válido por 30 días."
+    if booking.subscription_id is not None:
+        is_in_time = time_difference >= timedelta(hours=48)
+        if is_in_time:
+            msg_exito = "Reserva cancelada. Se generó 1 crédito válido por 30 días."
         else:
-            msg_exito = "Reserva cancelada exitosamente. Se generó un reembolso del monto pagado."
+            msg_exito = "Reserva cancelada. No se generó un crédito por cancelar dentro de las 48hs."
+    else:
+        is_in_time = time_difference >= timedelta(hours=24)
+        if is_in_time:
+            msg_exito = "Reserva cancelada. Se generó un reembolso del monto pagado."
+        else:
+            msg_exito = "Reserva cancelada. No se genera reembolso por cancelar dentro de las 24hs."
 
     try:
-        # El service procesa el crédito individual o el reembolso financiero según corresponda
         booking_service.cancel_booking(db, booking_id, user_id)
         return {"message": msg_exito}
     except HTTPException as he:

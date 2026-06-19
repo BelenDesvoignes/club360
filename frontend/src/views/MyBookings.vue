@@ -2,7 +2,7 @@
   <div class="my-bookings-container">
     <header class="bookings-header">
       <h1>Mis Reservas</h1>
-      <p>Aquí puedes ver todas tus reservas y gestionarlas</p>
+      <p>Acá podés ver todas tus reservas y gestionarlas</p>
     </header>
 
     <div v-if="loading" class="loading-spinner">Cargando reservas...</div>
@@ -396,7 +396,7 @@ async function onGatewayResult(result) {
   } catch (e) {
     successMessage.value = ''
     errorMessage.value = e.response?.data?.detail || 'Error al confirmar el pago'
-  } finally { // 🌟 ESTRUCTURA REPARADA: uvicorn y vite compilarán perfectamente ahora
+  } finally { //  ESTRUCTURA REPARADA: uvicorn y vite compilarán perfectamente ahora
     finalizingPayment.value = false
   }
 }
@@ -411,7 +411,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.my-bookings-container { padding: 40px 20px; max-width: 1200px; margin: 0 auto; background: rgba(45, 101, 141, 0.06); min-height: 100vh; }
+.my-bookings-container { padding: 40px 20px; max-width: 1200px; margin: 0 auto; background: transparent; min-height: 100vh; }
 .bookings-header { text-align: center; margin-bottom: 40px; }
 .bookings-header h1 { font-size: 2.5rem; color: #2d658d; font-weight: 800; margin: 0 0 10px; }
 .bookings-header p { color: #5a8849; margin: 0; font-size: 1.1rem; }
