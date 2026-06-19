@@ -233,19 +233,19 @@ def create_booking(db: Session, user_id: int, instance_id: int | None, subscript
 
 def cancel_booking(db: Session, booking_id: int, user_id: int) -> Booking:
     """
-    Cancela una reserva. Verifica las 48hs y deriva de forma limpia:
-    - Si es abono -> Llama al service de créditos.
-    - Si es clase suelta -> Llama al service de reembolsos.
+    Cancela una reserva aplicando límites diferenciados:
+    - Si es abono -> Verifica 48hs para devolver crédito.
+    - Si es clase suelta -> Verifica 24hs para procesar reembolso.
     """
     from ..models.user import UserRole
     from .credit_service import otorgar_credito_individual
     from .refund_service import procesar_reembolso_clase_suelta
+    from datetime import datetime, timedelta
     
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
     
-    # Validar Autorización
     user = db.query(User).filter(User.id_user == user_id).first()
     if booking.user_id != user_id and (not user or user.role != UserRole.ADMIN):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
@@ -257,7 +257,6 @@ def cancel_booking(db: Session, booking_id: int, user_id: int) -> Booking:
     if not instance:
         raise HTTPException(status_code=404, detail="Turno no encontrado")
 
-    # Calcular anticipación (48hs)
     class_datetime = business_utcnow()
     if instance.date and instance.template and instance.template.start_time:
         try:
@@ -267,22 +266,19 @@ def cancel_booking(db: Session, booking_id: int, user_id: int) -> Booking:
             class_datetime = datetime.combine(instance.date, datetime.min.time())
 
     time_difference = class_datetime - business_utcnow()
-    is_in_time = time_difference >= timedelta(hours=48)
 
-    if is_in_time:
-        if booking.subscription_id is not None:
-            # Camino Abono
+    if booking.subscription_id is not None:
+        if time_difference >= timedelta(hours=48):
             activity_id = instance.template.activity_id if instance.template else 1
             otorgar_credito_individual(db, booking.user_id, activity_id)
-        else:
-            # Camino CLase suelta
+    else:
+        if time_difference >= timedelta(hours=24):
             procesar_reembolso_clase_suelta(db, booking, instance)
 
     booking.status = "Cancelled"
     db.commit()
     db.refresh(booking)
     
-    # Disparador de lista de espera
     from .waiting_list_service import WaitingListService
     WaitingListService.process_waiting_list_on_cancellation(db, instance_id=booking.instance_id)
 

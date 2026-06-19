@@ -87,11 +87,7 @@
               v-for="instance in filteredInstances" 
               :key="instance.id" 
               class="clase-card"
-              :class="{ 
-                'selected': selectedInstanceId === instance.id,
-                'already-booked': hasUserBooking(instance.id),
-                'class-full-error': selectedInstanceId === instance.id && instance.booked_count >= instance.capacity
-              }"
+              :class="{ 'selected': selectedInstanceId === instance.id }"
               @click="selectedInstanceId = instance.id"
             >
               <div class="clase-info">
@@ -106,18 +102,11 @@
             </div>
           </div>
 
-          <div v-if="hasActiveBooking" class="error-notice-container">
-            <span class="error-text-inline">⚠ Ya estás inscripto en esta clase</span>
-          </div>
-          <div v-else-if="isClassFull" class="error-notice-container">
-            <span class="error-text-inline">⚠ No hay cupos disponibles</span>
-          </div>
-
           <footer class="modal-actions">
             <button 
               @click="confirmReservation" 
               class="btn-confirmar" 
-              :disabled="!selectedInstanceId || submittingReservation || hasActiveBooking || isClassFull"
+              :disabled="!selectedInstanceId || submittingReservation"
               :class="{ 'btn-loading': submittingReservation }"
             >
               <span v-if="submittingReservation" class="btn-spinner"></span>
@@ -165,22 +154,19 @@ const filteredInstances = computed(() => {
   if (!selectedCredit.value) return []
   
   return instances.value.filter(instance => {
+    // 1. Mismo deporte / actividad
     const instanceActivityId = instance.template?.activity_id
     if (!instanceActivityId) return false
-    return Number(instanceActivityId) === Number(selectedCredit.value.activity_id)
+    const isSameActivity = Number(instanceActivityId) === Number(selectedCredit.value.activity_id)
+
+    // 2. Que el usuario NO esté ya inscripto
+    const isAlreadyBooked = hasUserBooking(instance.id)
+
+    // 3. Que la clase NO esté llena
+    const isFull = instance.booked_count >= instance.capacity
+
+    return isSameActivity && !isAlreadyBooked && !isFull
   })
-})
-
-const hasActiveBooking = computed(() => {
-  if (!selectedInstanceId.value) return false
-  return hasUserBooking(selectedInstanceId.value)
-})
-
-const isClassFull = computed(() => {
-  if (!selectedInstanceId.value) return false
-  const target = instances.value.find(i => i.id === selectedInstanceId.value)
-  if (!target) return false
-  return target.booked_count >= target.capacity
 })
 
 const hasUserBooking = (instanceId) => {
@@ -228,7 +214,6 @@ const fetchMyBookings = async () => {
 }
 
 const fetchShiftInstances = async () => {
-  loadingInstances.value = true
   try {
     const token = localStorage.getItem('token')
     const res = await axios.get('/shifts/instances', {
@@ -236,9 +221,7 @@ const fetchShiftInstances = async () => {
     })
     instances.value = res.data || []
   } catch (error) {
-    console.error("Error al traer las instancias de turnos desde el servidor:", error)
-  } finally {
-    loadingInstances.value = false
+    console.error("Error al traer las clases", error)
   }
 }
 
@@ -262,9 +245,17 @@ const handleReserveWithCredit = async (credit) => {
   if (isCreditUsed(credit.id)) return
   selectedCredit.value = credit
   selectedInstanceId.value = null
+  
+  loadingInstances.value = true
   isModalOpen.value = true
   
-  await Promise.all([fetchShiftInstances(), fetchMyBookings()])
+  try {
+    await Promise.all([fetchShiftInstances(), fetchMyBookings()])
+  } catch (error) {
+    console.error("Error al cargar las clases", error)
+  } finally {
+    loadingInstances.value = false
+  }
 }
 
 const closeModal = () => {
@@ -276,7 +267,7 @@ const closeModal = () => {
 }
 
 const confirmReservation = async () => {
-  if (!selectedInstanceId.value || !selectedCredit.value || hasActiveBooking.value) return
+  if (!selectedInstanceId.value || !selectedCredit.value) return
   
   submittingReservation.value = true
   const creditIdTarget = selectedCredit.value.id
@@ -588,26 +579,6 @@ onMounted(() => {
   background: #ffebd9;
   border-color: #ff7300; 
   box-shadow: 0 4px 12px rgba(255, 115, 0, 0.15);
-}
-
-/* Estilos refinados para el aviso dinámico de validación previa */
-.clase-card.already-booked {
-  border-color: #fca5a5 !important;
-  background: #fef2f2 !important;
-}
-
-.error-notice-container {
-  padding: 0 4px 12px;
-  text-align: left;
-}
-
-.error-text-inline {
-  color: #dc2626;
-  font-weight: 400; 
-  font-size: 0.85rem; 
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .clase-info {
