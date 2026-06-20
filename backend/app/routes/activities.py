@@ -36,6 +36,15 @@ def create_activity(data: dict, db: Session = Depends(get_db)):
 
     for s in shifts_incoming:
         shift_service.validate_unique_shift(db, activity.id, s['day_of_week'], s['start_time'])
+        reactivated_template = shift_service.reactivate_inactive_shift(
+            db,
+            activity.id,
+            s,
+            activity.price
+        )
+        if reactivated_template:
+            continue
+
         new_template = ShiftTemplate(
             activity_id=activity.id,
             day_of_week=s['day_of_week'],

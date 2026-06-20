@@ -22,29 +22,29 @@
             </div>
 
             <div class="form-grid-row">
-              <div class="field">
-                <label class="label">Día</label>
-                <div class="control">
-                  <select v-model="form.shifts[0].day_of_week" required>
-                    <option v-for="day in days" :key="day" :value="day">{{ day }}</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field">
-                <label class="label">Hora</label>
-                <div class="control">
-                  <select v-model="form.shifts[0].start_time" required>
-                    <option v-for="h in hours" :key="h" :value="h">{{ h }}hs</option>
-                  </select>
-                </div>
-              </div>
-              <div class="field">
-                <label class="label">Cupo</label>
-                <div class="control">
-                  <input type="number" v-model="form.shifts[0].capacity" min="1" required />
-                </div>
-              </div>
-            </div>
+  <div class="field">
+    <label class="label">Día</label>
+    <div class="control">
+      <select v-model="form.shifts[0].day_of_week" required>
+        <option v-for="day in days" :key="day" :value="day">{{ day }}</option>
+      </select>
+    </div>
+  </div>
+  <div class="field">
+    <label class="label">Hora</label>
+    <div class="control">
+      <select v-model="form.shifts[0].start_time" required>
+      <option v-for="h in hours" :key="h" :value="h">{{ h }}hs</option>
+    </select>
+    </div>
+  </div>
+  <div class="field">
+    <label class="label">Cupo</label>
+    <div class="control">
+      <input type="number" v-model="form.shifts[0].capacity" min="1" required />
+    </div>
+  </div>
+</div>
 
             <div class="form-actions">
               <button type="submit" class="primary" :disabled="loading">
@@ -60,6 +60,7 @@
         </div>
       </div>
 
+      <!-- Precio de actividades -->
       <div class="list-section" style="max-width: 450px;">
         <h2 class="list-title">Precio de actividades</h2>
         <p class="subtitle" style="text-align:left; margin-bottom:16px;">
@@ -118,29 +119,32 @@
           <template v-if="checkingBookings">
             <p style="color:#6b7280; font-size:14px;">Verificando reservas...</p>
           </template>
-          
+          <template v-else-if="deleting">
+            <span class="spinner modal-spinner"></span>
+            <h3>Procesando eliminaciÃ³n</h3>
+            <p class="processing-text">Esto puede tardar unos segundos.</p>
+          </template>
           <template v-else-if="hasConfirmedBookings">
             <h3>Este turno tiene reservas confirmadas</h3>
             <p>¿Qué querés hacer con las reservas existentes?</p>
             <div class="modal-actions" style="flex-direction: column;">
-              <button @click="executeDelete(false)" class="btn-confirm">
+              <button @click="executeDelete(false)" class="btn-confirm" :disabled="deleting">
                 No cancelar reservas
               </button>
-              <button @click="executeDelete(true)" class="btn-danger">
+              <button @click="executeDelete(true)" class="btn-danger" :disabled="deleting">
                 Cancelar reservas y eliminar
               </button>
-              <button @click="showConfirmModal = false" class="btn-cancel">
+              <button @click="showConfirmModal = false" class="btn-cancel" :disabled="deleting">
                 Cancelar operación
               </button>
             </div>
           </template>
-          
           <template v-else>
             <h3>¿Eliminar turno?</h3>
             <p>Este turno no tiene reservas confirmadas.</p>
             <div class="modal-actions">
-              <button @click="executeDelete(false)" class="btn-confirm">Eliminar turno</button>
-              <button @click="showConfirmModal = false" class="btn-cancel">Cancelar</button>
+              <button @click="executeDelete(false)" class="btn-confirm" :disabled="deleting">Eliminar turno</button>
+              <button @click="showConfirmModal = false" class="btn-cancel" :disabled="deleting">Cancelar</button>
             </div>
           </template>
         </div>
@@ -170,7 +174,7 @@ const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
 // ── refs ──────────────────────────────────────────────────────────────────────
 const activities     = ref([])
-const activitiesBase = ref([])
+const activitiesBase = ref([])   // ← declarado acá arriba, antes de fetchActivities
 const loading        = ref(false)
 const isEditing      = ref(false)
 const editingId      = ref(null)
@@ -302,11 +306,12 @@ const cancelEdit = () => {
   }
 }
 
-// ── turnos: eliminar (REDIRECCIÓN DE ENDPOINTS CONFIGURADA) ───────────────────
-const showConfirmModal     = ref(false)
-const idToDelete           = ref(null)
+// ── turnos: eliminar ──────────────────────────────────────────────────────────
+const showConfirmModal    = ref(false)
+const idToDelete          = ref(null)
 const hasConfirmedBookings = ref(false)
 const checkingBookings    = ref(false)
+const deleting            = ref(false)
 
 const deleteActivity = async (id) => {
   idToDelete.value          = id
@@ -326,36 +331,18 @@ const deleteActivity = async (id) => {
 }
 
 const executeDelete = async (cancelBookings) => {
-  showConfirmModal.value = false
-  loading.value = true
-
-  // URL base apuntando al prefijo correcto /shifts/templates/
-  let url = `/shifts/templates/${idToDelete.value}`
-
-  if (!hasConfirmedBookings.value) {
-    // Escenario 1: El turno está totalmente vacío
-    url += '/safe-clean'
-  } else {
-    // Escenario 2: El turno tiene inscripciones activas
-    if (cancelBookings === false) {
-      // Botón: No cancelar reservas
-      url += '/keep-active-classes'
-    } else if (cancelBookings === true) {
-      // Botón: Cancelar reservas y eliminar
-      url += '/cancel-everything'
-    }
-  }
-
+  deleting.value = true
   try {
-    const res = await api.delete(url)
+    await api.delete(`/activities/templates/${idToDelete.value}`, {
+      params: { cancel_bookings: cancelBookings }
+    })
     await fetchActivities()
-    showMessage(res.data.message || 'Operación realizada correctamente', 'success')
+    showConfirmModal.value = false
+    showMessage('Eliminado correctamente', 'success')
   } catch (e) {
-    console.error(e)
     showMessage(e.response?.data?.detail || 'No se pudo eliminar el turno.', 'error')
   } finally {
-    loading.value = false
-    idToDelete.value = null
+    deleting.value = false
   }
 }
 
@@ -556,6 +543,36 @@ select:disabled { color: #9ca3af; cursor: not-allowed; }
 .btn-confirm { flex: 1; background: #ff6f00; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
 .btn-cancel  { flex: 1; background: #e5e7eb; color: #374151; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
 .btn-danger  { flex: 1; background: #c0392b; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; margin-top: 8px; }
+.btn-confirm:disabled,
+.btn-cancel:disabled,
+.btn-danger:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.modal-spinner {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 14px;
+  border-color: #e5e7eb;
+  border-top-color: #2d658d;
+}
+.processing-text {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 0;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 /* toast */
 .alert-toast {
