@@ -22,29 +22,29 @@
             </div>
 
             <div class="form-grid-row">
-  <div class="field">
-    <label class="label">Día</label>
-    <div class="control">
-      <select v-model="form.shifts[0].day_of_week" required>
-        <option v-for="day in days" :key="day" :value="day">{{ day }}</option>
-      </select>
-    </div>
-  </div>
-  <div class="field">
-    <label class="label">Hora</label>
-    <div class="control">
-      <select v-model="form.shifts[0].start_time" required>
-      <option v-for="h in hours" :key="h" :value="h">{{ h }}hs</option>
-    </select>
-    </div>
-  </div>
-  <div class="field">
-    <label class="label">Cupo</label>
-    <div class="control">
-      <input type="number" v-model="form.shifts[0].capacity" min="1" required />
-    </div>
-  </div>
-</div>
+              <div class="field">
+                <label class="label">Día</label>
+                <div class="control">
+                  <select v-model="form.shifts[0].day_of_week" required>
+                    <option v-for="day in days" :key="day" :value="day">{{ day }}</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">Hora</label>
+                <div class="control">
+                  <select v-model="form.shifts[0].start_time" required>
+                    <option v-for="h in hours" :key="h" :value="h">{{ h }}hs</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">Cupo</label>
+                <div class="control">
+                  <input type="number" v-model="form.shifts[0].capacity" min="1" required />
+                </div>
+              </div>
+            </div>
 
             <div class="form-actions">
               <button type="submit" class="primary" :disabled="loading">
@@ -60,7 +60,6 @@
         </div>
       </div>
 
-      <!-- Precio de actividades -->
       <div class="list-section" style="max-width: 450px;">
         <h2 class="list-title">Precio de actividades</h2>
         <p class="subtitle" style="text-align:left; margin-bottom:16px;">
@@ -119,6 +118,7 @@
           <template v-if="checkingBookings">
             <p style="color:#6b7280; font-size:14px;">Verificando reservas...</p>
           </template>
+          
           <template v-else-if="hasConfirmedBookings">
             <h3>Este turno tiene reservas confirmadas</h3>
             <p>¿Qué querés hacer con las reservas existentes?</p>
@@ -134,6 +134,7 @@
               </button>
             </div>
           </template>
+          
           <template v-else>
             <h3>¿Eliminar turno?</h3>
             <p>Este turno no tiene reservas confirmadas.</p>
@@ -169,7 +170,7 @@ const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
 // ── refs ──────────────────────────────────────────────────────────────────────
 const activities     = ref([])
-const activitiesBase = ref([])   // ← declarado acá arriba, antes de fetchActivities
+const activitiesBase = ref([])
 const loading        = ref(false)
 const isEditing      = ref(false)
 const editingId      = ref(null)
@@ -301,9 +302,9 @@ const cancelEdit = () => {
   }
 }
 
-// ── turnos: eliminar ──────────────────────────────────────────────────────────
-const showConfirmModal    = ref(false)
-const idToDelete          = ref(null)
+// ── turnos: eliminar (REDIRECCIÓN DE ENDPOINTS CONFIGURADA) ───────────────────
+const showConfirmModal     = ref(false)
+const idToDelete           = ref(null)
 const hasConfirmedBookings = ref(false)
 const checkingBookings    = ref(false)
 
@@ -326,14 +327,35 @@ const deleteActivity = async (id) => {
 
 const executeDelete = async (cancelBookings) => {
   showConfirmModal.value = false
+  loading.value = true
+
+  // URL base apuntando al prefijo correcto /shifts/templates/
+  let url = `/shifts/templates/${idToDelete.value}`
+
+  if (!hasConfirmedBookings.value) {
+    // Escenario 1: El turno está totalmente vacío
+    url += '/safe-clean'
+  } else {
+    // Escenario 2: El turno tiene inscripciones activas
+    if (cancelBookings === false) {
+      // Botón: No cancelar reservas
+      url += '/keep-active-classes'
+    } else if (cancelBookings === true) {
+      // Botón: Cancelar reservas y eliminar
+      url += '/cancel-everything'
+    }
+  }
+
   try {
-    await api.delete(`/activities/templates/${idToDelete.value}`, {
-      params: { cancel_bookings: cancelBookings }
-    })
+    const res = await api.delete(url)
     await fetchActivities()
-    showMessage('Eliminado correctamente', 'success')
+    showMessage(res.data.message || 'Operación realizada correctamente', 'success')
   } catch (e) {
+    console.error(e)
     showMessage(e.response?.data?.detail || 'No se pudo eliminar el turno.', 'error')
+  } finally {
+    loading.value = false
+    idToDelete.value = null
   }
 }
 
