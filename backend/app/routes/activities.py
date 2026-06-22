@@ -9,6 +9,11 @@ from ..models.booking import Booking
 from ..services import shift_service
 from ..time_override import business_today
 
+import asyncio
+from ..mail import send_template_cancellation
+from datetime import date
+from ..models.credit import Credit   # 👈 Import correcto
+
 router = APIRouter(prefix="/activities", tags=["activities"])
 
 @router.get("/")
@@ -19,6 +24,20 @@ def get_activities(db: Session = Depends(get_db)):
     for act in activities:
         act.templates = [t for t in act.templates if t.is_active]
     return activities
+
+@router.get("/inactive")
+def get_inactive_activities(db: Session = Depends(get_db)):
+    activities = db.query(Activity).options(
+        joinedload(Activity.templates)
+    ).all()
+
+    result = []
+    for act in activities:
+        inactive_templates = [t for t in act.templates if not t.is_active]
+        if inactive_templates:
+            act.templates = inactive_templates
+            result.append(act)
+    return result
 
 @router.post("/")
 def create_activity(data: dict, db: Session = Depends(get_db)):
@@ -50,8 +69,6 @@ def create_activity(data: dict, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Turno creado con éxito"}
 
-
-
 @router.get("/templates/{template_id}/check-bookings")
 def check_template_bookings(template_id: int, db: Session = Depends(get_db)):
     instances = db.query(ShiftInstance).filter(ShiftInstance.template_id == template_id).all()
@@ -69,18 +86,16 @@ def check_template_bookings(template_id: int, db: Session = Depends(get_db)):
         "confirmed_count": len(confirmed_bookings)
     }
 
-# agregar al inicio del archivo
-import asyncio
-from ..mail import send_template_cancellation
-from datetime import date
-
 @router.delete("/templates/{template_id}")
 def delete_shift_template(
     template_id: int,
     cancel_bookings: bool = False,
     db: Session = Depends(get_db)
 ):
-    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
+    template = db.query(ShiftTemplate).filter(
+        ShiftTemplate.id == template_id
+    ).first()
+
     if not template:
         raise HTTPException(status_code=404, detail="Turno no encontrado")
 
@@ -88,76 +103,136 @@ def delete_shift_template(
     dia = template.day_of_week
     hora = template.start_time
 
-    # Solo instancias futuras
-    future_instances = db.query(ShiftInstance).filter(
-        ShiftInstance.template_id == template_id,
-        ShiftInstance.date >= business_today(),
-        ShiftInstance.is_cancelled == False
+    # Instancias del turno
+    all_instances = db.query(ShiftInstance).filter(
+        ShiftInstance.template_id == template_id
     ).all()
-    inst_ids = [i.id for i in future_instances]
+    all_inst_ids = [i.id for i in all_instances]
 
-    # Recolectar usuarios a notificar antes de borrar
+    # Usuarios a notificar
     users_to_notify = {}
-    if inst_ids:
+    if all_inst_ids:
         active_bookings = db.query(Booking).filter(
-            Booking.instance_id.in_(inst_ids),
+            Booking.instance_id.in_(all_inst_ids),
             Booking.status.in_(["Confirmed", "Pending"])
         ).all()
-
         for booking in active_bookings:
             user = booking.user
             if user and user.email and user.id_user not in users_to_notify:
                 users_to_notify[user.id_user] = user
 
-    # --- lógica existente sin cambios ---
-    all_instances = db.query(ShiftInstance).filter(ShiftInstance.template_id == template_id).all()
-    all_inst_ids = [i.id for i in all_instances]
-
+    # Reservas activas
+    active_bookings = []
     if all_inst_ids:
-        confirmed_bookings = db.query(Booking).filter(
+        active_bookings = db.query(Booking).filter(
             Booking.instance_id.in_(all_inst_ids),
-            Booking.status == "Confirmed"
+            Booking.status.in_(["Confirmed", "Pending"])
         ).all()
 
-        if confirmed_bookings and not cancel_bookings:
-            template.is_active = False
-            db.commit()
-            # Notificar igual aunque sea soft delete
+    # CASO 1
+    if active_bookings and not cancel_bookings:
+        template.is_active = False
+        db.commit()
+        try:
             _send_template_cancellation_mails(users_to_notify, activity_name, dia, hora)
-            return {"message": "Horario desactivado correctamente"}
+        except Exception as e:
+            print("Error enviando mails:", e)
+        return {"message": "Turno desactivado correctamente"}
 
+    # CASO 2
+    if active_bookings and cancel_bookings:
         db.query(Booking).filter(
             Booking.instance_id.in_(all_inst_ids)
-        ).delete(synchronize_session=False)
-        db.flush()
+        ).update({"status": "Cancelled"}, synchronize_session=False)
 
-        db.query(ShiftInstance).filter(
-            ShiftInstance.id.in_(all_inst_ids)
-        ).delete(synchronize_session=False)
-        db.flush()
+        for booking in active_bookings:
+            user = booking.user
+            if user:
+                refund = Credit(
+                    user_id=user.id_user,
+                    amount=booking.amount_paid,
+                    activity_id=template.activity_id,
+                    expiry_date=None,
+                    is_used=False
+                )
+                db.add(refund)
 
-    db.delete(template)
-    db.commit()
-    # --- fin lógica existente ---
+        template.is_active = False
+        db.commit()
 
-    _send_template_cancellation_mails(users_to_notify, activity_name, dia, hora)
-
-    return {"message": "Horario eliminado correctamente"}
-
-
-def _send_template_cancellation_mails(users_to_notify: dict, activity_name: str, dia: str, hora: str):
-    """Helper para no repetir el loop de mails."""
-    for user in users_to_notify.values():
         try:
-            asyncio.run(send_template_cancellation(
-                email=user.email,
-                nombre=user.first_name,
-                actividad=activity_name,
-                dia=dia,
-                hora=hora
-            ))
+            _send_template_cancellation_mails(users_to_notify, activity_name, dia, hora)
         except Exception as e:
-            print(f"Error enviando mail a {user.email}: {e}")
+            print("Error enviando mails:", e)
+
+        return {"message": "Turno eliminado y reservas canceladas con reembolso"}
+
+    # CASO 3
+    template.is_active = False
+    db.commit()
+    return {"message": "Turno eliminado correctamente"}
+
+@router.get("/users/{user_id}/credits")
+def get_user_credits(user_id: int, db: Session = Depends(get_db)):
+    transactions = db.query(Credit).filter(
+        Credit.user_id == user_id
+    ).order_by(Credit.created_at.desc()).all()
+    return transactions
+    
+@router.patch("/templates/{template_id}/reactivate")
+def reactivate_template(
+    template_id: int,
+    db: Session = Depends(get_db)
+):
+    template = db.query(ShiftTemplate).filter(
+        ShiftTemplate.id == template_id
+    ).first()
+
+    if not template:
+        raise HTTPException(
+            status_code=404,
+            detail="Turno no encontrado"
+        )
+
+    duplicate = db.query(ShiftTemplate).filter(
+        ShiftTemplate.activity_id == template.activity_id,
+        ShiftTemplate.day_of_week == template.day_of_week,
+        ShiftTemplate.start_time == template.start_time,
+        ShiftTemplate.is_active == True,
+        ShiftTemplate.id != template.id
+    ).first()
+
+    if duplicate:
+        raise HTTPException(
+            status_code=400,
+            detail="Ya existe un turno activo con ese día y horario."
+        )
+
+    # 🔴 Paso 1: borrar reservas
+    db.query(Booking).filter(
+        Booking.instance_id.in_(
+            db.query(ShiftInstance.id).filter(
+                ShiftInstance.template_id == template_id
+            )
+        )
+    ).delete(synchronize_session=False)
+
+    # 🔴 Paso 2: borrar instancias
+    db.query(ShiftInstance).filter(
+        ShiftInstance.template_id == template_id
+    ).delete(synchronize_session=False)
+
+    # 🔴 Paso 3: reactivar template
+    template.is_active = True
+    db.commit()
+
+    # 🔴 Paso 4: generar nuevas instancias
+    from ..services import shift_service
+    shift_service.create_instances_for_month(db, template)
+
+    return {
+        "message": "Turno reactivado correctamente"
+    }
 
 @router.put("/{activity_id}")
 def update_activity(activity_id: int, data: dict, db: Session = Depends(get_db)):

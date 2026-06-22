@@ -1,9 +1,8 @@
 <template>
   <div class="page">
     <div class="gestion-container">
+      <!-- Formulario de creación/edición -->
       <div class="card">
-        <div class="card-header">
-        </div>
         <div class="card-body">
           <h1>{{ isEditing ? 'Editar turno' : 'Crear turno' }}</h1>
           <p class="subtitle">Configurá los horarios de los turnos </p>
@@ -60,6 +59,7 @@
         </div>
       </div>
 
+      <!-- Sección de precios -->
       <div class="list-section" style="max-width: 450px;">
         <h2 class="list-title">Precio de actividades</h2>
         <p class="subtitle" style="text-align:left; margin-bottom:16px;">
@@ -75,6 +75,7 @@
         </div>
       </div>
 
+      <!-- Turnos activos -->
       <div class="list-section">
         <h2 class="list-title">Turnos existentes</h2>
         <div class="table-container">
@@ -106,48 +107,88 @@
           </table>
         </div>
       </div>
-    </div>
 
-    <transition name="fade">
-      <div v-if="message" :class="['alert-toast', messageType]">{{ message }}</div>
-    </transition>
-
-    <transition name="fade">
-      <div v-if="showConfirmModal" class="modal-overlay">
-        <div class="modal-card">
-          <template v-if="checkingBookings">
-            <p style="color:#6b7280; font-size:14px;">Verificando reservas...</p>
-          </template>
-          
-          <template v-else-if="hasConfirmedBookings">
-            <h3>Este turno tiene reservas confirmadas</h3>
-            <p>¿Qué querés hacer con las reservas existentes?</p>
-            <div class="modal-actions" style="flex-direction: column;">
-              <button @click="executeDelete(false)" class="btn-confirm">
-                No cancelar reservas
-              </button>
-              <button @click="executeDelete(true)" class="btn-danger">
-                Cancelar reservas y eliminar
-              </button>
-              <button @click="showConfirmModal = false" class="btn-cancel">
-                Cancelar operación
-              </button>
-            </div>
-          </template>
-          
-          <template v-else>
-            <h3>¿Eliminar turno?</h3>
-            <p>Este turno no tiene reservas confirmadas.</p>
-            <div class="modal-actions">
-              <button @click="executeDelete(false)" class="btn-confirm">Eliminar turno</button>
-              <button @click="showConfirmModal = false" class="btn-cancel">Cancelar</button>
-            </div>
-          </template>
+      <!-- Turnos eliminados -->
+      <div class="list-section">
+        <h2 class="list-title">Turnos eliminados</h2>
+        <div class="table-container">
+          <table class="activities-table">
+            <thead>
+              <tr>
+                <th>Actividad</th>
+                <th>Día</th>
+                <th>Hora</th>
+                <th>Cupo</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in inactiveActivities" :key="item.templateId">
+                <td><strong>{{ item.name }}</strong></td>
+                <td>{{ item.day }}</td>
+                <td>{{ item.time }}hs</td>
+                <td>{{ item.capacity }}</td>
+                <td class="actions-cell">
+                  <button 
+                    @click="reactivateActivity(item.templateId)" 
+                    class="reactivate-btn" 
+                    title="Reactivar">
+                    Reactivar
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="inactiveActivities.length === 0">
+                <td colspan="5" class="empty-text">No hay turnos eliminados.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
-    </transition>
-  </div>
+
+      <!-- Toast de mensajes -->
+      <transition name="fade">
+        <div v-if="message" :class="['alert-toast', messageType]">{{ message }}</div>
+      </transition>
+
+      <!-- Modal de confirmación -->
+      <transition name="fade">
+        <div v-if="showConfirmModal" class="modal-overlay">
+          <div class="modal-card">
+            <template v-if="checkingBookings">
+              <p style="color:#6b7280; font-size:14px;">Verificando reservas...</p>
+            </template>
+            
+            <template v-else-if="hasConfirmedBookings">
+              <h3>Este turno tiene reservas confirmadas</h3>
+              <p>¿Qué querés hacer con las reservas existentes?</p>
+              <div class="modal-actions" style="flex-direction: column;">
+                <button @click="executeDelete(false)" class="btn-confirm">
+                  No cancelar reservas
+                </button>
+                <button @click="executeDelete(true)" class="btn-danger">
+                  Cancelar reservas y eliminar
+                </button>
+                <button @click="showConfirmModal = false" class="btn-cancel">
+                  Cancelar operación
+                </button>
+              </div>
+            </template>
+            
+            <template v-else>
+              <h3>¿Eliminar turno?</h3>
+              <p>Este turno no tiene reservas confirmadas.</p>
+              <div class="modal-actions">
+                <button @click="executeDelete(false)" class="btn-confirm">Eliminar turno</button>
+                <button @click="showConfirmModal = false" class="btn-cancel">Cancelar</button>
+              </div>
+            </template>
+          </div>
+        </div>
+      </transition>
+    </div> <!-- cierre gestion-container -->
+  </div> <!-- cierre page -->
 </template>
+
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
@@ -169,14 +210,15 @@ const activityMap = {
 const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
 // ── refs ──────────────────────────────────────────────────────────────────────
-const activities     = ref([])
-const activitiesBase = ref([])
-const loading        = ref(false)
-const isEditing      = ref(false)
-const editingId      = ref(null)
-const message        = ref('')
-const messageType    = ref('')
-let messageTimer     = null
+const activities         = ref([])
+const activitiesBase     = ref([])
+const inactiveActivities = ref([])   // turnos eliminados
+const loading            = ref(false)
+const isEditing          = ref(false)
+const editingId          = ref(null)
+const message            = ref('')
+const messageType        = ref('')
+let messageTimer         = null
 
 const form = ref({
   name: '',
@@ -198,18 +240,28 @@ const fetchActivities = async () => {
   }
 }
 
+const fetchInactiveActivities = async () => {
+  try {
+    const res = await api.get('/activities/inactive')
+    inactiveActivities.value = res.data.flatMap(act =>
+      act.templates.map(temp => ({
+        templateId: temp.id,
+        name: act.name,
+        day: temp.day_of_week,
+        time: temp.start_time,
+        capacity: temp.capacity
+      }))
+    )
+  } catch (e) {
+    console.error('Error al cargar inactivos', e)
+  }
+}
+
 const showMessage = (text, type = 'success', duration = 5000) => {
   message.value = text
   messageType.value = type
-
-  if (messageTimer) {
-    clearTimeout(messageTimer)
-  }
-
-  messageTimer = setTimeout(() => {
-    message.value = ''
-    messageTimer = null
-  }, duration)
+  if (messageTimer) clearTimeout(messageTimer)
+  messageTimer = setTimeout(() => { message.value = ''; messageTimer = null }, duration)
 }
 
 // ── computed ──────────────────────────────────────────────────────────────────
@@ -237,7 +289,6 @@ const handleSubmit = async () => {
     const capacity = Number(shift.capacity)
     return !Number.isFinite(capacity) || capacity < 1
   })
-
   if (invalidShift) {
     showMessage('Revisá los datos ingresados porque hay campos que no son válidos.', 'error')
     return
@@ -279,7 +330,6 @@ const editMode = (item) => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
   isEditing.value  = true
   editingId.value  = item.id
-
   form.value = {
     name:  item.name,
     court: item.court,
@@ -302,18 +352,16 @@ const cancelEdit = () => {
   }
 }
 
-// ── turnos: eliminar (REDIRECCIÓN DE ENDPOINTS CONFIGURADA) ───────────────────
+// ── turnos: eliminar ──────────────────────────────────────────────────────────
 const showConfirmModal     = ref(false)
 const idToDelete           = ref(null)
 const hasConfirmedBookings = ref(false)
-const checkingBookings    = ref(false)
+const checkingBookings     = ref(false)
 
 const deleteActivity = async (id) => {
-  idToDelete.value          = id
-  showConfirmModal.value    = true
-  checkingBookings.value    = true
-  hasConfirmedBookings.value = false
-
+  idToDelete.value       = id
+  showConfirmModal.value = true
+  checkingBookings.value = true
   try {
     const res = await api.get(`/activities/templates/${id}/check-bookings`)
     hasConfirmedBookings.value = res.data.has_confirmed_bookings
@@ -328,34 +376,38 @@ const deleteActivity = async (id) => {
 const executeDelete = async (cancelBookings) => {
   showConfirmModal.value = false
   loading.value = true
-
-  // URL base apuntando al prefijo correcto /shifts/templates/
-  let url = `/shifts/templates/${idToDelete.value}`
-
-  if (!hasConfirmedBookings.value) {
-    // Escenario 1: El turno está totalmente vacío
-    url += '/safe-clean'
-  } else {
-    // Escenario 2: El turno tiene inscripciones activas
-    if (cancelBookings === false) {
-      // Botón: No cancelar reservas
-      url += '/keep-active-classes'
-    } else if (cancelBookings === true) {
-      // Botón: Cancelar reservas y eliminar
-      url += '/cancel-everything'
-    }
-  }
-
   try {
-    const res = await api.delete(url)
+    const res = await api.delete(`/activities/templates/${idToDelete.value}`, {
+      params: { cancel_bookings: cancelBookings }
+    })
+    showMessage(res.data?.message || 'Operación realizada correctamente', 'success')
     await fetchActivities()
-    showMessage(res.data.message || 'Operación realizada correctamente', 'success')
+    await fetchInactiveActivities()
+    // ❌ ya no llamamos a fetchCredits()
   } catch (e) {
     console.error(e)
     showMessage(e.response?.data?.detail || 'No se pudo eliminar el turno.', 'error')
   } finally {
     loading.value = false
     idToDelete.value = null
+  }
+}
+
+// ── turnos: reactivar ─────────────────────────────────────────────────────────
+const reactivateActivity = async (templateId) => {
+  loading.value = true
+  try {
+    const res = await api.patch(`/activities/templates/${templateId}/reactivate`)
+    let msg = res.data?.message || 'Turno reactivado correctamente'
+    msg = msg.replace(/\s*\(.*?\)\s*/g, '')
+    showMessage(msg, 'success')
+    await fetchActivities()
+    await fetchInactiveActivities()
+  } catch (e) {
+    console.error(e)
+    showMessage(e.response?.data?.detail || 'No se pudo reactivar el turno.', 'error')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -376,7 +428,11 @@ const savePrice = async (act) => {
 }
 
 // ── init ──────────────────────────────────────────────────────────────────────
-onMounted(fetchActivities)
+onMounted(() => {
+  fetchActivities()
+  fetchInactiveActivities()
+  // ❌ ya no inicializamos créditos
+})
 </script>
 
 <style scoped>
@@ -536,6 +592,20 @@ select:disabled { color: #9ca3af; cursor: not-allowed; }
 }
 .icon-btn:hover { transform: scale(1.1); }
 
+/* variante para botón de reactivar */
+.reactivate-btn {
+  background: #2d658d;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.reactivate-btn:hover { opacity: 0.85; }
+
 /* modal */
 .modal-overlay {
   position: fixed;
@@ -580,6 +650,8 @@ select:disabled { color: #9ca3af; cursor: not-allowed; }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* responsive */
 @media (max-width: 540px) {
   .form-grid-row {
     grid-template-columns: 1fr 1fr;
