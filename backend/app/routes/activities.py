@@ -6,7 +6,7 @@ from ..models.activity import Activity
 from ..models.shift_template import ShiftTemplate
 from ..models.shift_instance import ShiftInstance
 from ..models.booking import Booking
-from ..services import shift_service
+from ..services import shift_service, refund_service
 from ..time_override import business_today
 
 import asyncio
@@ -146,16 +146,12 @@ def delete_shift_template(
         ).update({"status": "Cancelled"}, synchronize_session=False)
 
         for booking in active_bookings:
-            user = booking.user
-            if user:
-                refund = Credit(
-                    user_id=user.id_user,
-                    amount=booking.amount_paid,
-                    activity_id=template.activity_id,
-                    expiry_date=None,
-                    is_used=False
-                )
-                db.add(refund)
+            instance = db.query(ShiftInstance).filter(
+        ShiftInstance.id == booking.instance_id
+    ).first()
+    if instance:
+        refund_service.procesar_reembolso_clase_suelta(db, booking, instance)
+
 
         template.is_active = False
         db.commit()

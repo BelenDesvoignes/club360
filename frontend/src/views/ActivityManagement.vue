@@ -189,7 +189,6 @@
   </div> <!-- cierre page -->
 </template>
 
-
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import api from '../utils/api'
@@ -213,6 +212,7 @@ const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const activities         = ref([])
 const activitiesBase     = ref([])
 const inactiveActivities = ref([])   // turnos eliminados
+const credits            = ref([])   // 👈 créditos/reembolsos
 const loading            = ref(false)
 const isEditing          = ref(false)
 const editingId          = ref(null)
@@ -231,10 +231,28 @@ const fetchActivities = async () => {
   try {
     const res = await api.get('/activities/')
     activities.value = res.data
+
+    // precios base
     activitiesBase.value = res.data.map(act => ({
       ...act,
       editPrice: act.templates?.[0]?.price ?? 100
     }))
+
+    // lista plana de turnos con templateId válido
+    const list = []
+    res.data.forEach(act => {
+      act.templates?.forEach(temp => {
+        list.push({
+          id: act.id,              // id de la actividad
+          templateId: temp.id,     // id del ShiftTemplate (el que necesita el backend)
+          name: act.name,
+          day: temp.day_of_week,
+          time: temp.start_time,
+          capacity: temp.capacity
+        })
+      })
+    })
+    flatActivities.value = list
   } catch (e) {
     console.error('Error al cargar', e)
   }
@@ -254,6 +272,15 @@ const fetchInactiveActivities = async () => {
     )
   } catch (e) {
     console.error('Error al cargar inactivos', e)
+  }
+}
+
+const fetchCredits = async (userId) => {
+  try {
+    const res = await api.get(`/activities/users/${userId}/credits`)
+    credits.value = res.data
+  } catch (e) {
+    console.error('Error al cargar créditos', e)
   }
 }
 
@@ -358,12 +385,12 @@ const idToDelete           = ref(null)
 const hasConfirmedBookings = ref(false)
 const checkingBookings     = ref(false)
 
-const deleteActivity = async (id) => {
-  idToDelete.value       = id
+const deleteActivity = async (templateId) => {
+  idToDelete.value       = templateId
   showConfirmModal.value = true
   checkingBookings.value = true
   try {
-    const res = await api.get(`/activities/templates/${id}/check-bookings`)
+    const res = await api.get(`/activities/templates/${templateId}/check-bookings`)
     hasConfirmedBookings.value = res.data.has_confirmed_bookings
   } catch (e) {
     showMessage('Error al verificar reservas.', 'error')
@@ -372,6 +399,7 @@ const deleteActivity = async (id) => {
     checkingBookings.value = false
   }
 }
+
 
 const executeDelete = async (cancelBookings) => {
   showConfirmModal.value = false
@@ -383,7 +411,7 @@ const executeDelete = async (cancelBookings) => {
     showMessage(res.data?.message || 'Operación realizada correctamente', 'success')
     await fetchActivities()
     await fetchInactiveActivities()
-    // ❌ ya no llamamos a fetchCredits()
+    await fetchCredits(123) // 👈 refrescamos créditos del usuario
   } catch (e) {
     console.error(e)
     showMessage(e.response?.data?.detail || 'No se pudo eliminar el turno.', 'error')
@@ -404,8 +432,8 @@ const reactivateActivity = async (templateId) => {
     await fetchActivities()
     await fetchInactiveActivities()
   } catch (e) {
-    console.error(e)
-    showMessage(e.response?.data?.detail || 'No se pudo reactivar el turno.', 'error')
+  console.error(e)
+  showMessage(e.response?.data?.detail || 'No se pudo reactivar el turno.', 'error')
   } finally {
     loading.value = false
   }
@@ -431,9 +459,10 @@ const savePrice = async (act) => {
 onMounted(() => {
   fetchActivities()
   fetchInactiveActivities()
-  // ❌ ya no inicializamos créditos
+  fetchCredits(123) // 👈 inicializamos créditos del usuario logueado
 })
 </script>
+
 
 <style scoped>
 .page {
