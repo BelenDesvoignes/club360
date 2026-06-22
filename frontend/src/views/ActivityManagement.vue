@@ -106,6 +106,39 @@
           </table>
         </div>
       </div>
+
+      <div class="list-section">
+        <h2 class="list-title">Turnos eliminados</h2>
+        <div class="table-container">
+          <table class="activities-table">
+            <thead>
+              <tr>
+                <th>Actividad</th>
+                <th>Día</th>
+                <th>Hora</th>
+                <th>Cupo</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in inactiveTemplates" :key="item.templateId" class="inactive-row">
+                <td><strong>{{ item.name }}</strong></td>
+                <td>{{ item.day }}</td>
+                <td>{{ item.time }}hs</td>
+                <td>{{ item.capacity }}</td>
+                <td class="actions-cell">
+                  <button @click="reactivateTemplate(item.templateId)" class="reactivate-btn" title="Rehabilitar">
+                    Rehabilitar
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="inactiveTemplates.length === 0">
+                <td colspan="5" class="empty-text">No hay turnos eliminados.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <transition name="fade">
@@ -116,11 +149,14 @@
       <div v-if="showConfirmModal" class="modal-overlay">
         <div class="modal-card">
           <template v-if="checkingBookings">
-            <p style="color:#6b7280; font-size:14px;">Verificando reservas...</p>
+            <div class="modal-loading">
+              <span class="spinner dark"></span>
+              <p>Verificando reservas...</p>
+            </div>
           </template>
           
           <template v-else-if="hasConfirmedBookings">
-            <h3>Este turno tiene reservas confirmadas</h3>
+            <h3>Este turno tiene reservas activas</h3>
             <p>¿Qué querés hacer con las reservas existentes?</p>
             <div class="modal-actions" style="flex-direction: column;">
               <button @click="executeDelete(false)" class="btn-confirm">
@@ -137,12 +173,22 @@
           
           <template v-else>
             <h3>¿Eliminar turno?</h3>
-            <p>Este turno no tiene reservas confirmadas.</p>
+            <p>Este turno no tiene reservas activas.</p>
             <div class="modal-actions">
               <button @click="executeDelete(false)" class="btn-confirm">Eliminar turno</button>
               <button @click="showConfirmModal = false" class="btn-cancel">Cancelar</button>
             </div>
           </template>
+        </div>
+      </div>
+    </transition>
+
+    <transition name="fade">
+      <div v-if="operationInProgress" class="operation-overlay" aria-live="polite">
+        <div class="operation-card">
+          <span class="spinner large"></span>
+          <h3>{{ operationTitle }}</h3>
+          <p>{{ operationMessage }}</p>
         </div>
       </div>
     </transition>
@@ -171,6 +217,7 @@ const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 // ── refs ──────────────────────────────────────────────────────────────────────
 const activities     = ref([])
 const activitiesBase = ref([])
+const inactiveTemplates = ref([])
 const loading        = ref(false)
 const isEditing      = ref(false)
 const editingId      = ref(null)
@@ -195,6 +242,16 @@ const fetchActivities = async () => {
     }))
   } catch (e) {
     console.error('Error al cargar', e)
+  }
+}
+
+const fetchInactiveTemplates = async () => {
+  try {
+    const res = await api.get('/shifts/templates/inactive')
+    inactiveTemplates.value = res.data
+  } catch (e) {
+    console.error('Error al cargar turnos eliminados', e)
+    inactiveTemplates.value = []
   }
 }
 
@@ -307,6 +364,21 @@ const showConfirmModal     = ref(false)
 const idToDelete           = ref(null)
 const hasConfirmedBookings = ref(false)
 const checkingBookings    = ref(false)
+const operationInProgress = ref(false)
+const operationTitle      = ref('')
+const operationMessage    = ref('')
+
+const startOperationFeedback = (title, message) => {
+  operationTitle.value = title
+  operationMessage.value = message
+  operationInProgress.value = true
+}
+
+const stopOperationFeedback = () => {
+  operationInProgress.value = false
+  operationTitle.value = ''
+  operationMessage.value = ''
+}
 
 const deleteActivity = async (id) => {
   idToDelete.value          = id
@@ -315,8 +387,8 @@ const deleteActivity = async (id) => {
   hasConfirmedBookings.value = false
 
   try {
-    const res = await api.get(`/activities/templates/${id}/check-bookings`)
-    hasConfirmedBookings.value = res.data.has_confirmed_bookings
+    const res = await api.get(`/shifts/templates/${id}/check-bookings`)
+    hasConfirmedBookings.value = res.data.has_active_bookings
   } catch (e) {
     showMessage('Error al verificar reservas.', 'error')
     showConfirmModal.value = false
@@ -331,24 +403,31 @@ const executeDelete = async (cancelBookings) => {
 
   // URL base apuntando al prefijo correcto /shifts/templates/
   let url = `/shifts/templates/${idToDelete.value}`
+  let feedbackTitle = 'Eliminando turno'
+  let feedbackMessage = 'Estamos procesando la eliminación del turno.'
 
   if (!hasConfirmedBookings.value) {
     // Escenario 1: El turno está totalmente vacío
     url += '/safe-clean'
+    feedbackMessage = 'Estamos eliminando el turno y sus clases.'
   } else {
     // Escenario 2: El turno tiene inscripciones activas
     if (cancelBookings === false) {
       // Botón: No cancelar reservas
       url += '/keep-active-classes'
+      feedbackMessage = 'Estamos desactivando el turno y conservando las clases con reservas activas.'
     } else if (cancelBookings === true) {
       // Botón: Cancelar reservas y eliminar
       url += '/cancel-everything'
+      feedbackTitle = 'Eliminando turno'
+      feedbackMessage = 'Estamos procesando reembolsos y enviando las notificaciones por mail.'
     }
   }
 
   try {
+    startOperationFeedback(feedbackTitle, feedbackMessage)
     const res = await api.delete(url)
-    await fetchActivities()
+    await Promise.all([fetchActivities(), fetchInactiveTemplates()])
     showMessage(res.data.message || 'Operación realizada correctamente', 'success')
   } catch (e) {
     console.error(e)
@@ -356,6 +435,27 @@ const executeDelete = async (cancelBookings) => {
   } finally {
     loading.value = false
     idToDelete.value = null
+    stopOperationFeedback()
+  }
+}
+
+const reactivateTemplate = async (templateId) => {
+  loading.value = true
+
+  try {
+    startOperationFeedback(
+      'Rehabilitando turno',
+      'Estamos rehabilitando el turno y creando las clases'
+    )
+    const res = await api.patch(`/shifts/templates/${templateId}/reactivate`)
+    await Promise.all([fetchActivities(), fetchInactiveTemplates()])
+    showMessage(res.data.message || 'Turno rehabilitado correctamente', 'success')
+  } catch (e) {
+    console.error(e)
+    showMessage(e.response?.data?.detail || 'No se pudo rehabilitar el turno.', 'error')
+  } finally {
+    loading.value = false
+    stopOperationFeedback()
   }
 }
 
@@ -376,7 +476,9 @@ const savePrice = async (act) => {
 }
 
 // ── init ──────────────────────────────────────────────────────────────────────
-onMounted(fetchActivities)
+onMounted(() => {
+  Promise.all([fetchActivities(), fetchInactiveTemplates()])
+})
 </script>
 
 <style scoped>
@@ -466,6 +568,30 @@ select:disabled { color: #9ca3af; cursor: not-allowed; }
 }
 .primary:hover { transform: translateY(-2px); opacity: 0.9; }
 
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 3px solid rgba(255,255,255,0.45);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+}
+.spinner.dark {
+  border-color: rgba(45, 101, 141, 0.25);
+  border-top-color: #2d658d;
+}
+.spinner.large {
+  width: 34px;
+  height: 34px;
+  border-width: 4px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .back-link {
   display: block;
   width: 100%;
@@ -524,6 +650,7 @@ select:disabled { color: #9ca3af; cursor: not-allowed; }
   text-transform: uppercase;
 }
 .activities-table td { padding: 15px 12px; border-bottom: 1px solid #f9fafb; color: #374151; font-size: 14px; }
+.inactive-row td { color: #6b7280; }
 
 .icon-btn {
   background: none;
@@ -535,6 +662,19 @@ select:disabled { color: #9ca3af; cursor: not-allowed; }
   transition: transform 0.2s;
 }
 .icon-btn:hover { transform: scale(1.1); }
+
+.reactivate-btn {
+  background: #2d658d;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.reactivate-btn:hover { opacity: 0.85; }
 
 /* modal */
 .modal-overlay {
@@ -552,10 +692,56 @@ select:disabled { color: #9ca3af; cursor: not-allowed; }
   max-width: 350px;
   text-align: center;
 }
+.modal-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.modal-loading p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
 .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
 .btn-confirm { flex: 1; background: #ff6f00; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
 .btn-cancel  { flex: 1; background: #e5e7eb; color: #374151; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
 .btn-danger  { flex: 1; background: #c0392b; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; margin-top: 8px; }
+
+.operation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(17, 24, 39, 0.58);
+  backdrop-filter: blur(4px);
+}
+.operation-card {
+  width: min(92vw, 380px);
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 28px;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+}
+.operation-card h3 {
+  margin: 16px 0 8px;
+  color: #111827;
+  font-size: 20px;
+}
+.operation-card p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.operation-card .spinner {
+  border-color: rgba(45, 101, 141, 0.25);
+  border-top-color: #2d658d;
+}
 
 /* toast */
 .alert-toast {
