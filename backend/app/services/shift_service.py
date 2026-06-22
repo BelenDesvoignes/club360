@@ -92,6 +92,7 @@ def create_instances_for_month(db: Session, template: ShiftTemplate, *, commit: 
             ShiftInstance.template_id == template.id,
             ShiftInstance.date >= start,
             ShiftInstance.date <= end,
+            ShiftInstance.is_cancelled == False,
         )
         .all()
     )
@@ -210,9 +211,13 @@ def validate_unique_shift(db: Session, activity_id, day_of_week, start_time, exc
     )
 
     if duplicate:
+        detail = "Este turno ya existe"
+        if not duplicate.is_active:
+            detail = "Este turno fue eliminado. Para volver a usarlo, rehabilitalo desde la tabla de turnos eliminados."
+
         raise HTTPException(
             status_code=400,
-            detail="Este turno ya existe",
+            detail=detail,
         )
     
 def procesar_devoluciones_por_cancelacion_de_clase(db: Session, active_bookings: list, instance: ShiftInstance):
@@ -313,7 +318,7 @@ def procesar_devoluciones_por_eliminacion_de_template(db: Session, template_id: 
     for instance in future_instances:
         active_bookings = db.query(Booking).filter(
             Booking.instance_id == instance.id,
-            Booking.status.in_(["Confirmed", "Pending"])
+            Booking.status != "Cancelled"
         ).all()
 
         for booking in active_bookings:

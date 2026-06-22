@@ -18,6 +18,32 @@ router = APIRouter(prefix="/shifts", tags=["shifts"])
 def get_templates(db: Session = Depends(get_db)):
     return db.query(ShiftTemplate).all()
 
+@router.get("/templates/inactive")
+def get_inactive_templates(db: Session = Depends(get_db)):
+    inactive_templates = (
+        db.query(ShiftTemplate)
+        .join(Activity, ShiftTemplate.activity_id == Activity.id)
+        .filter(Activity.is_active == True)
+        .filter(ShiftTemplate.is_active == False)
+        .order_by(Activity.name.asc(), ShiftTemplate.day_of_week.asc(), ShiftTemplate.start_time.asc())
+        .all()
+    )
+
+    return [
+        {
+            "id": template.id,
+            "templateId": template.id,
+            "activity_id": template.activity_id,
+            "name": template.activity.name if template.activity else f"Actividad {template.activity_id}",
+            "court": template.activity.court if template.activity else "",
+            "day": template.day_of_week,
+            "time": template.start_time,
+            "capacity": template.capacity,
+            "price": float(template.price) if template.price is not None else None,
+        }
+        for template in inactive_templates
+    ]
+
 @router.post("/templates", response_model=ShiftTemplateOut)
 def create_template(data: ShiftTemplateCreate, db: Session = Depends(get_db)):
     new_template = ShiftTemplate(**data.dict())
@@ -33,6 +59,64 @@ def update_template(template_id: int, data: ShiftTemplateCreate, db: Session = D
     if not updated:
         raise HTTPException(status_code=404, detail="Turno base no encontrado")
     return updated
+
+@router.get("/templates/{template_id}/check-bookings")
+def check_template_bookings(template_id: int, db: Session = Depends(get_db)):
+    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Turno base no encontrado")
+
+    future_instances = db.query(ShiftInstance).filter(
+        ShiftInstance.template_id == template_id,
+        ShiftInstance.date >= business_today(),
+        ShiftInstance.is_cancelled == False
+    ).all()
+
+    instance_ids = [instance.id for instance in future_instances]
+    if not instance_ids:
+        return {
+            "has_active_bookings": False,
+            "has_confirmed_bookings": False,
+            "active_count": 0,
+            "confirmed_count": 0,
+        }
+
+    active_bookings = db.query(Booking).filter(
+        Booking.instance_id.in_(instance_ids),
+        Booking.status != "Cancelled"
+    ).all()
+
+    confirmed_count = sum(1 for booking in active_bookings if booking.status == "Confirmed")
+
+    return {
+        "has_active_bookings": bool(active_bookings),
+        "has_confirmed_bookings": confirmed_count > 0,
+        "active_count": len(active_bookings),
+        "confirmed_count": confirmed_count,
+    }
+
+@router.patch("/templates/{template_id}/reactivate")
+def reactivate_template(template_id: int, db: Session = Depends(get_db)):
+    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Turno base no encontrado")
+
+    template.is_active = True
+    created_instances = shift_service.create_instances_for_month(db, template, commit=False)
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al rehabilitar el turno: {str(e)}"
+        )
+
+    return {
+        "message": "Turno rehabilitado correctamente.",
+        "created_instances": len(created_instances),
+    }
 
 
 @router.get("/instances")
@@ -158,7 +242,7 @@ def delete_empty_template(template_id: int, db: Session = Depends(get_db)):
     if instance_ids:
         has_bookings = db.query(Booking).filter(
             Booking.instance_id.in_(instance_ids),
-            Booking.status.in_(["Confirmed", "Pending"])
+            Booking.status != "Cancelled"
         ).first() is not None
         
         if has_bookings:
@@ -192,7 +276,7 @@ def delete_template_keeping_inscriptions(template_id: int, db: Session = Depends
     for instance in all_future_instances:
         has_bookings = db.query(Booking).filter(
             Booking.instance_id == instance.id,
-            Booking.status.in_(["Confirmed", "Pending"])
+            Booking.status != "Cancelled"
         ).first() is not None
 
         if not has_bookings:
@@ -202,7 +286,7 @@ def delete_template_keeping_inscriptions(template_id: int, db: Session = Depends
         db, template, instances_to_cancel, cancel_all_instances=False
     )
 
-    return {"message": "Turno desactivado. Las clases con inscriptos se mantendrán activas."}
+    return {"message": "Turno eliminado correctamente. Las clases con inscriptos se mantendrán activas."}
 
 @router.delete("/templates/{template_id}/cancel-everything")
 def delete_template_and_cancel_all(template_id: int, db: Session = Depends(get_db)):
@@ -225,7 +309,7 @@ def delete_template_and_cancel_all(template_id: int, db: Session = Depends(get_d
     if instance_ids:
         active_bookings = db.query(Booking).filter(
             Booking.instance_id.in_(instance_ids),
-            Booking.status.in_(["Confirmed", "Pending"])
+            Booking.status != "Cancelled"
         ).all()
         for booking in active_bookings:
             user = booking.user
@@ -246,7 +330,7 @@ def delete_template_and_cancel_all(template_id: int, db: Session = Depends(get_d
         except Exception as e:
             print(f"Error enviando mail a {user.email}: {e}")
 
-    return {"message": "Turno y clases canceladas en masa. Reembolsos procesados con éxito."}
+    return {"message": "Turno eliminado correctamente. Reembolsos procesados con éxito."}
 
 
 # ── Cancelar clase puntual ──────────────────────────────────────────
@@ -261,7 +345,7 @@ def cancel_shift_instance(instance_id: int, db: Session = Depends(get_db)):
         db.query(Booking)
         .filter(
             Booking.instance_id == instance_id,
-            Booking.status.in_(["Confirmed", "Pending"])
+            Booking.status != "Cancelled"
         )
         .all()
     )
