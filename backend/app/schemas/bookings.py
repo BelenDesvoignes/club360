@@ -4,6 +4,7 @@ from typing import Optional
 
 class BookingCreate(BaseModel):
     instance_id: int
+    target_user_id: Optional[int] = None
 
 class BookingOut(BaseModel):
     id: int

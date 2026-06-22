@@ -547,7 +547,8 @@ const submitReserva = async () => {
     // 🚀 Lógica alineada con la API de FastAPI para reservar clases sueltas
     await api.post('/bookings/', {
       instance_id: Number(instanciaSeleccionada.value.instance_id),
-      subscription_id: null
+      subscription_id: null,
+      target_user_id: clienteSeleccionado.value.id
     })
 
     showToast('Reserva creada con éxito.', 'success')

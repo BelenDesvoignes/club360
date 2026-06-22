@@ -37,8 +37,14 @@ def create_booking(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db)
 ):
-    user_id = _extract_user_id(authorization)
-    
+    requester_id = _extract_user_id(authorization)
+
+    # Si el admin envía target_user_id, la reserva se crea para ese cliente
+    if data.target_user_id:
+        user_id = data.target_user_id
+    else:
+        user_id = requester_id
+
     # FIX BLINDADO PARA SOPORTAR RESERVA DE ABONOS (EVITA EL ERROR 422 SI VIAJA NULL)
     inst_id = data.instance_id if (hasattr(data, 'instance_id') and data.instance_id != 0) else None
     sub_id = data.subscription_id if hasattr(data, 'subscription_id') else None
