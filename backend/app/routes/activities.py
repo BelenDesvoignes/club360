@@ -129,7 +129,7 @@ def delete_shift_template(
             Booking.status.in_(["Confirmed", "Pending"])
         ).all()
 
-    # CASO 1
+    # CASO 1: reservas activas, sin cancelarlas
     if active_bookings and not cancel_bookings:
         template.is_active = False
         db.commit()
@@ -139,7 +139,7 @@ def delete_shift_template(
             print("Error enviando mails:", e)
         return {"message": "Turno desactivado correctamente"}
 
-    # CASO 2
+    # CASO 2: reservas activas, cancelarlas con reembolso
     if active_bookings and cancel_bookings:
         db.query(Booking).filter(
             Booking.instance_id.in_(all_inst_ids)
@@ -147,11 +147,10 @@ def delete_shift_template(
 
         for booking in active_bookings:
             instance = db.query(ShiftInstance).filter(
-        ShiftInstance.id == booking.instance_id
-    ).first()
-    if instance:
-        refund_service.procesar_reembolso_clase_suelta(db, booking, instance)
-
+                ShiftInstance.id == booking.instance_id
+            ).first()
+            if instance:
+                refund_service.procesar_reembolso_clase_suelta(db, booking, instance)
 
         template.is_active = False
         db.commit()
@@ -163,10 +162,25 @@ def delete_shift_template(
 
         return {"message": "Turno eliminado y reservas canceladas con reembolso"}
 
-    # CASO 3
+    # CASO 3: no tiene reservas activas → marcar inactivo
     template.is_active = False
     db.commit()
     return {"message": "Turno eliminado correctamente"}
+
+
+def _send_template_cancellation_mails(users_to_notify: dict, activity_name: str, dia: str, hora: str):
+    """Helper para no repetir el loop de mails."""
+    for user in users_to_notify.values():
+        try:
+            asyncio.run(send_template_cancellation(
+                email=user.email,
+                nombre=user.first_name,
+                actividad=activity_name,
+                dia=dia,
+                hora=hora
+            ))
+        except Exception as e:
+            print(f"Error enviando mail a {user.email}: {e}")
 
 @router.get("/users/{user_id}/credits")
 def get_user_credits(user_id: int, db: Session = Depends(get_db)):

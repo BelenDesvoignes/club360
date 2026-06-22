@@ -45,11 +45,28 @@ def _normalize_day_of_week(value: str | None) -> str | None:
 
 
 def create_instances_for_month(db: Session, template: ShiftTemplate, *, commit: bool = True):
-    """Ensure weekly ShiftInstances exist for the remainder of this month + next month.
+    """Genera instancias para turnos semanales o abonos.
 
-    IMPORTANT: uses real date (`date.today()`), not business_today().
-    Idempotent: creates missing instances and updates capacity safely.
+    - Turnos semanales: crea instancias hasta fin del mes siguiente.
+    - Abonos: crea una única instancia inicial (o mensual) sin depender de day_of_week.
     """
+
+    # Caso especial: abono (sin day_of_week definido o marcado como abono)
+    if not template.day_of_week or template.day_of_week.strip() == "" or getattr(template, "is_abono", False):
+        db_instance = ShiftInstance(
+            template_id=template.id,
+            date=date.today(),  # o la fecha de inicio del abono
+            capacity=template.capacity,
+            is_cancelled=False,
+        )
+        db.add(db_instance)
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+        return [db_instance]
+
+    # --- lógica actual para turnos semanales ---
     days_map = {
         "Lunes": 0,
         "Martes": 1,
@@ -71,7 +88,7 @@ def create_instances_for_month(db: Session, template: ShiftTemplate, *, commit: 
     start = today
     end = _last_day_of_month(_first_day_of_next_month(today))
 
-    # Find the first occurrence in [start..end]
+    # Buscar primera ocurrencia en el rango
     cursor = start
     while cursor.weekday() != target_day:
         cursor += timedelta(days=1)
@@ -111,7 +128,7 @@ def create_instances_for_month(db: Session, template: ShiftTemplate, *, commit: 
             new_instances.append(db_instance)
             continue
 
-        # Update capacity only if safe (never below booked count)
+        # Actualizar capacidad si es seguro
         booked_count = (
             db.query(Booking)
             .filter(
