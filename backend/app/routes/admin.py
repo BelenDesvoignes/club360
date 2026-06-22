@@ -6,26 +6,19 @@ from ..schemas.user import UserRegister, UserResponse
 from ..auth_utils import get_password_hash
 from ..auth_utils import get_user_id_from_token
 from ..services import subscription_service
+from ..services.subscription_service import get_subscription_quote
 from pydantic import BaseModel
-from datetime import date
+from datetime import datetime, date as date_type
+from calendar import monthrange
 from ..models.shift_template import ShiftTemplate
 from ..models.shift_instance import ShiftInstance
 from ..models.booking import Booking
 from ..models.subscription import Subscription
 from ..models.payment import Payment
-from datetime import datetime
 from ..time_override import business_today, business_utcnow
 
 class AbonoPayload(BaseModel):
     template_id: int
-    tipo: str  # "completo" o "mitad"
-
-from datetime import datetime, date as date_type
-from calendar import monthrange
-
-class AbonoPayload(BaseModel):
-    template_id: int
-    tipo: str  # "completo" o "mitad"
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -385,6 +378,30 @@ def listar_reservas_cliente(client_id: int, db: Session = Depends(get_db)):
 # Registrar abono mensual para un cliente
 # -------------------------------------------------------
 
+@router.get("/clientes/{client_id}/abono-quote")
+def get_abono_quote_para_cliente(
+    client_id: int,
+    template_id: int,
+    db: Session = Depends(get_db)
+):
+    cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    quote = get_subscription_quote(db, user_id=client_id, template_id=template_id)
+    return {
+        "template_id": quote.template_id,
+        "valid_to": str(quote.valid_to),
+        "remaining_classes": quote.remaining_classes,
+        "base_amount": quote.base_amount,
+        "amount": quote.amount,
+        "discount_percent": quote.discount_percent,
+        "discount_applied": quote.discount_applied,
+        "pay_now_required": quote.pay_now_required,
+        "discount_reason": quote.discount_reason,
+    }
+
+
 @router.post("/clientes/{client_id}/registrar-abono")
 def registrar_abono(
     client_id: int,
@@ -402,15 +419,16 @@ def registrar_abono(
     if not template.is_active:
         raise HTTPException(status_code=400, detail="Este horario no está activo.")
 
+    # Precio y estado de pago con las mismas reglas que el flujo del cliente
+    quote = get_subscription_quote(db, user_id=client_id, template_id=payload.template_id)
+    monto = quote.amount
+    payment_status = "completed" if quote.pay_now_required else "pending"
+
     hoy = business_utcnow()
     mes_actual = hoy.month
     anio_actual = hoy.year
     ultimo_dia = monthrange(anio_actual, mes_actual)[1]
     valid_to = date_type(anio_actual, mes_actual, ultimo_dia)
-
-    # Calcular precio
-    base = template.price * 4
-    monto = round(base * 0.8, 2) if payload.tipo == "mitad" else round(base, 2)
 
     # Verificar que no tenga ya un abono activo para este template en este mes
     abono_existente = db.query(Subscription).filter(
@@ -422,20 +440,15 @@ def registrar_abono(
     if abono_existente:
         raise HTTPException(status_code=400, detail="El cliente ya tiene un abono activo para este horario este mes.")
 
-    # Buscar todas las instancias del mes para este template
-    instancias_del_mes = db.query(ShiftInstance).filter(
+    # Instancias desde hoy hasta fin de mes (igual que el flujo del cliente)
+    instancias = db.query(ShiftInstance).filter(
         ShiftInstance.template_id == payload.template_id,
-        ShiftInstance.date >= date_type(anio_actual, mes_actual, 1),
+        ShiftInstance.date >= hoy.date(),
         ShiftInstance.date <= valid_to,
         ShiftInstance.is_cancelled == False,
     ).all()
 
-    # Si es "mitad", tomar solo las instancias desde hoy en adelante
-    if payload.tipo == "mitad":
-        instancias_del_mes = [i for i in instancias_del_mes if i.date >= hoy.date()]
-
     try:
-        # Crear la suscripción
         subscription = Subscription(
             user_id=client_id,
             template_id=payload.template_id,
@@ -446,12 +459,10 @@ def registrar_abono(
             valid_to=valid_to,
         )
         db.add(subscription)
-        db.flush()  # necesitamos el ID para los bookings
+        db.flush()
 
-        # Crear un booking por cada instancia del mes
         bookings_creados = 0
-        for instancia in instancias_del_mes:
-            # Verificar que no tenga ya una reserva en esa instancia
+        for instancia in instancias:
             ya_reservado = db.query(Booking).filter(
                 Booking.instance_id == instancia.id,
                 Booking.user_id == client_id,
@@ -460,13 +471,15 @@ def registrar_abono(
             if ya_reservado:
                 continue
 
-            # Verificar cupos
             ocupados = db.query(Booking).filter(
                 Booking.instance_id == instancia.id,
                 Booking.status != "Cancelled"
             ).count()
             if ocupados >= instancia.capacity:
-                continue
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No hay cupos disponibles para asegurar el mes completo en este horario (sin cupo el {instancia.date})."
+                )
 
             booking = Booking(
                 user_id=client_id,
@@ -474,16 +487,15 @@ def registrar_abono(
                 subscription_id=subscription.id,
                 status="Confirmed",
                 amount_paid=0,
-                payment_status="paid",  # el abono ya cubre la clase
+                payment_status="paid",
             )
             db.add(booking)
             bookings_creados += 1
 
-        # Registrar el pago del abono
         payment = Payment(
             user_id=client_id,
             amount=monto,
-            status="completed",
+            status=payment_status,
             type="subscription",
             date=hoy,
         )
@@ -493,8 +505,9 @@ def registrar_abono(
         return {
             "subscription_id": subscription.id,
             "template_id": payload.template_id,
-            "tipo": payload.tipo,
             "monto": monto,
+            "discount_applied": quote.discount_applied,
+            "discount_reason": quote.discount_reason,
             "month": mes_actual,
             "valid_to": valid_to,
             "clases_reservadas": bookings_creados,

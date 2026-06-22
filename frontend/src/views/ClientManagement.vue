@@ -237,7 +237,7 @@
               :key="tmpl.id"
               class="instancia-item"
               :class="{ selected: templateSeleccionado?.id === tmpl.id }"
-              @click="templateSeleccionado = tmpl"
+              @click="seleccionarTemplate(tmpl)"
             >
               <div class="instancia-info">
                 <span class="instancia-actividad">{{ tmpl.activity_name }}</span>
@@ -251,31 +251,22 @@
           </div>
 
           <div v-if="templateSeleccionado" class="pago-section">
-            <p class="pago-label">Seleccioná el tipo de abono:</p>
-            <div class="pago-botones">
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: tipoAbono === 'completo' }"
-                @click="tipoAbono = 'completo'"
-              >
-                Mes completo — ${{ Math.round(templateSeleccionado.price * 4 * 100) / 100 }}
-              </button>
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: tipoAbono === 'mitad' }"
-                @click="tipoAbono = 'mitad'"
-              >
-                Mitad de mes — ${{ Math.round(templateSeleccionado.price * 4 * 0.8 * 100) / 100 }}
-              </button>
+            <div v-if="loadingQuote" class="empty-state">Calculando precio...</div>
+            <div v-else-if="abonoQuote" class="resumen-quote">
+              <p v-if="abonoQuote.discount_applied" class="descuento-info">
+                {{ abonoQuote.discount_reason }}
+              </p>
+              <p v-else class="descuento-info sin-descuento">{{ abonoQuote.discount_reason }}</p>
+              <p class="clases-info">Clases restantes del mes: <strong>{{ abonoQuote.remaining_classes }}</strong></p>
             </div>
           </div>
 
-          <div v-if="templateSeleccionado" class="resumen-pago">
-            Total a cobrar: <strong>${{ precioAbono }}</strong>
+          <div v-if="abonoQuote" class="resumen-pago">
+            Total a cobrar: <strong>${{ abonoQuote.amount }}</strong>
           </div>
 
           <div class="modal-actions-container">
-            <button class="btn-confirm" @click="submitAbono" :disabled="loadingAbono || !templateSeleccionado">
+            <button class="btn-confirm" @click="submitAbono" :disabled="loadingAbono || !templateSeleccionado || !abonoQuote || loadingQuote">
               {{ loadingAbono ? 'Guardando...' : 'Confirmar Abono' }}
             </button>
             <button class="btn-cancel" @click="showAbonoModal = false">Cancelar</button>
@@ -568,7 +559,8 @@ const templates = ref([])
 const templatesFiltrados = ref([])
 const actividadesAbono = ref([])
 const templateSeleccionado = ref(null)
-const tipoAbono = ref('completo')
+const abonoQuote = ref(null)
+const loadingQuote = ref(false)
 const loadingTemplates = ref(false)
 const loadingAbono = ref(false)
 const filterAbonoActividad = ref('')
@@ -598,6 +590,7 @@ const fetchTemplates = async () => {
 
 const filtrarTemplates = () => {
   templateSeleccionado.value = null
+  abonoQuote.value = null
   templatesFiltrados.value = templates.value.filter(tmpl => {
     const matchActividad = !filterAbonoActividad.value || tmpl.activity_id === filterAbonoActividad.value
     const matchDia = !filterAbonoDia.value || tmpl.day_of_week === filterAbonoDia.value
@@ -605,30 +598,44 @@ const filtrarTemplates = () => {
   })
 }
 
+const fetchAbonoQuote = async (tmpl) => {
+  if (!tmpl || !clienteSeleccionado.value) return
+  loadingQuote.value = true
+  abonoQuote.value = null
+  try {
+    const res = await api.get(`/admin/clientes/${clienteSeleccionado.value.id}/abono-quote`, {
+      params: { template_id: tmpl.id }
+    })
+    abonoQuote.value = res.data
+  } catch (e) {
+    showToast(e.response?.data?.detail || 'Error al calcular el precio del abono.', 'error')
+  } finally {
+    loadingQuote.value = false
+  }
+}
+
 const openAbonoModal = async (cliente) => {
   clienteSeleccionado.value = cliente
   templateSeleccionado.value = null
-  tipoAbono.value = 'completo'
+  abonoQuote.value = null
   filterAbonoActividad.value = ''
   filterAbonoDia.value = ''
   showAbonoModal.value = true
   await fetchTemplates()
 }
-const precioAbono = computed(() => {
-  if (!templateSeleccionado.value) return 0
-  const base = templateSeleccionado.value.price * 4
-  return tipoAbono.value === 'mitad'
-    ? Math.round(base * 0.8 * 100) / 100
-    : Math.round(base * 100) / 100
-})
+
+const seleccionarTemplate = (tmpl) => {
+  templateSeleccionado.value = tmpl
+  fetchAbonoQuote(tmpl)
+}
 
 const submitAbono = async () => {
   if (!templateSeleccionado.value) return showToast('Seleccioná un horario.', 'error')
+  if (!abonoQuote.value) return showToast('Esperá a que se calcule el precio.', 'error')
   loadingAbono.value = true
   try {
     await api.post(`/admin/clientes/${clienteSeleccionado.value.id}/registrar-abono`, {
       template_id: templateSeleccionado.value.id,
-      tipo: tipoAbono.value,
     })
     showToast('Abono registrado con éxito.', 'success')
     showAbonoModal.value = false
