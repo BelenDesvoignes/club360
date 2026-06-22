@@ -148,11 +148,15 @@
                 <button
                   type="button"
                   class="turn-card-btn"
-                  :class="{ disabled: isFullyBooked(turno) }"
-                  :disabled="isFullyBooked(turno) || bookingInProgress"
+                  :class="{
+                    disabled: isFullyBooked(turno) && !canJoinWaitlist(turno),
+                    'btn-waitlist': isFullyBooked(turno) && canJoinWaitlist(turno)
+                  }"
+                  :disabled="(isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
                   @click="selectInstanceForBooking(turno)"
                 >
-                  {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? 'Sin Cupo' : 'Reservar') }}
+                  <span v-if="bookingInProgress && selectedInstance?.id === turno.id" class="button-spinner" aria-hidden="true"></span>
+                  <span>{{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? (canJoinWaitlist(turno) ? 'Unirme a lista de espera' : 'Sin Cupo') : 'Reservar') }}</span>
                 </button>
               </div>
             </div>
@@ -180,12 +184,13 @@
 
     <!-- Modal de éxito -->
     <transition name="fade">
-      <div v-if="successMessage" class="modal-overlay" @click="successMessage = ''">
+      <div v-if="successMessage" class="modal-overlay" @click="closeSuccessModal">
         <div
           class="modal-content status-modal"
           :class="{
             'status-confirmed': bookingStatus === 'completed' || bookingStatus === 'confirmed',
             'status-pending': bookingStatus === 'pending',
+            'status-waitlist': bookingStatus === 'waitlist',
             'status-cancelled': bookingStatus === 'cancelled'
           }"
           @click.stop
@@ -194,22 +199,22 @@
 
           <div class="status-modal-head">
             <div class="status-modal-icon" aria-hidden="true">
-              {{ bookingStatus === 'completed' || bookingStatus === 'confirmed' ? '✓' : bookingStatus === 'cancelled' ? '⨯' : '⏳' }}
+              {{ bookingStatus === 'completed' || bookingStatus === 'confirmed' || bookingStatus === 'waitlist' ? '✓' : bookingStatus === 'cancelled' ? '⨯' : '⏳' }}
             </div>
             <div class="status-modal-copy">
               <h2>
-                {{ bookingStatus === 'completed' || bookingStatus === 'confirmed'
+                {{ successTitle || (bookingStatus === 'completed' || bookingStatus === 'confirmed'
                   ? '¡Reserva confirmada!'
                   : bookingStatus === 'cancelled'
                     ? 'Reserva cancelada'
-                    : 'Reserva pendiente de pago' }}
+                    : 'Reserva pendiente de pago') }}
               </h2>
               <p>{{ successMessage }}</p>
             </div>
           </div>
 
           <div class="status-modal-actions">
-            <button type="button" class="status-btn" @click="successMessage = ''">Cerrar</button>
+            <button type="button" class="status-btn" @click="closeSuccessModal">Cerrar</button>
           </div>
         </div>
       </div>
@@ -270,11 +275,11 @@
 
               <button
                 @click="selectInstanceForBooking(turno)"
-                :disabled="isFullyBooked(turno) || bookingInProgress"
+                :disabled="(isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
                 class="btn-turno-reserve"
-                :class="{ disabled: isFullyBooked(turno) }"
+                :class="{ disabled: isFullyBooked(turno) && !canJoinWaitlist(turno) }"
               >
-                {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? 'Sin cupos' : 'Reservar') }}
+                {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? (canJoinWaitlist(turno) ? 'Unirme a lista de espera' : 'Sin cupos') : 'Reservar') }}
               </button>
             </div>
           </div>
@@ -326,6 +331,7 @@ const instances = ref([])
 const loading = ref(false)
 const bookingInProgress = ref(false)
 const bookingStatus = ref('')
+const successTitle = ref('')
 const successMessage = ref('')
 const errorMessage = ref('')
 const isRefreshing = ref(false)
@@ -348,6 +354,12 @@ const handleAuthError = (e) => {
   router.push('/login')
   errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
   return true
+}
+
+const closeSuccessModal = () => {
+  successMessage.value = ''
+  successTitle.value = ''
+  bookingStatus.value = ''
 }
 
 const showTurnosModal = ref(false)
@@ -404,6 +416,13 @@ const selectSport = (sportId) => {
   selectedSportId.value = sportId
   reservationType.value = 'class'
   selectedWeekday.value = 'all'
+}
+
+const canJoinWaitlist = (instance) => {
+  // Solo para reservas únicas (no abonos) y si el usuario NO es abonado
+  if (reservationType.value !== 'class') return false
+  if (isUserAbonado.value) return false
+  return true
 }
 
 const clearSport = () => {
@@ -683,6 +702,7 @@ const hasActiveBookingForInstance = (instanceId) => {
 
 const selectInstanceForBooking = async (instance) => {
   if (isFullyBooked(instance)) {
+    selectedInstance.value = instance
     joinWaitlist(instance)
     return
   }
@@ -1068,6 +1088,11 @@ const confirmBooking = async () => {
 }
 
 const joinWaitlist = async (instance) => {
+  if (bookingInProgress.value) return
+  selectedInstance.value = instance
+  bookingInProgress.value = true
+  successTitle.value = ''
+
   try {
     auth.hydrateFromToken()
     const token = auth.token || localStorage.getItem('token')
@@ -1077,10 +1102,28 @@ const joinWaitlist = async (instance) => {
       return
     }
 
-    // TODO: implementar endpoint de waitlist
-    errorMessage.value = 'Sistema de lista de espera en desarrollo. Intenta más tarde.'
+    const res = await axios.post('/waiting-lists/join', null, {
+      params: { instance_id: instance.id },
+      headers: { Authorization: `Bearer ${token}` }
+    })
+
+    // Mensaje concordando con el caso de uso Jira (omitimos envío de mail por ahora)
+    successTitle.value = 'Operación exitosa'
+    bookingStatus.value = 'waitlist'
+    successMessage.value = 'Ya estás anotado en lista de espera. Si uno de los cupos se libera y queda a tu disponibilidad se te enviará un mail para que confirmes tu reserva.'
+    errorMessage.value = ''
+
+    // Refrescar instancias y reservas del usuario
+    setTimeout(() => {
+      fetchInstances({ showRefresh: true })
+      fetchMyBookings({ showRefresh: true })
+    }, 800)
   } catch (e) {
-    errorMessage.value = 'Error al unirse a la lista de espera'
+    const detail = e.response?.data?.detail || 'Error al unirse a la lista de espera'
+    errorMessage.value = detail
+    successMessage.value = ''
+  } finally {
+    bookingInProgress.value = false
   }
 }
 
@@ -1608,6 +1651,10 @@ onMounted(() => {
   color: #ffffff;
   font-weight: 900;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -1622,6 +1669,27 @@ onMounted(() => {
   color: rgba(13, 18, 74, 0.55);
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.btn-waitlist {
+  background: #eaf6e8;
+  color: #2d658d;
+  box-shadow: inset 0 0 0 1px rgba(45, 101, 141, 0.16);
+}
+
+.button-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: rgba(255, 255, 255, 1);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .activity-info h3 {
@@ -1922,6 +1990,15 @@ onMounted(() => {
 }
 
 .status-modal.status-confirmed .status-btn {
+  background: #5a8849;
+}
+
+.status-modal.status-waitlist .status-modal-icon {
+  background: rgba(90, 136, 73, 0.16);
+  color: #5a8849;
+}
+
+.status-modal.status-waitlist .status-btn {
   background: #5a8849;
 }
 

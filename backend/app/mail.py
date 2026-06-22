@@ -54,6 +54,78 @@ async def send_shift_cancellation(email: str, nombre: str, actividad: str, fecha
         server.sendmail(GMAIL_USER, email, msg.as_string())
 
 
+async def send_waitlist_promotion_offer(
+    email: str, 
+    nombre: str, 
+    actividad: str, 
+    fecha: str, 
+    hora: str, 
+    token: str,
+    frontend_url: str = "http://localhost:5173"
+):
+    """Notificación de que el usuario fue promovido en la lista de espera."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "¡Hay un cupo disponible! - CLUB360"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = email
+
+    accept_link = f"{frontend_url}/waitlist-accept/{token}"
+    reject_link = f"{frontend_url}/waitlist-reject/{token}"
+
+    html = f"""
+        <h2>¡Hola {nombre}!</h2>
+        <p>Se liberó un cupo en la clase que solicitaste. ¡Tienes una oportunidad!</p>
+        
+        <p>
+            <strong>Actividad:</strong> {actividad}<br>
+            <strong>Fecha:</strong> {fecha}<br>
+            <strong>Horario:</strong> {hora} hs
+        </p>
+        
+        <p>Esta oferta es válida por <strong>24 horas</strong>. Si no respondes en ese tiempo, 
+        pasaremos al siguiente en la lista de espera.</p>
+        
+        <div style="margin: 20px 0;">
+            <a href="{accept_link}" style="
+                display: inline-block; 
+                background-color: #5a8849; 
+                color: white; 
+                padding: 12px 24px; 
+                border-radius: 8px; 
+                text-decoration: none; 
+                font-weight: bold;
+                margin-right: 10px;
+            ">
+                Aceptar cupo
+            </a>
+            <a href="{reject_link}" style="
+                display: inline-block; 
+                background-color: #9ca3af; 
+                color: white; 
+                padding: 12px 24px; 
+                border-radius: 8px; 
+                text-decoration: none; 
+                font-weight: bold;
+            ">
+                Rechazar cupo
+            </a>
+        </div>
+        
+        <p style="font-size: 12px; color: #6b7280;">
+            Si tienes problemas con los enlaces, puedes responder a este email o contactar 
+            directamente a soporte en CLUB360.
+        </p>
+        
+        <p>— El equipo de CLUB360</p>
+    """
+    msg.attach(MIMEText(html, "html"))
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_USER, email, msg.as_string())
+
+
 async def send_template_cancellation(email: str, nombre: str, actividad: str, dia: str, hora: str):
     """Notificación para cancelación definitiva de un turno completo."""
     msg = MIMEMultipart("alternative")

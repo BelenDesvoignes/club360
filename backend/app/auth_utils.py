@@ -4,6 +4,7 @@ from jose import jwt
 from typing import Optional
 import os
 from dotenv import load_dotenv
+from fastapi import HTTPException, status, Header
 
 load_dotenv() # Esto lee un archivo .env en tu carpeta local
 
@@ -32,11 +33,45 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
-def get_user_id_from_token(token: str) -> Optional[int]:
-    """Decodifica el JWT y devuelve el campo 'id' si existe."""
+def get_user_id_from_token(authorization: str | None = Header(default=None)) -> Optional[int]:
+    """Decodifica el JWT del header Authorization y devuelve el campo 'id' si existe.
+
+    Diseñada para usarse como dependencia: Depends(get_user_id_from_token)
+    """
+    if not authorization:
+        return None
+
+    # Si la string viene como 'Bearer <token>' extraer token
+    if authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+    else:
+        # Si se llamó pasando el token crudo (caso habitual en rutas que llaman la función directamente)
+        token = authorization.strip()
+
+    # Protección básica: el token JWT suele tener 2 puntos '.'
+    if token.count('.') < 2:
+        return None
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = payload.get('id')
         return int(user_id) if user_id is not None else None
     except Exception:
         return None
+
+
+def get_current_user_role(authorization: str | None = Header(default=None)) -> str:
+    """
+    Extrae el rol del usuario desde el header Authorization Bearer <token>.
+    Diseñada para usarse como dependencia en FastAPI: Depends(get_current_user_role)
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticado")
+
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        role = payload.get("role")
+        return role if role is not None else "client"
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")

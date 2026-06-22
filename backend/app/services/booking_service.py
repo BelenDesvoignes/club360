@@ -231,11 +231,14 @@ def create_booking(db: Session, user_id: int, instance_id: int | None, subscript
     
     return booking
 
-def cancel_booking(db: Session, booking_id: int, user_id: int) -> Booking:
+def cancel_booking(db: Session, booking_id: int, user_id: int) -> tuple[Booking, bool]:
     """
     Cancela una reserva aplicando límites diferenciados:
     - Si es abono -> Verifica 48hs para devolver crédito.
     - Si es clase suelta -> Verifica 24hs para procesar reembolso.
+    
+    Retorna: (booking, should_process_waitlist)
+    El booleano indica si se debe procesar la lista de espera desde el endpoint (async).
     """
     from ..models.user import UserRole
     from .credit_service import otorgar_credito_individual
@@ -279,10 +282,9 @@ def cancel_booking(db: Session, booking_id: int, user_id: int) -> Booking:
     db.commit()
     db.refresh(booking)
     
-    from .waiting_list_service import WaitingListService
-    WaitingListService.process_waiting_list_on_cancellation(db, instance_id=booking.instance_id)
-
-    return booking
+    # Retornar bandera para procesar waitlist en el endpoint (async)
+    should_process = True
+    return booking, should_process
 
 def create_booking_with_credit(db: Session, user_id: int, instance_id: int, credit_id: int) -> Booking:
     """

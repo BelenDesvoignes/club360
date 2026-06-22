@@ -72,6 +72,14 @@
                 >
                   {{ shift.is_cancelled ? 'Cancelada' : 'Cancelar' }}
                 </button>
+                <button
+                  @click="viewWaitingList(shift)"
+                  class="btn-table-cancel"
+                  :disabled="shift.is_cancelled"
+                  title="Ver lista de espera"
+                >
+                  Ver lista de espera
+                </button>
               </td>
             </tr>
           </tbody>
@@ -84,6 +92,43 @@
 
       <transition name="fade">
         <div v-if="message" :class="['alert-toast', messageType]">{{ message }}</div>
+      </transition>
+
+      <transition name="fade">
+        <div v-if="showWaitlistModal" class="modal-overlay">
+          <div class="modal-card waitlist-card">
+            <h3>Lista de espera — {{ waitlistForActivity }}</h3>
+            <div v-if="waitlistLoading">Cargando...</div>
+              <div v-else>
+                <div v-if="waitingEntries.length === 0" class="empty-state">No hay inscriptos en la lista de espera.</div>
+                <div v-else class="waitlist-table-container">
+                  <table class="waitlist-table">
+                    <thead>
+                      <tr>
+                        <th>Posición</th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Origen</th>
+                        <th>Registrado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="entry in waitingEntries" :key="entry.id">
+                        <td>{{ entry.position }}</td>
+                        <td>{{ entry.user?.first_name }} {{ entry.user?.last_name }}</td>
+                        <td>{{ entry.user?.email }}</td>
+                        <td>{{ entry.entry_type === 'subscription' ? 'Abono' : 'Reserva única' }}</td>
+                        <td>{{ formatDate(entry.created_at) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            <div class="modal-actions">
+              <button @click="showWaitlistModal = false" class="btn-cancel">Cerrar</button>
+            </div>
+          </div>
+        </div>
       </transition>
 
       <transition name="fade">
@@ -138,6 +183,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
+import { useAuthStore } from '../stores/auth'
 
 const shifts = ref([])
 const loading = ref(false)
@@ -183,6 +229,10 @@ const filteredShifts = computed(() => {
 
 const showConfirmModal = ref(false)
 const instanceToDelete = ref(null)
+const showWaitlistModal = ref(false)
+const waitingEntries = ref([])
+const waitlistLoading = ref(false)
+const waitlistForActivity = ref('')
 
 const confirmCancel = (shift) => {
   instanceToDelete.value = shift
@@ -212,6 +262,35 @@ const executeCancel = async () => {
   } finally {
     instanceToDelete.value = null
     cancelling.value = false 
+  }
+}
+
+const viewWaitingList = async (shift) => {
+  showWaitlistModal.value = true
+  waitlistLoading.value = true
+  waitingEntries.value = []
+  waitlistForActivity.value = `${shift.activity_name} - ${formatDate(shift.date)}`
+
+  try {
+    const auth = useAuthStore()
+    auth.hydrateFromToken()
+    const token = auth.token || localStorage.getItem('token')
+    if (!token) {
+      showMsg('No autenticado. Iniciá sesión como admin.', 'error')
+      showWaitlistModal.value = false
+      return
+    }
+
+    const res = await axios.get(`/waiting-lists/instance/${shift.id}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    waitingEntries.value = Array.isArray(res.data) ? res.data : []
+  } catch (e) {
+    console.error('Error al cargar lista de espera:', e)
+    showMsg('No se pudo cargar la lista de espera', 'error')
+    showWaitlistModal.value = false
+  } finally {
+    waitlistLoading.value = false
   }
 }
 
@@ -364,4 +443,11 @@ input, select { width: 100%; border: 1px solid #e5e7eb; border-radius: 10px; pad
 .empty-state, .loading-state { padding: 40px; text-align: center; color: #9ca3af; font-weight: 600; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* Waitlist table styles (moved from template) */
+.waitlist-card { max-width: 720px; width: 100%; }
+.waitlist-table-container { width: 100%; overflow-x: auto; margin-top: 12px; }
+.waitlist-table { width: 100%; border-collapse: collapse; }
+.waitlist-table th, .waitlist-table td { padding: 10px 12px; border-bottom: 1px solid #eef2f7; text-align: left; font-size: 14px; }
+.waitlist-table thead th { font-weight: 800; color: #374151; font-size: 13px; text-transform: uppercase; }
 </style>

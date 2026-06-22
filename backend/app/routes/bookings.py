@@ -177,7 +177,7 @@ def get_my_next_booking(
     return proxima
 
 @router.post("/{booking_id}/cancel", response_model=dict)
-def cancel_booking(
+async def cancel_booking(
     booking_id: int, 
     authorization: str | None = Header(default=None), 
     db: Session = Depends(get_db)
@@ -223,7 +223,18 @@ def cancel_booking(
             msg_exito = "Reserva cancelada. No se genera reembolso por cancelar dentro de las 24hs."
 
     try:
-        booking_service.cancel_booking(db, booking_id, user_id)
+        booking_cancelled, should_process_waitlist = booking_service.cancel_booking(db, booking_id, user_id)
+        
+        # Procesar waitlist de forma async si fue cancelada una reserva
+        if should_process_waitlist:
+            from ..services.waiting_list_service import WaitingListService
+            prefer_sub = booking_cancelled.subscription_id is not None
+            await WaitingListService.process_waiting_list_on_cancellation(
+                db, 
+                instance_id=booking_cancelled.instance_id, 
+                prefer_subscription=prefer_sub
+            )
+        
         return {"message": msg_exito}
     except HTTPException as he:
         raise he
