@@ -5,7 +5,10 @@ from datetime import timedelta
 # Modelos de la base de datos
 from ..models.payment import Payment
 from ..models.booking import Booking
-from ..models.subscription import Subscription  
+from ..models.subscription import Subscription
+from ..models.suspension import Suspension
+from ..models.user import User
+from fastapi import HTTPException
 
 # Utilitario del tiempo del sistema
 from ..time_override import business_utcnow
@@ -159,6 +162,97 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
     db.commit()
     db.refresh(payment)
     return payment
+
+
+def get_payable_suspensions_by_user(db: Session, user_id: int) -> list[dict]:
+    """Returns active suspensions that the user can see/pay from Mis Pagos."""
+    fine_amount_by_reason = {
+        "SUSPENSION_ABONO": 5000.0,
+        "SUSPENSION_CLASE_LIBRE": 5000.0,
+        "PERDIDA_20": 0.0,
+    }
+
+    suspensions = (
+        db.query(Suspension)
+        .filter(
+            Suspension.user_id == user_id,
+            Suspension.status == "active",
+            Suspension.end_date == None,
+        )
+        .order_by(Suspension.start_date.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": suspension.id,
+            "reason": suspension.reason,
+            "activity_id": suspension.activity_id,
+            "status": suspension.status,
+            "start_date": suspension.start_date,
+            "end_date": suspension.end_date,
+            "amount_due": fine_amount_by_reason.get(suspension.reason, 5000.0),
+        }
+        for suspension in suspensions
+    ]
+
+
+def pay_suspension_fine(db: Session, user_id: int, suspension_id: int, amount: float = 0.0) -> dict:
+    """Marks one specific suspension as paid/inactive.
+
+    After lifting that suspension, the user's is_suspended flag is cleared only when
+    there are no other active suspensions at the same time.
+    """
+    suspension = (
+        db.query(Suspension)
+        .filter(Suspension.id == suspension_id, Suspension.user_id == user_id)
+        .first()
+    )
+    if not suspension:
+        raise HTTPException(status_code=404, detail="Suspensión no encontrada")
+
+    if suspension.status != "active":
+        raise HTTPException(status_code=400, detail="Esta suspensión ya no está activa")
+
+    payment = Payment(
+        user_id=user_id,
+        amount=float(amount or 0.0),
+        status="completed",
+        type="suspension_fine",
+        date=business_utcnow(),
+    )
+    db.add(payment)
+
+    suspension.status = "desactive"
+    suspension.end_date = business_utcnow()
+
+    active_suspensions_count = (
+        db.query(Suspension)
+        .filter(
+            Suspension.user_id == user_id,
+            Suspension.status == "active",
+            Suspension.end_date == None,
+            Suspension.id != suspension_id,
+        )
+        .count()
+    )
+
+    user = db.query(User).filter(User.id_user == user_id).first()
+    if user and active_suspensions_count == 0:
+        user.is_suspended = False
+
+    db.commit()
+    db.refresh(payment)
+    db.refresh(suspension)
+
+    return {
+        "message": "Multa pagada y suspensión desactivada.",
+        "payment_id": payment.id,
+        "suspension_id": suspension.id,
+        "suspension_status": suspension.status,
+        "user_is_suspended": bool(user.is_suspended) if user else None,
+        "remaining_active_suspensions": active_suspensions_count,
+    }
 
 
 def complete_subscription_payment_flow(db: Session, user_id: int, payment_id: int) -> Payment:

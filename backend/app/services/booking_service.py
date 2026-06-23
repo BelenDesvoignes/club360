@@ -14,20 +14,134 @@ from fastapi import HTTPException, status
 from ..time_override import business_today, business_utcnow
 
 
+SUSPENSION_ABONO = "SUSPENSION_ABONO"
+SUSPENSION_CLASE_LIBRE = "SUSPENSION_CLASE_LIBRE"
+PERDIDA_20 = "PERDIDA_20"
+ACTIVE_SUSPENSION_STATUS = "active"
+LIFTED_SUSPENSION_STATUS = "lifted"
+
+
+def get_active_suspension(
+    db: Session,
+    user_id: int,
+    reason: str,
+    activity_id: int | None = None,
+) -> Suspension | None:
+    filters = [
+        Suspension.user_id == user_id,
+        Suspension.reason == reason,
+        Suspension.status == ACTIVE_SUSPENSION_STATUS,
+        Suspension.end_date == None,
+    ]
+
+    # If activity_id is provided, the suspension must match that sport/activity.
+    # NULL activity_id is kept harmless for legacy/demo rows and does not block
+    # activity-specific checks.
+    if activity_id is not None:
+        filters.append(Suspension.activity_id == activity_id)
+
+    return db.query(Suspension).filter(and_(*filters)).first()
+
+
+def has_active_suspension(
+    db: Session,
+    user_id: int,
+    reason: str,
+    activity_id: int | None = None,
+) -> bool:
+    return get_active_suspension(db, user_id, reason, activity_id=activity_id) is not None
+
+
 def is_user_suspended(db: Session, user_id: int) -> bool:
-    """Check if user has an active suspension."""
+    """Check if user has an active blocking suspension."""
     suspension = (
         db.query(Suspension)
         .filter(
             and_(
                 Suspension.user_id == user_id,
-                Suspension.status == "active",
-                Suspension.end_date == None  # No end date means still active
+                Suspension.reason.in_([SUSPENSION_ABONO, SUSPENSION_CLASE_LIBRE]),
+                Suspension.status == ACTIVE_SUSPENSION_STATUS,
+                Suspension.end_date == None,
             )
         )
         .first()
     )
     return suspension is not None
+
+
+def create_subscription_booking(db: Session, user_id: int, template_id: int) -> dict:
+    """Simplified university/demo flow for booking an abono.
+
+    SUSPENSION_ABONO blocks the operation.
+    PERDIDA_20 does not block, but removes the 20% discount from day 15 onward.
+    """
+    user = db.query(User).filter(User.id_user == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    from ..models.shift_template import ShiftTemplate
+
+    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Abono/clase base no encontrada")
+
+    activity_id = template.activity_id
+    if has_active_suspension(db, user_id, SUSPENSION_ABONO, activity_id=activity_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No podés reservar abonos para este deporte porque tenés una suspensión activa.",
+        )
+
+    base_price = float(template.price or 0)
+    today = business_today()
+    has_lost_discount = has_active_suspension(db, user_id, PERDIDA_20)
+    discount_applied = today.day >= 15 and not has_lost_discount
+    amount_to_charge = round(base_price * 0.8, 2) if discount_applied else base_price
+
+    subscription = Subscription(
+        user_id=user_id,
+        template_id=template_id,
+        month=today.month,
+        status="active",
+        price_paid=None,
+        purchase_date=business_utcnow(),
+        valid_to=None,
+    )
+    db.add(subscription)
+    db.flush()
+
+    payment = Payment(
+        user_id=user_id,
+        amount=amount_to_charge,
+        status="pending",
+        type="subscription",
+        date=business_utcnow(),
+    )
+    db.add(payment)
+    db.commit()
+    db.refresh(subscription)
+    db.refresh(payment)
+
+    return {
+        "message": "Abono reservado. Pago pendiente generado.",
+        "subscription_id": subscription.id,
+        "payment_id": payment.id,
+        "base_price": base_price,
+        "amount_to_charge": amount_to_charge,
+        "discount_applied": discount_applied,
+        "lost_discount_by_perdida_20": has_lost_discount,
+    }
+
+
+def create_free_class_booking(db: Session, user_id: int, instance_id: int) -> Booking:
+    """Simplified university/demo flow for booking a clase libre."""
+    if has_active_suspension(db, user_id, SUSPENSION_CLASE_LIBRE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No podés reservar clases libres porque tenés una suspensión activa para clases libres.",
+        )
+
+    return create_booking(db, user_id=user_id, instance_id=instance_id, subscription_id=None)
 
 
 def _subscription_covers_date(subscription: Subscription, target_date: date) -> bool:
@@ -152,11 +266,12 @@ def create_booking(db: Session, user_id: int, instance_id: int | None, subscript
     # Lazy rule: after day 10, auto-suspend if unpaid (TP-friendly; no cron required)
     ensure_user_suspension_if_unpaid(db, user_id=user_id)
 
-    # Rule 1: Check if user is suspended
-    if is_user_suspended(db, user_id):
+    # Rule 1: for clase libre, only SUSPENSION_CLASE_LIBRE blocks.
+    # SUSPENSION_ABONO blocks abonos only; PERDIDA_20 never blocks.
+    if has_active_suspension(db, user_id, SUSPENSION_CLASE_LIBRE):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tu cuenta está suspendida. Debes solicitar reactivación para hacer nuevas reservas."
+            detail="No podés reservar clases libres porque tenés una suspensión activa para clases libres."
         )
     
     # Rule 5: Check if booking date is in the future

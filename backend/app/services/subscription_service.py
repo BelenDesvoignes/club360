@@ -17,6 +17,37 @@ from ..models.suspension import Suspension
 from ..time_override import business_today, business_utcnow
 
 
+SUSPENSION_ABONO = "SUSPENSION_ABONO"
+PERDIDA_20 = "PERDIDA_20"
+ACTIVE_SUSPENSION_STATUS = "active"
+
+
+def _has_active_activity_suspension(
+    db: Session,
+    *,
+    user_id: int,
+    reason: str,
+    activity_id: int | None,
+) -> bool:
+    if activity_id is None:
+        return False
+
+    return (
+        db.query(Suspension)
+        .filter(
+            and_(
+                Suspension.user_id == user_id,
+                Suspension.reason == reason,
+                Suspension.activity_id == activity_id,
+                Suspension.status == ACTIVE_SUSPENSION_STATUS,
+                Suspension.end_date == None,
+            )
+        )
+        .first()
+        is not None
+    )
+
+
 def last_day_of_month(d: date) -> date:
     return date(d.year, d.month, monthrange(d.year, d.month)[1])
 
@@ -94,6 +125,17 @@ def get_subscription_quote(
     if not template:
         raise HTTPException(status_code=404, detail="Template no encontrado")
 
+    if _has_active_activity_suspension(
+        db,
+        user_id=user_id,
+        reason=SUSPENSION_ABONO,
+        activity_id=template.activity_id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No podés reservar abonos para este deporte porque tenés una suspensión activa.",
+        )
+
     valid_to = last_day_of_month(today)
 
     # IMPORTANT: Instancias se crean desde templates (admin), no desde abonos.
@@ -138,8 +180,14 @@ def get_subscription_quote(
             cancelled_prev = _count_cancelled_subscription_bookings_prev_month(
                 db, user_id=user_id, template_id=template_id, today=today
             )
-            if cancelled_prev >= 3:
-                discount_reason = "Sin descuento: perdiste el beneficio por cancelar 3 clases el mes anterior."
+            lost_discount = _has_active_activity_suspension(
+                db,
+                user_id=user_id,
+                reason=PERDIDA_20,
+                activity_id=template.activity_id,
+            )
+            if lost_discount or cancelled_prev >= 3:
+                discount_reason = "Sin descuento: perdiste el beneficio por 3 cancelaciones previas."
             else:
                 discount_percent = 20
                 discount_applied = True

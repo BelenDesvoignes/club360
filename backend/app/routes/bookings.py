@@ -10,8 +10,17 @@ from ..services import booking_service
 from ..auth_utils import get_user_id_from_token
 import datetime
 from ..time_override import business_today
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
+
+
+class ReservarAbonoRequest(BaseModel):
+    template_id: int
+
+
+class ReservarClaseRequest(BaseModel):
+    instance_id: int
 
 
 def _booking_status(booking: Booking) -> str:
@@ -45,6 +54,43 @@ def create_booking(
 
     booking = booking_service.create_booking(db, user_id=user_id, instance_id=inst_id, subscription_id=sub_id)
     return booking
+
+
+@router.post("/reservar-abono")
+def reservar_abono(
+    data: ReservarAbonoRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Reserva un abono aplicando las restricciones simplificadas del TP.
+
+    - SUSPENSION_ABONO bloquea.
+    - PERDIDA_20 no bloquea: desde el día 15 cobra 100% en vez de 80%.
+    """
+    user_id = _extract_user_id(authorization)
+    return booking_service.create_subscription_booking(
+        db=db,
+        user_id=user_id,
+        template_id=data.template_id,
+    )
+
+
+@router.post("/reservar-clase", response_model=BookingOut)
+def reservar_clase(
+    data: ReservarClaseRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Reserva una clase libre aplicando las restricciones simplificadas del TP.
+
+    SUSPENSION_CLASE_LIBRE bloquea. PERDIDA_20 no bloquea.
+    """
+    user_id = _extract_user_id(authorization)
+    return booking_service.create_free_class_booking(
+        db=db,
+        user_id=user_id,
+        instance_id=data.instance_id,
+    )
 
 
 @router.post("/reserve-with-credit", response_model=BookingOut)

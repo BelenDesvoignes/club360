@@ -89,6 +89,12 @@ def get_engine():
                 with _engine.begin() as connection:
                     connection.execute(text("ALTER TABLE users ADD COLUMN profile_photo_url TEXT"))
 
+        if inspector.has_table("suspensions"):
+            columns = {column["name"] for column in inspector.get_columns("suspensions")}
+            if "activity_id" not in columns:
+                with _engine.begin() as connection:
+                    connection.execute(text("ALTER TABLE suspensions ADD COLUMN activity_id INTEGER"))
+
     except Exception as exc:
         # Avoid leaking the full URL, but still provide useful diagnostics.
         raise RuntimeError(

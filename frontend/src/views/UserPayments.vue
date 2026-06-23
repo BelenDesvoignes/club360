@@ -10,7 +10,40 @@
       <p>Buscando movimientos financieros...</p>
     </div>
 
-    <div v-else-if="filteredPayments.length" class="table-wrapper">
+    <template v-else>
+    <section class="suspensions-section">
+      <div class="section-title-row">
+        <div>
+          <h2>Suspensiones</h2>
+          <p>Acá podés ver si tenés alguna suspensión activa pendiente de pago.</p>
+        </div>
+      </div>
+
+      <div v-if="activeSuspensions.length" class="suspensions-grid">
+        <article v-for="s in activeSuspensions" :key="s.id" class="suspension-card">
+          <div>
+            <span class="status-badge badge-danger">Activa</span>
+            <h3>{{ formatSuspensionReason(s) }}</h3>
+            <p>Desde: {{ formatDate(s.start_date) }}</p>
+          </div>
+          <div class="suspension-pay-box">
+            <strong>${{ Number(s.amount_due || 0) }}</strong>
+            <button
+              class="btn-primary-pay"
+              @click="openSuspensionPaymentFlow(s)"
+            >
+              Pagar multa 💳
+            </button>
+          </div>
+        </article>
+      </div>
+
+      <div v-else class="suspensions-empty">
+        No tenés suspensiones activas para pagar.
+      </div>
+    </section>
+
+    <div v-if="filteredPayments.length" class="table-wrapper">
       <table class="custom-table">
         <thead>
           <tr>
@@ -74,6 +107,7 @@
       <h2>No tienes pagos registrados aún</h2>
       <p>No encontramos ningún movimiento financiero asociado a tu cuenta actualmente.</p>
     </div>
+    </template>
 
     <PaymentModal
       v-model="isModalOpen"
@@ -92,6 +126,7 @@ import PaymentModal from '../components/PaymentModal.vue'
 
 const auth = useAuthStore()
 const payments = ref([])
+const suspensions = ref([])
 const loading = ref(false)
 
 const currentPage = ref(1)
@@ -107,6 +142,10 @@ const filteredPayments = computed(() => {
   return [...payments.value].sort((a, b) => {
     return new Date(b.date) - new Date(a.date)
   })
+})
+
+const activeSuspensions = computed(() => {
+  return suspensions.value.filter(s => String(s.status || '').toLowerCase() === 'active')
 })
 
 // Paginación reactiva sobre la lista
@@ -134,6 +173,30 @@ const formatDate = (dateStr) => {
   const d = date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const t = date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
   return `${d} - ${t}`
+}
+
+const getSportNameByActivityId = (activityId) => {
+  const sports = {
+    1: 'Fútbol',
+    2: 'Vóley',
+    3: 'Pádel',
+    4: 'Básquet'
+  }
+  return sports[Number(activityId)] || 'deporte'
+}
+
+const formatSuspensionReason = (suspensionOrReason) => {
+  const reason = typeof suspensionOrReason === 'object'
+    ? suspensionOrReason.reason
+    : suspensionOrReason
+  const activityId = typeof suspensionOrReason === 'object'
+    ? suspensionOrReason.activity_id
+    : null
+
+  if (reason === 'SUSPENSION_ABONO') return `Suspensión de abono ${getSportNameByActivityId(activityId)}`
+  if (reason === 'SUSPENSION_CLASE_LIBRE') return 'Suspensión de clase libre'
+  if (reason === 'PERDIDA_20') return 'Pérdida del 20% de descuento'
+  return reason || 'Suspensión'
 }
 
 const formatConcept = (payment) => {
@@ -190,14 +253,25 @@ const openPaymentFlow = (payment) => {
   isModalOpen.value = true
 }
 
+const openSuspensionPaymentFlow = (suspension) => {
+  activePaymentObject.value = {
+    ...suspension,
+    type: 'suspension_fine',
+  }
+  selectedPaymentAmount.value = Number(suspension.amount_due || 0)
+  selectedPaymentConcept.value = formatSuspensionReason(suspension)
+  isModalOpen.value = true
+}
+
 // Manejador de pago unificado y corregido sintácticamente
 const handlePaymentResult = async (result) => {
   if (result && result.status === 'Aprobado') {
     const paymentId = activePaymentObject.value?.id
+    const isSuspensionFine = activePaymentObject.value?.type === 'suspension_fine'
     const isAbono = activePaymentObject.value?.type === 'subscription'
 
     // Mutación visual rápida para optimizar la respuesta en la interfaz
-    const target = payments.value.find(p => p.id === paymentId)
+    const target = isSuspensionFine ? null : payments.value.find(p => p.id === paymentId)
     if (target) {
       target.status = 'completed' 
     }
@@ -205,7 +279,13 @@ const handlePaymentResult = async (result) => {
     try {
       loading.value = true
 
-      if (isAbono) {
+      if (isSuspensionFine) {
+        await api.post('/payments/pagar-suspension', {
+          suspension_id: activePaymentObject.value.id,
+          amount: Number(selectedPaymentAmount.value)
+        })
+        console.log('¡Suspensión pagada correctamente!')
+      } else if (isAbono) {
         await api.post(`/payments/me/complete-subscription/${paymentId}`)
         console.log('¡Suscripción y todas sus reservas mutadas con éxito!')
       } else {
@@ -252,8 +332,12 @@ const fetchPayments = async () => {
   try {
     currentPage.value = 1
     const userId = getUserIdFromExistingToken()
-    const response = await api.get(`/payments/user/${userId}`)
-    payments.value = response.data
+    const [paymentsResponse, suspensionsResponse] = await Promise.all([
+      api.get(`/payments/user/${userId}`),
+      api.get('/payments/me/suspensions')
+    ])
+    payments.value = paymentsResponse.data
+    suspensions.value = suspensionsResponse.data
   } catch (e) {
     console.error("Error cargando pagos:", e)
   } finally {
@@ -269,6 +353,16 @@ onMounted(fetchPayments)
 .payments-header { display: flex; flex-direction: column; align-items: flex-start; margin-bottom: 18px; }
 .payments-header h1 { font-size: 2.5rem; color: #2d658d; font-weight: 900; margin: 0 0 10px; }
 .payments-header p { font-size: 1.1rem; color: #5a8849; margin: 0; }
+.suspensions-section { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); padding: 22px; margin-bottom: 22px; }
+.section-title-row h2 { margin: 0 0 6px; color: #0d124a; font-size: 1.45rem; font-weight: 900; }
+.section-title-row p { margin: 0 0 16px; color: #64748b; }
+.suspensions-grid { display: grid; gap: 12px; }
+.suspension-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px; border: 1px solid #fee2e2; border-radius: 14px; background: #fff7f7; }
+.suspension-card h3 { margin: 10px 0 4px; color: #991b1b; font-size: 1.05rem; }
+.suspension-card p { margin: 0; color: #64748b; font-size: 0.9rem; }
+.suspension-pay-box { display: flex; align-items: center; gap: 14px; }
+.suspension-pay-box strong { color: #0d124a; font-size: 1.1rem; }
+.suspensions-empty { color: #64748b; padding: 14px 0 2px; font-weight: 600; }
 .table-wrapper { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); overflow: hidden; }
 .custom-table { width: 100%; border-collapse: collapse; text-align: left; margin: 0; }
 .custom-table th { background-color: #0d124a; color: #ffffff; padding: 16px 20px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }

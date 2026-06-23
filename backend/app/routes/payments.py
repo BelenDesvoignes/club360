@@ -1,12 +1,18 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+from pydantic import BaseModel
 from ..database import get_db
 from ..services import payment_service
 from ..schemas.payment import PaymentCompleteBookingRequest, PaymentResponse
 from ..auth_utils import get_user_id_from_token
 
 router = APIRouter()
+
+
+class PaySuspensionRequest(BaseModel):
+    suspension_id: int
+    amount: float = 0.0
 
 
 def _extract_user_id(authorization: str | None) -> int:
@@ -27,6 +33,30 @@ def get_user_payments(user_id: int, db: Session = Depends(get_db)):
     payments = payment_service.get_payments_by_user(db, user_id)
     # Si no hay pagos, devolvemos una lista vacía (es un resultado válido)
     return payments
+
+
+@router.get("/me/suspensions")
+def get_my_suspensions(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    user_id = _extract_user_id(authorization)
+    return payment_service.get_payable_suspensions_by_user(db, user_id)
+
+
+@router.post("/pagar-suspension")
+def pagar_suspension(
+    payload: PaySuspensionRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    user_id = _extract_user_id(authorization)
+    return payment_service.pay_suspension_fine(
+        db=db,
+        user_id=user_id,
+        suspension_id=payload.suspension_id,
+        amount=payload.amount,
+    )
 
 
 @router.post("/me/complete-booking", response_model=PaymentResponse)

@@ -8,6 +8,7 @@ class Suspension(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id_user"))
+    activity_id = Column(Integer, ForeignKey("activities.id"), nullable=True)
     reason = Column(String, nullable=False)
     start_date = Column(DateTime, default=datetime.utcnow)
     end_date = Column(DateTime, nullable=True)

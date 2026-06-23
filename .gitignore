@@ -235,4 +235,12 @@ dist/
 
 .env
 
-#xdddddddd
+# Local Pi / coding-agent runtime state
+.pi/
+.atl/
+.agents/
+openspec/
+
+# Pi/Gentle AI temporary artifacts
+*.pi.log
+pi-debug.log

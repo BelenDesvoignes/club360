@@ -30,7 +30,7 @@
     </header>
 
     <!-- Paso 1: elegir deporte -->
-    <div v-if="!selectedSportId && !loading && !userSuspended" class="sports-step">
+    <div v-if="!selectedSportId && !loading" class="sports-step">
       <div class="sports-grid">
         <button
           v-for="sport in sports"
@@ -56,7 +56,7 @@
     </div>
 
     <!-- Paso 2: tipo de reserva + filtro por día (solo si ya eligió deporte) -->
-    <div v-if="selectedSportId && !userSuspended" class="reservation-controls">
+    <div v-if="selectedSportId" class="reservation-controls">
       <div class="reserve-type">
         <button type="button" :class="{active: reservationType === 'class'}" @click="reservationType = 'class'">Reserva Única</button>
         <button type="button" :class="{active: reservationType === 'subscription'}" @click="reservationType = 'subscription'">Reservar Abono</button>
@@ -73,22 +73,9 @@
       <button type="button" class="change-sport" @click="clearSport">Cambiar deporte</button>
     </div>
 
-    <!-- Advertencia si está suspendido -->
-    <div v-if="userSuspended" class="suspension-warning">
-      <div class="warning-icon">🚫</div>
-      <div class="warning-content">
-        <h3>Tu cuenta está suspendida</h3>
-        <p>Debes solicitar reactivación para poder hacer nuevas reservas. Contacta al soporte para resolver esto.</p>
-      </div>
-    </div>
-
     <div v-if="loading" class="loading-spinner">Cargando clases disponibles...</div>
 
     <div v-else-if="isRefreshing" class="loading-refresh">Actualizando...</div>
-
-    <div v-else-if="userSuspended" class="suspended-block">
-      <p>No puedes hacer reservas mientras tu cuenta esté suspendida.</p>
-    </div>
 
     <div v-else-if="selectedSportId" class="classes-grid">
       <div
@@ -329,7 +316,6 @@ const bookingStatus = ref('')
 const successMessage = ref('')
 const errorMessage = ref('')
 const isRefreshing = ref(false)
-const userSuspended = ref(false)
 const isUserAbonado = ref(false)
 const subscriptionPurchasedThisMonth = ref(false)
 
@@ -628,26 +614,6 @@ const fetchActivities = async () => {
   }
 }
 
-const checkUserStatus = async () => {
-  try {
-    auth.hydrateFromToken()
-    const token = auth.token || localStorage.getItem('token')
-    
-    if (!token) return
-    
-    const res = await axios.get('/subscriptions/me/status', {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-
-    userSuspended.value = Boolean(res.data?.suspended)
-  } catch (e) {
-    if (handleAuthError(e)) return
-    console.error('Error al verificar estado:', e)
-  }
-}
-
 const fetchMyBookings = async ({ showRefresh = false } = {}) => {
   if (showRefresh) isRefreshing.value = true
   try {
@@ -884,6 +850,22 @@ const closePaymentModal = () => {
   subscriptionQuoteReason.value = ''
 }
 
+const canStartClassPayment = async (token) => {
+  const res = await axios.get('/payments/me/suspensions', {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+
+  const suspensions = Array.isArray(res.data) ? res.data : []
+  const classSuspension = suspensions.find(s => s.reason === 'SUSPENSION_CLASE_LIBRE')
+
+  if (classSuspension) {
+    errorMessage.value = 'No podés reservar clases libres porque tenés una suspensión activa para clases libres.'
+    return false
+  }
+
+  return true
+}
+
 async function finalizeBookingWithPayment() {
   auth.hydrateFromToken()
   const token = auth.token || localStorage.getItem('token')
@@ -1050,7 +1032,10 @@ const confirmBooking = async () => {
       return
     }
 
-    // No abonado: abrir PaymentModal.
+    // No abonado: primero validar suspensión, recién después abrir PaymentModal.
+    const canPay = await canStartClassPayment(token)
+    if (!canPay) return
+
     pendingPaymentAmount.value = computeAmountToPay()
     if (!pendingPaymentAmount.value) {
       errorMessage.value = 'No se pudo determinar el monto a pagar.'
@@ -1090,7 +1075,6 @@ onMounted(() => {
     .finally(() => {
       loading.value = false
     })
-  checkUserStatus()
   fetchMyBookings({ showRefresh: true })
 })
 </script>
