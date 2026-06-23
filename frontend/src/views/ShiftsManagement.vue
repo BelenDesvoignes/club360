@@ -109,7 +109,7 @@
                         <th>Nombre</th>
                         <th>Email</th>
                         <th>Origen</th>
-                        <th>Registrado</th>
+                        <th>Fecha</th>
                       </tr>
                     </thead>
                     <tbody>

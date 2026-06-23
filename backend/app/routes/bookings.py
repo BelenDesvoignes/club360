@@ -94,9 +94,10 @@ def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
         price = None
 
         if instance:
-            booking_date = instance.date
+            # Forzamos conversión a string de la fecha (YYYY-MM-DD) para que Javascript la digiera bien
+            booking_date = str(instance.date) if instance.date else None
             day_of_week = instance.template.day_of_week if instance.template else None
-            start_time = instance.template.start_time if instance.template else None
+            start_time = instance.template.start_time if instance.template else "00:00" # Evita NULL en JS
             price = float(instance.template.price) if instance.template and instance.template.price is not None else None
             if instance.template and instance.template.activity:
                 activity_name = instance.template.activity.name
@@ -108,14 +109,14 @@ def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
             "status": _booking_status(booking),
             "subscription_id": booking.subscription_id,
             "is_subscription": booking.subscription_id is not None,
-            "amount_paid": float(booking.amount_paid) if booking.amount_paid is not None else None,
-            "payment_status": booking.payment_status,
+            "amount_paid": float(booking.amount_paid) if booking.amount_paid is not None else 0.0,
+            "payment_status": booking.payment_status or "paid",
             "created_at": booking.created_at,
-            "activity_name": activity_name,
+            "activity_name": activity_name or f"Clase #{booking.instance_id}",
             "date": booking_date,
-            "day_of_week": day_of_week,
+            "day_of_week": day_of_week or "Sin especificar",
             "start_time": start_time,
-            "price": price,
+            "price": price or 0.0,
         })
 
     return result

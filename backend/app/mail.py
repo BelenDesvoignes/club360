@@ -148,3 +148,36 @@ async def send_template_cancellation(email: str, nombre: str, actividad: str, di
         server.starttls()
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_USER, email, msg.as_string())
+
+
+async def send_admin_waitlist_alert(admin_email: str, instance_id: int, count: int, actividad: str, fecha: str, hora: str):
+    """Notificación para los administradores cuando una lista de espera alcanza o supera las 10 personas."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Lista de espera con 10 inscripciones - CLUB360"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = admin_email
+
+    html = f"""
+        <h2>Alerta de alta demanda - CLUB360</h2>
+        <p>Te informamos que la lista de espera para una clase ha alcanzado las 10 inscripciones.</p>
+        
+        <div style="background-color: #fff7ed; border-left: 5px solid #ff6f00; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <strong style="color: #b45309; font-size: 1.1rem;">Detalles del Turno:</strong><br>
+            <p style="margin: 5px 0; color: #4b5563;">
+                <strong>Actividad:</strong> {actividad}<br>
+                <strong>Fecha:</strong> {fecha}<br>
+                <strong>Horario:</strong> {hora} hs<br>
+                <strong>Inscriptos en espera:</strong> <span style="font-weight: 800; color: #dc2626;">{count} usuarios</span>
+            </p>
+        </div>
+        
+        <p> Considerá evaluar la apertura de un nuevo turno o ampliar el cupo de la clase si la tendencia se mantiene.</p>
+        <br>
+        <p style="font-size: 12px; color: #9ca3af;">— Sistema de Alertas Automáticas CLUB360</p>
+    """
+    msg.attach(MIMEText(html, "html"))
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_USER, admin_email, msg.as_string())

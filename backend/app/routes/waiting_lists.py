@@ -29,7 +29,7 @@ def get_instance_waiting_list(
     return WaitingListService.get_waiting_list_by_instance(db, instance_id)
 
 @router.post("/join", response_model=WaitingListResponse, status_code=status.HTTP_201_CREATED)
-def join_class_waiting_list(
+async def join_class_waiting_list( 
     instance_id: int, 
     db: Session = Depends(get_db),
     user_id: int = Depends(get_user_id_from_token)  
@@ -38,7 +38,8 @@ def join_class_waiting_list(
     Permite a un cliente autenticado anotarse en la lista de espera 
     de una clase cuyo cupo esté totalmente completo.
     """
-    new_entry = WaitingListService.join_waiting_list(
+    
+    new_entry = await WaitingListService.join_waiting_list(
         db=db, 
         user_id=user_id, 
         instance_id=instance_id
@@ -104,4 +105,4 @@ async def reject_promotion(
     El token viene del link del email, no requiere autenticación.
     """
     await WaitingListService.reject_promotion(db, reject_token)
-    return {"message": "Promoción rechazada. Continuamos con el siguiente en la lista."}
+    return {"message": "Inscripción rechazada. Continuamos con el siguiente en la lista."}
