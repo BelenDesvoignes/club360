@@ -14,6 +14,48 @@ import secrets
 import os
 
 class WaitingListService:
+    @staticmethod
+    def get_promotion_offer(db: Session, token: str, authenticated_user_id: int | None = None) -> dict:
+        entry = (
+            db.query(WaitingList)
+            .options(joinedload(WaitingList.instance).joinedload(ShiftInstance.template))
+            .filter(WaitingList.promotion_token == token)
+            .first()
+        )
+
+        if not entry:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Token inválido o expirado."
+            )
+
+        now = business_utcnow()
+        if entry.promotion_expires_at and now > entry.promotion_expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La oferta de promoción expiró. El cupo fue asignado al siguiente en la fila."
+            )
+
+        if entry.status != "notified":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Esta entrada ya fue procesada."
+            )
+
+        instance = entry.instance
+        template = instance.template if instance else None
+        activity = template.activity if template and template.activity else None
+
+        return {
+            "id": entry.id,
+            "instance_id": entry.instance_id,
+            "activity_name": activity.name if activity else "Actividad",
+            "date": instance.date if instance else None,
+            "start_time": template.start_time if template else None,
+            "price": float(template.price or 0) if template else 0.0,
+            "expires_at": entry.promotion_expires_at,
+            "owner_mismatch": authenticated_user_id is not None and authenticated_user_id != entry.user_id,
+        }
 
     @staticmethod
     def get_waiting_list_by_instance(db: Session, instance_id: int) -> List[WaitingList]:
@@ -209,7 +251,7 @@ class WaitingListService:
                 raise
 
     @staticmethod
-    def accept_promotion(db: Session, accept_token: str) -> Booking:
+    def accept_promotion(db: Session, accept_token: str, authenticated_user_id: int | None = None) -> Booking:
         """
         Acepta la promoción de la lista de espera y crea la Booking.
         Retorna la Booking creada.
@@ -235,11 +277,23 @@ class WaitingListService:
                 detail="Esta entrada ya fue procesada."
             )
 
+        if authenticated_user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Iniciá sesión para aceptar y pagar este cupo."
+            )
+
+        if entry.user_id != authenticated_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Este cupo pertenece a otro socio. Iniciá sesión con la cuenta anotada en la lista de espera."
+            )
+
         new_booking = Booking(
             user_id=entry.user_id,
             instance_id=entry.instance_id,
-            status="Confirmed",
-            payment_status="paid",
+            status="Pending",
+            payment_status="partial",
             amount_paid=0.0,
             subscription_id=entry.subscription_id,
             created_at=now  

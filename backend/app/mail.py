@@ -1,4 +1,5 @@
 # api/backend/app/mail.py
+import asyncio
 import smtplib
 import os
 from email.mime.text import MIMEText
@@ -10,6 +11,18 @@ load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+
+
+def _send_message_sync(to_email: str, msg: MIMEMultipart):
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_USER, to_email, msg.as_string())
+
+
+async def _send_message(to_email: str, msg: MIMEMultipart):
+    await asyncio.to_thread(_send_message_sync, to_email, msg)
+
 
 async def send_reset_code(email: str, code: str):
     msg = MIMEMultipart("alternative")
@@ -25,10 +38,7 @@ async def send_reset_code(email: str, code: str):
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_USER, email, msg.as_string())
+    await _send_message(email, msg)
 
 async def send_shift_cancellation(email: str, nombre: str, actividad: str, fecha: str, hora: str):
     """Notificación para cancelación de una clase puntual."""
@@ -48,10 +58,7 @@ async def send_shift_cancellation(email: str, nombre: str, actividad: str, fecha
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_USER, email, msg.as_string())
+    await _send_message(email, msg)
 
 
 async def send_waitlist_promotion_offer(
@@ -69,12 +76,11 @@ async def send_waitlist_promotion_offer(
     msg["From"] = f"CLUB360 <{GMAIL_USER}>"
     msg["To"] = email
 
-    accept_link = f"{frontend_url}/waitlist-accept/{token}"
-    reject_link = f"{frontend_url}/waitlist-reject/{token}"
+    offer_link = f"{frontend_url}/waitlist-accept/{token}"
 
     html = f"""
         <h2>¡Hola {nombre}!</h2>
-        <p>Se liberó un cupo en la clase que solicitaste. ¡Tienes una oportunidad!</p>
+        <p>Se liberó un cupo en la clase que solicitaste. ¡Tenés una oportunidad!</p>
         
         <p>
             <strong>Actividad:</strong> {actividad}<br>
@@ -86,7 +92,7 @@ async def send_waitlist_promotion_offer(
         pasaremos al siguiente en la lista de espera.</p>
         
         <div style="margin: 20px 0;">
-            <a href="{accept_link}" style="
+            <a href="{offer_link}" style="
                 display: inline-block; 
                 background-color: #5a8849; 
                 color: white; 
@@ -94,25 +100,13 @@ async def send_waitlist_promotion_offer(
                 border-radius: 8px; 
                 text-decoration: none; 
                 font-weight: bold;
-                margin-right: 10px;
             ">
-                Aceptar cupo
-            </a>
-            <a href="{reject_link}" style="
-                display: inline-block; 
-                background-color: #9ca3af; 
-                color: white; 
-                padding: 12px 24px; 
-                border-radius: 8px; 
-                text-decoration: none; 
-                font-weight: bold;
-            ">
-                Rechazar cupo
+                Ingresar a CLUB360
             </a>
         </div>
         
         <p style="font-size: 12px; color: #6b7280;">
-            Si tienes problemas con los enlaces, puedes responder a este email o contactar 
+            Si tenés problemas con los enlaces, podés responder a este email o contactar 
             directamente a soporte en CLUB360.
         </p>
         
@@ -120,10 +114,7 @@ async def send_waitlist_promotion_offer(
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_USER, email, msg.as_string())
+    await _send_message(email, msg)
 
 
 async def send_template_cancellation(email: str, nombre: str, actividad: str, dia: str, hora: str):
@@ -144,10 +135,7 @@ async def send_template_cancellation(email: str, nombre: str, actividad: str, di
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_USER, email, msg.as_string())
+    await _send_message(email, msg)
 
 
 async def send_admin_waitlist_alert(admin_email: str, instance_id: int, count: int, actividad: str, fecha: str, hora: str):
@@ -177,7 +165,4 @@ async def send_admin_waitlist_alert(admin_email: str, instance_id: int, count: i
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_USER, admin_email, msg.as_string())
+    await _send_message(admin_email, msg)

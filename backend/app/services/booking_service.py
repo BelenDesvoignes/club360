@@ -181,7 +181,7 @@ def create_booking(db: Session, user_id: int, instance_id: int | None, subscript
     if existing_booking:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ya tienes una reserva para este turno"
+            detail="Ya tenés una reserva para este turno"
         )
     
     # Rule 2: Check capacity

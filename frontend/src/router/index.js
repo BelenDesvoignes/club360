@@ -56,7 +56,7 @@ const routes = [
     path: '/waitlist-accept/:token',
     name: 'WaitlistPromotionAccept',
     component: WaitlistPromotionAccept,
-    meta: { headerTitle: 'Aceptar promoción' }
+    meta: { headerTitle: 'Lista de espera', hideDateControl: true, hideHeaderTitle: true }
   },
   {
     path: '/waitlist-reject/:token',
@@ -120,7 +120,9 @@ router.beforeEach((to, from, next) => {
   
   // 1. Control de Autenticación básica
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    next('/login')
+    sessionStorage.setItem('club360_post_login_redirect', to.fullPath)
+    localStorage.setItem('club360_post_login_redirect', to.fullPath)
+    next({ path: '/login', query: { redirect: to.fullPath } })
     return
   }
 

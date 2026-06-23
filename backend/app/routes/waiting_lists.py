@@ -38,7 +38,6 @@ async def join_class_waiting_list(
     Permite a un cliente autenticado anotarse en la lista de espera 
     de una clase cuyo cupo esté totalmente completo.
     """
-    
     new_entry = await WaitingListService.join_waiting_list(
         db=db, 
         user_id=user_id, 
@@ -65,18 +64,32 @@ def leave_waiting_list(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.get("/offer/{token}", status_code=status.HTTP_200_OK)
+def get_promotion_offer(
+    token: str,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_user_id_from_token)
+):
+    """
+    Devuelve el detalle de la oferta para mostrar aceptar/rechazar dentro de la app.
+    El token viene del link del email, no requiere autenticación.
+    """
+    return WaitingListService.get_promotion_offer(db, token, authenticated_user_id=user_id)
+
+
 @router.post("/accept/{accept_token}", response_model=BookingListOut, status_code=status.HTTP_201_CREATED)
 def accept_promotion(
     accept_token: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_user_id_from_token)
 ):
     """
     Acepta la promoción desde la lista de espera.
-    El token viene del link del email, no requiere autenticación.
+    El token viene del link del email y la aceptación requiere la cuenta del socio.
     """
     from ..models.shift_instance import ShiftInstance
     
-    booking = WaitingListService.accept_promotion(db, accept_token)
+    booking = WaitingListService.accept_promotion(db, accept_token, authenticated_user_id=user_id)
     
     # Enriquecer booking con datos de la instancia
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
