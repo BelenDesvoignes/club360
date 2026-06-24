@@ -19,6 +19,8 @@ import MyBookings from '../views/MyBookings.vue'
 import ClassBooking from '../views/ClassBooking.vue'
 import AddCard from '../views/AddCard.vue'
 import MyProfile from '../views/MyProfile.vue'
+import WaitlistPromotionAccept from '../views/WaitlistPromotionAccept.vue'
+import WaitlistPromotionReject from '../views/WaitlistPromotionReject.vue'
 
 const routes = [
   { path: '/', component: Home, meta: { headerTitle: 'CLUB360' } },
@@ -47,6 +49,20 @@ const routes = [
     name: 'ClientDashboard',
     component: ClientDashboard,
     meta: { requiresAuth: true, headerTitle: 'Mi espacio' }
+  },
+
+  // RUTAS PARA NOTIFICACIONES DE LISTA DE ESPERA (No requieren auth)
+  {
+    path: '/waitlist-accept/:token',
+    name: 'WaitlistPromotionAccept',
+    component: WaitlistPromotionAccept,
+    meta: { headerTitle: 'Lista de espera', hideDateControl: true, hideHeaderTitle: true }
+  },
+  {
+    path: '/waitlist-reject/:token',
+    name: 'WaitlistPromotionReject',
+    component: WaitlistPromotionReject,
+    meta: { headerTitle: 'Rechazar promoción' }
   },
 
   // RUTAS DE ADMINISTRADOR
@@ -104,7 +120,9 @@ router.beforeEach((to, from, next) => {
   
   // 1. Control de Autenticación básica
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    next('/login')
+    sessionStorage.setItem('club360_post_login_redirect', to.fullPath)
+    localStorage.setItem('club360_post_login_redirect', to.fullPath)
+    next({ path: '/login', query: { redirect: to.fullPath } })
     return
   }
 

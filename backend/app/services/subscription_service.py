@@ -179,6 +179,7 @@ class PurchaseResult:
     skipped_full: int
     skipped_existing: int
     instances_created: int
+    waitlist_created: int = 0
 
 
 def purchase_subscription_and_reserve(
@@ -237,6 +238,8 @@ def purchase_subscription_and_reserve(
         date=purchase_dt,
     )
 
+    from .waiting_list_service import WaitingListService
+
     try:
         db.add(subscription)
         db.add(payment)
@@ -246,6 +249,7 @@ def purchase_subscription_and_reserve(
         skipped_existing = 0
         skipped_full = 0
 
+        waitlist_created = 0
         for instance in instances:
             existing_booking = (
                 db.query(Booking)
@@ -281,13 +285,21 @@ def purchase_subscription_and_reserve(
                 )
 
             if booked_count >= capacity:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        "No hay cupos disponibles para asegurar el mes completo en este horario "
-                        f"(sin cupo el {instance.date})."
-                    ),
-                )
+                # Crear entrada en lista de espera para este usuario y esta instancia
+                try:
+                    WaitingListService.join_waiting_list(
+                        db=db,
+                        user_id=user_id,
+                        instance_id=instance.id,
+                        entry_type="subscription",
+                        subscription_id=subscription.id,
+                    )
+                    waitlist_created += 1
+                    skipped_full += 1
+                except HTTPException as wle:
+                    # Si no se pudo crear la entrada de waitlist, abortar toda la compra
+                    raise
+                continue
 
             db.add(
                 Booking(
@@ -313,6 +325,7 @@ def purchase_subscription_and_reserve(
             skipped_full=skipped_full,
             skipped_existing=skipped_existing,
             instances_created=instances_created,
+            waitlist_created=waitlist_created,
         )
     except HTTPException:
         db.rollback()
@@ -563,6 +576,10 @@ def purchase_half_month_subscription_and_reserve(
         skipped_existing = 0
         skipped_full = 0
 
+        from .waiting_list_service import WaitingListService
+
+        waitlist_created = 0
+
         for instance in instances:
             existing_booking = (
                 db.query(Booking)
@@ -591,10 +608,19 @@ def purchase_half_month_subscription_and_reserve(
             )
 
             if booked_count >= instance.capacity:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"No hay cupos disponibles para el turno del {instance.date}.",
-                )
+                try:
+                    WaitingListService.join_waiting_list(
+                        db=db,
+                        user_id=user_id,
+                        instance_id=instance.id,
+                        entry_type="subscription",
+                        subscription_id=subscription.id,
+                    )
+                    waitlist_created += 1
+                    skipped_full += 1
+                except HTTPException:
+                    raise
+                continue
 
             db.add(
                 Booking(
@@ -620,6 +646,7 @@ def purchase_half_month_subscription_and_reserve(
             skipped_full=skipped_full,
             skipped_existing=skipped_existing,
             instances_created=0,
+            waitlist_created=waitlist_created,
         )
     except HTTPException:
         db.rollback()

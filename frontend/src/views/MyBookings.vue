@@ -259,8 +259,12 @@ const sortBookings = (list) => {
       return groupA - groupB
     }
 
-    const dateA = new Date(`${a.date}T${a.start_time}`)
-    const dateB = new Date(`${b.date}T${b.start_time}`)
+    // Parche de seguridad por si los strings fallan
+    const strA = a.date && a.start_time ? `${a.date}T${a.start_time}` : '1970-01-01T00:00:00'
+    const strB = b.date && b.start_time ? `${b.date}T${b.start_time}` : '1970-01-01T00:00:00'
+
+    const dateA = new Date(strA)
+    const dateB = new Date(strB)
 
     return dateA - dateB
   })
