@@ -1,4 +1,3 @@
-# api/backend/app/mail.py
 import asyncio
 import smtplib
 import os
@@ -39,6 +38,7 @@ async def send_reset_code(email: str, code: str):
     msg.attach(MIMEText(html, "html"))
 
     await _send_message(email, msg)
+
 
 async def send_shift_cancellation(email: str, nombre: str, actividad: str, fecha: str, hora: str):
     """Notificación para cancelación de una clase puntual."""
@@ -166,3 +166,23 @@ async def send_admin_waitlist_alert(admin_email: str, instance_id: int, count: i
     msg.attach(MIMEText(html, "html"))
 
     await _send_message(admin_email, msg)
+
+
+async def send_price_update(email: str, nombre: str, actividad: str, nuevo_precio: float):
+    """Notificación para actualización de precio de una actividad."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Actualización de precio - {actividad}"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = email
+
+    html = f"""
+        <h2>Hola {nombre},</h2>
+        <p>Te informamos que el precio de la actividad <strong>{actividad}</strong> ha sido actualizado.</p>
+        <p>El nuevo precio es: <strong>${nuevo_precio:.2f}</strong>.</p>
+        <br>
+        <p>— El equipo de CLUB360</p>
+    """
+    msg.attach(MIMEText(html, "html"))
+
+    # Actualizado para usar la infraestructura async
+    await _send_message(email, msg)
