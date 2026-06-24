@@ -26,7 +26,7 @@
               v-for="credit in sortedCredits" 
               :key="credit.id" 
               class="credit-row"
-              :class="{ 'credit-row-used': isCreditUsed(credit.id) }"
+              :class="{ 'credit-row-used': isCreditUsed(credit.id), 'credit-row-expired': isCreditExpired(credit) }"
             >
               <div class="sport-container">
                 <span class="sport-name">{{ credit.activity_name || getSportName(credit.activity_id) }}</span>
@@ -35,18 +35,20 @@
               <div class="expiry-container">
                 <div class="expiry-info">
                   <span class="expiry-label">Vence el:</span>
-                  <span class="expiry-date" v-if="!isCreditUsed(credit.id)">{{ formatDate(credit.expiry_date) }}</span>
-                  <span class="used-label" v-else>Crédito usado en esta sesión</span>
+                  <span class="used-label" v-if="isCreditUsed(credit.id)">Crédito usado en esta sesión</span>
+                  <span class="expiry-date" v-else>{{ formatDate(credit.expiry_date) }}</span>
                 </div>
               </div>
 
               <div class="action-container">
+                <span v-if="isCreditExpired(credit)" class="expired-action">Expirado</span>
                 <button 
+                  v-else
                   @click="handleReserveWithCredit(credit)" 
                   class="primary"
                   :disabled="isCreditUsed(credit.id)"
                 >
-                  {{ isCreditUsed(credit.id) ? 'Usado' : 'Solicitar clase con crédito' }}
+                  {{ isCreditUsed(credit.id) ? 'Usado' : 'Reservar clase con crédito' }}
                 </button>
               </div>
             </div>
@@ -127,7 +129,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
+import { useAppClockStore } from '../stores/appClock'
 
+const appClock = useAppClockStore()
 const loading = ref(true)
 const rawCredits = ref([])
 const myBookings = ref([]) 
@@ -144,6 +148,10 @@ const reservationSuccess = ref(false)
 
 const sortedCredits = computed(() => {
   return [...rawCredits.value].sort((a, b) => {
+    const aExpired = isCreditExpired(a)
+    const bExpired = isCreditExpired(b)
+    if (aExpired !== bExpired) return aExpired ? 1 : -1
+
     if (!a.expiry_date) return 1
     if (!b.expiry_date) return -1
     return new Date(a.expiry_date) - new Date(b.expiry_date)
@@ -177,6 +185,13 @@ const isCreditUsed = (creditId) => {
   return usedCreditIds.value.includes(creditId)
 }
 
+const isValidIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim())
+
+const isCreditExpired = (credit) => {
+  if (!credit?.expiry_date || !isValidIsoDate(credit.expiry_date)) return false
+  return credit.expiry_date <= appClock.effectiveTodayStr
+}
+
 const getDayOfWeekName = (dateStr) => {
   if (!dateStr) return 'Día a confirmar'
   const [year, month, day] = dateStr.split('-').map(Number)
@@ -195,7 +210,7 @@ const fetchMyCredits = async () => {
     })
     rawCredits.value = res.data || []
   } catch (error) {
-    console.error("Error al obtener los créditos del backend:", error)
+    console.error("Error al obtener los créditos:", error)
   } finally {
     loading.value = false
   }
@@ -242,7 +257,7 @@ const formatDate = (dateStr) => {
 }
 
 const handleReserveWithCredit = async (credit) => {
-  if (isCreditUsed(credit.id)) return
+  if (isCreditUsed(credit.id) || isCreditExpired(credit)) return
   selectedCredit.value = credit
   selectedInstanceId.value = null
   
@@ -295,7 +310,10 @@ const confirmReservation = async () => {
 
   } catch (error) {
     const errorDetail = error.response?.data?.detail || "No se pudo procesar la reserva con crédito"
-    alert(`Error: ${errorDetail}`)
+    const message = errorDetail.includes("No hay cupos disponibles")
+      ? "Error al reservar. No hay cupos disponibles"
+      : `Error: ${errorDetail}`
+    alert(message)
     console.error("Error en reserva por crédito:", error.response)
   } finally {
     submittingReservation.value = false
@@ -365,9 +383,9 @@ onMounted(() => {
 }
 
 .credit-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.8fr) minmax(220px, auto);
   align-items: center;
-  justify-content: space-between;
   padding: 16px 8px;
   border-bottom: 1px solid rgba(13, 18, 74, 0.08);
   gap: 20px;
@@ -383,10 +401,18 @@ onMounted(() => {
   opacity: 0.65;
 }
 
+.credit-row-expired {
+  background-color: #f9fafb;
+  opacity: 0.62;
+}
+
+.credit-row-expired .sport-name {
+  color: #6b7280;
+}
+
 .sport-container {
   display: flex;
   align-items: center;
-  flex: 1;
   min-width: 180px;
 }
 
@@ -400,7 +426,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1;
   min-width: 160px;
 }
 
@@ -427,6 +452,22 @@ onMounted(() => {
   font-size: 0.9rem;
   font-weight: 700;
   color: #6b7280;
+}
+
+.expired-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 44px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #6b7280;
+}
+
+.action-container {
+  display: flex;
+  justify-content: flex-start;
+  min-width: 220px;
 }
 
 .primary {
@@ -699,7 +740,7 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .credit-row {
-    flex-direction: column;
+    grid-template-columns: 1fr;
     align-items: flex-start;
     padding: 16px 4px;
     gap: 14px;
@@ -712,6 +753,9 @@ onMounted(() => {
   .primary {
     width: 100%;
     text-align: center;
+  }
+  .expired-action {
+    width: 100%;
   }
   .modal-content {
     width: 92%;

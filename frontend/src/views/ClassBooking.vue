@@ -591,7 +591,7 @@ const parseLocalDate = (dateStr) => {
 }
 
 const isFullyBooked = (instance) => {
-  return instance.booked_count >= instance.template.capacity
+  return instance.has_active_waiting_queue || instance.booked_count >= instance.template.capacity
 }
 
 const availableSlotsCount = (activity) => {

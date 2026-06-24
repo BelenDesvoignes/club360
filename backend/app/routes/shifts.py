@@ -5,12 +5,13 @@ from datetime import date
 from ..models.shift_instance import ShiftInstance
 from ..models.booking import Booking
 from ..models.activity import Activity
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from ..database import get_db
 from ..schemas.shifts import ShiftTemplateCreate, ShiftTemplateOut, ShiftDetailResponse
 from ..models.shift_template import ShiftTemplate
+from ..models.waiting_list import WaitingList
 from ..services import shift_service
-from ..time_override import business_today
+from ..time_override import business_today, business_utcnow
 
 router = APIRouter(prefix="/shifts", tags=["shifts"])
 
@@ -110,11 +111,11 @@ def reactivate_template(template_id: int, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"Error al rehabilitar el turno: {str(e)}"
+            detail=f"Error al reactivar el turno: {str(e)}"
         )
 
     return {
-        "message": "Turno rehabilitado correctamente.",
+        "message": "Turno reactivado correctamente.",
         "created_instances": len(created_instances),
     }
 
@@ -140,6 +141,28 @@ def get_instances(db: Session = Depends(get_db)):
         .subquery()
     )
 
+    now = business_utcnow()
+    active_waiting_sq = (
+        db.query(
+            WaitingList.instance_id,
+            func.count(WaitingList.id).label('count')
+        )
+        .filter(
+            or_(
+                WaitingList.status == "waiting",
+                and_(
+                    WaitingList.status == "notified",
+                    or_(
+                        WaitingList.promotion_expires_at == None,
+                        WaitingList.promotion_expires_at >= now,
+                    ),
+                ),
+            )
+        )
+        .group_by(WaitingList.instance_id)
+        .subquery()
+    )
+
     result = (
         db.query(
             ShiftInstance.id,
@@ -154,11 +177,13 @@ def get_instances(db: Session = Depends(get_db)):
             ShiftTemplate.price,
             Activity.name.label('activity_name'),
             Activity.court.label('court'),
-            func.coalesce(booking_count_sq.c.count, 0).label('booked_count')
+            func.coalesce(booking_count_sq.c.count, 0).label('booked_count'),
+            func.coalesce(active_waiting_sq.c.count, 0).label('active_waiting_count')
         )
         .join(ShiftTemplate, ShiftInstance.template_id == ShiftTemplate.id)
         .join(Activity, ShiftTemplate.activity_id == Activity.id)
         .outerjoin(booking_count_sq, ShiftInstance.id == booking_count_sq.c.instance_id)
+        .outerjoin(active_waiting_sq, ShiftInstance.id == active_waiting_sq.c.instance_id)
         .filter(Activity.is_active == True)
         .filter(ShiftTemplate.is_active == True)
         .filter(ShiftInstance.date >= business_today())
@@ -174,6 +199,7 @@ def get_instances(db: Session = Depends(get_db)):
             "date": str(row.date),
             "is_cancelled": row.is_cancelled,
             "booked_count": row.booked_count if row.booked_count else 0,
+            "has_active_waiting_queue": bool(row.active_waiting_count),
             "activity_name": row.activity_name or f"Actividad {row.activity_id}",
             "court": row.court or "",
             "capacity": row.instance_capacity,

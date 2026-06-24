@@ -35,7 +35,7 @@ def consumir_credito_individual(db: Session, credit_id: int, user_id: int, activ
         else:
             fecha_vencimiento = credit.expiry_date 
 
-        if fecha_vencimiento < hoy_local:
+        if fecha_vencimiento <= hoy_local:
             raise HTTPException(status_code=400, detail="El crédito se encuentra vencido.")
 
     credit.is_used = True
