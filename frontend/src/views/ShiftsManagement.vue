@@ -73,12 +73,12 @@
                   {{ shift.is_cancelled ? 'Cancelada' : 'Cancelar' }}
                 </button>
                 <button
+                  v-if="isFullyBooked(shift) && !shift.is_cancelled"
                   @click="viewWaitingList(shift)"
                   class="btn-table-cancel"
-                  :disabled="shift.is_cancelled"
-                  title="Ver lista de espera"
+                  title="Lista de espera"
                 >
-                  Ver lista de espera
+                  Lista de espera
                 </button>
               </td>
             </tr>
@@ -237,6 +237,12 @@ const waitlistForActivity = ref('')
 const confirmCancel = (shift) => {
   instanceToDelete.value = shift
   showConfirmModal.value = true
+}
+
+const isFullyBooked = (shift) => {
+  const bookedCount = Number(shift?.booked_count ?? 0)
+  const capacity = Number(shift?.capacity ?? shift?.template?.capacity ?? 0)
+  return Boolean(shift?.has_active_waiting_queue) || (capacity > 0 && bookedCount >= capacity)
 }
 
 // CANCELACIÓN 

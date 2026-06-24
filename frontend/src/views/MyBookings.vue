@@ -111,14 +111,17 @@
     />
 
     <transition name="fade">
-      <div v-if="showCancelModal" class="modal-overlay" @click="showCancelModal = false">
+      <div v-if="showCancelModal" class="modal-overlay" @click="closeCancelModal">
         <div class="modal-content" @click.stop>
           <div class="modal-icon warning">⚠️</div>
           <h2>¿Cancelar reserva?</h2>
           <p>Esta acción no se puede deshacer. ¿Estás seguro de que deseas cancelar esta reserva?</p>
           <div class="modal-actions">
-            <button @click="showCancelModal = false" class="btn btn-secondary">No, mantenerla</button>
-            <button @click="confirmCancel" class="btn btn-danger">Sí, cancelar</button>
+            <button @click="closeCancelModal" class="btn btn-secondary" :disabled="cancellingBooking">No, mantenerla</button>
+            <button @click="confirmCancel" class="btn btn-danger" :disabled="cancellingBooking">
+              <span v-if="cancellingBooking" class="btn-spinner"></span>
+              <span>{{ cancellingBooking ? 'Cancelando...' : 'Sí, cancelar' }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -164,6 +167,7 @@ const successMessage = ref('')
 const errorMessage = ref('')
 const showCancelModal = ref(false)
 const bookingToCancel = ref(null)
+const cancellingBooking = ref(false)
 
 const showGatewayModal = ref(false)
 const pendingPaymentAmount = ref(0)
@@ -291,8 +295,15 @@ const cancelBooking = (bookingId) => {
   showCancelModal.value = true
 }
 
-const confirmCancel = async () => {
+const closeCancelModal = () => {
+  if (cancellingBooking.value) return
   showCancelModal.value = false
+}
+
+const confirmCancel = async () => {
+  if (cancellingBooking.value || !bookingToCancel.value) return
+
+  cancellingBooking.value = true
   try {
     auth.hydrateFromToken()
     const res = await api.post(`/bookings/${bookingToCancel.value}/cancel`)
@@ -309,6 +320,10 @@ const confirmCancel = async () => {
   } catch (e) {
     errorMessage.value = e.response?.data?.detail || 'Error al cancelar la reserva'
     console.error('Error al cancelar:', e)
+  } finally {
+    cancellingBooking.value = false
+    showCancelModal.value = false
+    bookingToCancel.value = null
   }
 }
 
@@ -464,15 +479,18 @@ onMounted(() => {
 .modal-content h2 { margin: 0 0 10px; color: #0d124a; }
 .modal-content p { color: #6c757d; margin: 0 0 20px; line-height: 1.5; }
 .modal-actions { display: flex; gap: 10px; justify-content: center; }
-.btn { padding: 10px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: all 0.3s ease; text-decoration: none; display: inline-block; }
+.btn { padding: 10px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: all 0.3s ease; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn:disabled { opacity: 0.7; cursor: not-allowed; }
 .btn-primary { background: #007bff; color: white; }
 .btn-primary:hover { background: #0056b3; }
 .btn-secondary { background: #6c757d; color: white; }
-.btn-secondary:hover { background: #5a6268; }
+.btn-secondary:hover:not(:disabled) { background: #5a6268; }
 .btn-success { background: #28a745; color: white; }
 .btn-success:hover { background: #1e7e34; }
 .btn-danger { background: #dc3545; color: white; }
-.btn-danger:hover { background: #a71d2a; }
+.btn-danger:hover:not(:disabled) { background: #a71d2a; }
+.btn-spinner { width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #ffffff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .btn-sm { padding: 8px 12px; font-size: 0.85rem; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }

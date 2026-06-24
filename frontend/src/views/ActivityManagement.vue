@@ -127,8 +127,8 @@
                 <td>{{ item.time }}hs</td>
                 <td>{{ item.capacity }}</td>
                 <td class="actions-cell">
-                  <button @click="reactivateTemplate(item.templateId)" class="reactivate-btn" title="Rehabilitar">
-                    Rehabilitar
+                  <button @click="reactivateTemplate(item.templateId)" class="reactivate-btn" title="Reactivar">
+                    Reactivar
                   </button>
                 </td>
               </tr>
@@ -444,15 +444,15 @@ const reactivateTemplate = async (templateId) => {
 
   try {
     startOperationFeedback(
-      'Rehabilitando turno',
-      'Estamos rehabilitando el turno y creando las clases'
+      'Reactivando turno',
+      'Estamos reactivando el turno y creando las clases'
     )
     const res = await api.patch(`/shifts/templates/${templateId}/reactivate`)
     await Promise.all([fetchActivities(), fetchInactiveTemplates()])
-    showMessage(res.data.message || 'Turno rehabilitado correctamente', 'success')
+    showMessage(res.data.message || 'Turno reactivado correctamente', 'success')
   } catch (e) {
     console.error(e)
-    showMessage(e.response?.data?.detail || 'No se pudo rehabilitar el turno.', 'error')
+    showMessage(e.response?.data?.detail || 'No se pudo reactivar el turno.', 'error')
   } finally {
     loading.value = false
     stopOperationFeedback()

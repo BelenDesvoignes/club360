@@ -1,4 +1,4 @@
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
 from ..models.waiting_list import WaitingList
@@ -84,7 +84,22 @@ class WaitingListService:
             Booking.status != "Cancelled"
         ).count()
 
-        if booked_count < instance.capacity:
+        now = business_utcnow()
+        has_active_queue = db.query(WaitingList).filter(
+            WaitingList.instance_id == instance_id,
+            or_(
+                WaitingList.status == "waiting",
+                and_(
+                    WaitingList.status == "notified",
+                    or_(
+                        WaitingList.promotion_expires_at == None,
+                        WaitingList.promotion_expires_at >= now,
+                    ),
+                ),
+            )
+        ).first() is not None
+
+        if booked_count < instance.capacity and not has_active_queue:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="La clase aún tiene cupos disponibles. Realizá una reserva directa."

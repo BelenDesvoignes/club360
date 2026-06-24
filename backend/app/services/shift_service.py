@@ -213,7 +213,7 @@ def validate_unique_shift(db: Session, activity_id, day_of_week, start_time, exc
     if duplicate:
         detail = "Este turno ya existe"
         if not duplicate.is_active:
-            detail = "Este turno fue eliminado. Para volver a usarlo, rehabilitalo desde la tabla de turnos eliminados."
+            detail = "Este turno fue eliminado. Para volver a usarlo, reactiválo desde la tabla de turnos eliminados."
 
         raise HTTPException(
             status_code=400,

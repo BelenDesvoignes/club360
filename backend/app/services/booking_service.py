@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from datetime import datetime, date, timedelta
 import calendar
 from ..models.booking import Booking
@@ -9,6 +9,7 @@ from ..models.subscription import Subscription
 from ..models.suspension import Suspension
 from ..models.payment import Payment
 from ..models.credit import Credit  # Importamos el modelo de créditos necesario
+from ..models.waiting_list import WaitingList
 from .subscription_service import ensure_user_suspension_if_unpaid
 from fastapi import HTTPException, status
 from ..time_override import business_today, business_utcnow
@@ -83,7 +84,7 @@ def has_instance_capacity(db: Session, instance_id: int) -> bool:
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
     if not instance:
         raise HTTPException(status_code=404, detail="Instancia no encontrada")
-    
+
     template = instance.template
     if not template:
         raise HTTPException(status_code=500, detail="Template no encontrado para la instancia")
@@ -114,6 +115,28 @@ def get_instance_booked_count(db: Session, instance_id: int) -> int:
             )
         )
         .count()
+    )
+
+
+def has_active_waiting_queue(db: Session, instance_id: int) -> bool:
+    now = business_utcnow()
+    return (
+        db.query(WaitingList)
+        .filter(
+            WaitingList.instance_id == instance_id,
+            or_(
+                WaitingList.status == "waiting",
+                and_(
+                    WaitingList.status == "notified",
+                    or_(
+                        WaitingList.promotion_expires_at == None,
+                        WaitingList.promotion_expires_at >= now,
+                    ),
+                ),
+            )
+        )
+        .first()
+        is not None
     )
 
 
@@ -182,6 +205,12 @@ def create_booking(db: Session, user_id: int, instance_id: int | None, subscript
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Ya tenés una reserva para este turno"
+        )
+
+    if has_active_waiting_queue(db, instance_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Esta clase tiene una lista de espera activa. El cupo liberado se ofrece por orden de lista."
         )
     
     # Rule 2: Check capacity
@@ -292,16 +321,38 @@ def create_booking_with_credit(db: Session, user_id: int, instance_id: int, cred
     """
     from .credit_service import consumir_credito_individual
 
-    instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
+    instance = (
+        db.query(ShiftInstance)
+        .filter(ShiftInstance.id == instance_id)
+        .with_for_update()
+        .first()
+    )
     if not instance:
         raise HTTPException(status_code=404, detail="Clase no encontrada.")
         
     if instance.date < business_today():
         raise HTTPException(status_code=400, detail="No podés reservar clases pasadas.")
 
-    # 3. Validar capacidad del turno
-    if not has_instance_capacity(db, instance_id):
-        raise HTTPException(status_code=400, detail="No hay cupos disponibles para esta clase.")
+    booked_count = (
+        db.query(Booking)
+        .filter(
+            and_(
+                Booking.instance_id == instance_id,
+                Booking.status != "Cancelled"
+            )
+        )
+        .count()
+    )
+
+    # 3. Validar capacidad del turno en el momento de confirmar.
+    if booked_count >= instance.capacity:
+        raise HTTPException(status_code=400, detail="Error al reservar. No hay cupos disponibles")
+
+    if has_active_waiting_queue(db, instance_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Esta clase tiene una lista de espera activa. El cupo liberado se ofrece por orden de lista."
+        )
 
     existing = db.query(Booking).filter(
         and_(
