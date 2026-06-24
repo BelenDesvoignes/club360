@@ -120,14 +120,16 @@ async def send_waitlist_promotion_offer(
 async def send_template_cancellation(email: str, nombre: str, actividad: str, dia: str, hora: str):
     """Notificación para cancelación definitiva de un turno completo."""
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Actualización de precio - {actividad}"
+    msg["Subject"] = "Turno cancelado definitivamente - CLUB360"
     msg["From"] = f"CLUB360 <{GMAIL_USER}>"
     msg["To"] = email
 
     html = f"""
-        <h2>Hola {nombre},</h2>
-        <p>Te informamos que el precio de la actividad <strong>{actividad}</strong> ha sido actualizado.</p>
-        <p>El nuevo precio es: <strong>${nuevo_precio:.2f}</strong>.</p>
+        <h2>Hola {nombre}, te informamos que un turno fue cancelado definitivamente.</h2>
+        <p>El turno de <strong>{actividad}</strong> los días <strong>{dia}</strong>
+        a las <strong>{hora}</strong> hs fue dado de baja.</p>
+        <p>Si tenías reservas pagas en ese turno, se te acreditará el saldo correspondiente.</p>
+        <p>Disculpá los inconvenientes.</p>
         <br>
         <p>— El equipo de CLUB360</p>
     """
