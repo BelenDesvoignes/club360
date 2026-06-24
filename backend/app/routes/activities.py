@@ -1,219 +1,188 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
-from typing import List
-from ..database import get_db
-from ..models.activity import Activity
-from ..models.shift_template import ShiftTemplate
-from ..models.shift_instance import ShiftInstance
-from ..models.booking import Booking
-from ..services import shift_service
-from ..time_override import business_today
-
-router = APIRouter(prefix="/activities", tags=["activities"])
-
-@router.get("/")
-def get_activities(db: Session = Depends(get_db)):
-    activities = db.query(Activity).options(
-        joinedload(Activity.templates)
-    ).filter(Activity.is_active == True).all()
-    for act in activities:
-        act.templates = [t for t in act.templates if t.is_active]
-    return activities
-
-@router.post("/")
-def create_activity(data: dict, db: Session = Depends(get_db)):
-    shifts_incoming = data.get('shifts', [])
-    seen = set()
-    for s in shifts_incoming:
-        key = (s['day_of_week'], s['start_time'])
-        if key in seen:
-            raise HTTPException(status_code=400, detail=f"Turno repetido en el formulario: {key[0]} {key[1]}")
-        seen.add(key)
-
-    activity = db.query(Activity).filter(Activity.name == data['name']).first()
-    if not activity:
-        raise HTTPException(status_code=404, detail=f"Actividad '{data['name']}' no encontrada")
-
-    for s in shifts_incoming:
-        shift_service.validate_unique_shift(db, activity.id, s['day_of_week'], s['start_time'])
-        new_template = ShiftTemplate(
-            activity_id=activity.id,
-            day_of_week=s['day_of_week'],
-            start_time=s['start_time'],
-            capacity=s['capacity'],
-            price=activity.price
-        )
-        db.add(new_template)
-        db.flush()
-        shift_service.create_instances_for_month(db, new_template)
-
-    db.commit()
-    return {"message": "Turno creado con éxito"}
-
-
-
-@router.get("/templates/{template_id}/check-bookings")
-def check_template_bookings(template_id: int, db: Session = Depends(get_db)):
-    instances = db.query(ShiftInstance).filter(ShiftInstance.template_id == template_id).all()
-    inst_ids = [i.id for i in instances]
-    if not inst_ids:
-        return {"has_confirmed_bookings": False, "confirmed_count": 0}
-
-    confirmed_bookings = db.query(Booking).filter(
-        Booking.instance_id.in_(inst_ids),
-        Booking.status == "Confirmed"
-    ).all()
-
-    return {
-        "has_confirmed_bookings": bool(confirmed_bookings),
-        "confirmed_count": len(confirmed_bookings)
-    }
-
-# agregar al inicio del archivo
 import asyncio
-from ..mail import send_template_cancellation
-from datetime import date
+import smtplib
+import os
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+from pathlib import Path
 
-@router.delete("/templates/{template_id}")
-def delete_shift_template(
-    template_id: int,
-    cancel_bookings: bool = False,
-    db: Session = Depends(get_db)
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
+
+GMAIL_USER = os.getenv("GMAIL_USER")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+
+
+def _send_message_sync(to_email: str, msg: MIMEMultipart):
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_USER, to_email, msg.as_string())
+
+
+async def _send_message(to_email: str, msg: MIMEMultipart):
+    await asyncio.to_thread(_send_message_sync, to_email, msg)
+
+
+async def send_reset_code(email: str, code: str):
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Código de recuperación - CLUB360"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = email
+
+    html = f"""
+        <h2>Recuperación de contraseña</h2>
+        <p>Tu código de verificación es:</p>
+        <h1 style="letter-spacing: 8px; color: #ff6f00;">{code}</h1>
+        <p>Válido por <strong>10 minutos</strong>.</p>
+    """
+    msg.attach(MIMEText(html, "html"))
+
+    await _send_message(email, msg)
+
+
+async def send_shift_cancellation(email: str, nombre: str, actividad: str, fecha: str, hora: str):
+    """Notificación para cancelación de una clase puntual."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Clase cancelada - CLUB360"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = email
+
+    html = f"""
+        <h2>Hola {nombre}, te informamos que una clase fue cancelada.</h2>
+        <p>La clase de <strong>{actividad}</strong> del día <strong>{fecha}</strong>
+        a las <strong>{hora}</strong> hs fue cancelada.</p>
+        <p>Si realizaste un pago, se te acreditará un crédito para usar en tu próxima reserva.</p>
+        <p>Disculpá los inconvenientes.</p>
+        <br>
+        <p>— El equipo de CLUB360</p>
+    """
+    msg.attach(MIMEText(html, "html"))
+
+    await _send_message(email, msg)
+
+
+async def send_waitlist_promotion_offer(
+    email: str, 
+    nombre: str, 
+    actividad: str, 
+    fecha: str, 
+    hora: str, 
+    token: str,
+    frontend_url: str = "http://localhost:5173"
 ):
-    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
-    if not template:
-        raise HTTPException(status_code=404, detail="Turno no encontrado")
+    """Notificación de que el usuario fue promovido en la lista de espera."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "¡Hay un cupo disponible! - CLUB360"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = email
 
-    activity_name = template.activity.name if template.activity else "la actividad"
-    dia = template.day_of_week
-    hora = template.start_time
+    offer_link = f"{frontend_url}/waitlist-accept/{token}"
 
-    # Solo instancias futuras
-    future_instances = db.query(ShiftInstance).filter(
-        ShiftInstance.template_id == template_id,
-        ShiftInstance.date >= business_today(),
-        ShiftInstance.is_cancelled == False
-    ).all()
-    inst_ids = [i.id for i in future_instances]
+    html = f"""
+        <h2>¡Hola {nombre}!</h2>
+        <p>Se liberó un cupo en la clase que solicitaste. ¡Tenés una oportunidad!</p>
+        
+        <p>
+            <strong>Actividad:</strong> {actividad}<br>
+            <strong>Fecha:</strong> {fecha}<br>
+            <strong>Horario:</strong> {hora} hs
+        </p>
+        
+        <p>Esta oferta es válida por <strong>24 horas</strong>. Si no respondes en ese tiempo, 
+        pasaremos al siguiente en la lista de espera.</p>
+        
+        <div style="margin: 20px 0;">
+            <a href="{offer_link}" style="
+                display: inline-block; 
+                background-color: #5a8849; 
+                color: white; 
+                padding: 12px 24px; 
+                border-radius: 8px; 
+                text-decoration: none; 
+                font-weight: bold;
+            ">
+                Ingresar a CLUB360
+            </a>
+        </div>
+        
+        <p style="font-size: 12px; color: #6b7280;">
+            Si tenés problemas con los enlaces, podés responder a este email o contactar 
+            directamente a soporte en CLUB360.
+        </p>
+        
+        <p>— El equipo de CLUB360</p>
+    """
+    msg.attach(MIMEText(html, "html"))
 
-    # Recolectar usuarios a notificar antes de borrar
-    users_to_notify = {}
-    if inst_ids:
-        active_bookings = db.query(Booking).filter(
-            Booking.instance_id.in_(inst_ids),
-            Booking.status.in_(["Confirmed", "Pending"])
-        ).all()
-
-        for booking in active_bookings:
-            user = booking.user
-            if user and user.email and user.id_user not in users_to_notify:
-                users_to_notify[user.id_user] = user
-
-    # --- lógica existente sin cambios ---
-    all_instances = db.query(ShiftInstance).filter(ShiftInstance.template_id == template_id).all()
-    all_inst_ids = [i.id for i in all_instances]
-
-    if all_inst_ids:
-        confirmed_bookings = db.query(Booking).filter(
-            Booking.instance_id.in_(all_inst_ids),
-            Booking.status == "Confirmed"
-        ).all()
-
-        if confirmed_bookings and not cancel_bookings:
-            template.is_active = False
-            db.commit()
-            # Notificar igual aunque sea soft delete
-            _send_template_cancellation_mails(users_to_notify, activity_name, dia, hora)
-            return {"message": "Horario desactivado correctamente"}
-
-        db.query(Booking).filter(
-            Booking.instance_id.in_(all_inst_ids)
-        ).delete(synchronize_session=False)
-        db.flush()
-
-        db.query(ShiftInstance).filter(
-            ShiftInstance.id.in_(all_inst_ids)
-        ).delete(synchronize_session=False)
-        db.flush()
-
-    db.delete(template)
-    db.commit()
-    # --- fin lógica existente ---
-
-    _send_template_cancellation_mails(users_to_notify, activity_name, dia, hora)
-
-    return {"message": "Horario eliminado correctamente"}
+    await _send_message(email, msg)
 
 
-def _send_template_cancellation_mails(users_to_notify: dict, activity_name: str, dia: str, hora: str):
-    """Helper para no repetir el loop de mails."""
-    for user in users_to_notify.values():
-        try:
-            asyncio.run(send_template_cancellation(
-                email=user.email,
-                nombre=user.first_name,
-                actividad=activity_name,
-                dia=dia,
-                hora=hora
-            ))
-        except Exception as e:
-            print(f"Error enviando mail a {user.email}: {e}")
+async def send_template_cancellation(email: str, nombre: str, actividad: str, dia: str, hora: str):
+    """Notificación para cancelación definitiva de un turno completo."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Turno cancelado definitivamente - CLUB360"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = email
 
-@router.put("/{activity_id}")
-def update_activity(activity_id: int, data: dict, db: Session = Depends(get_db)):
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
-    if not activity:
-        raise HTTPException(status_code=404, detail="No encontrada")
+    html = f"""
+        <h2>Hola {nombre}, te informamos que un turno fue cancelado definitivamente.</h2>
+        <p>El turno de <strong>{actividad}</strong> los días <strong>{dia}</strong>
+        a las <strong>{hora}</strong> hs fue dado de baja.</p>
+        <p>Si tenías reservas pagas en ese turno, se te acreditará el saldo correspondiente.</p>
+        <p>Disculpá los inconvenientes.</p>
+        <br>
+        <p>— El equipo de CLUB360</p>
+    """
+    msg.attach(MIMEText(html, "html"))
 
-    activity.name = data['name']
-    activity.court = data.get('court', activity.court)
-    shifts_incoming = data.get('shifts', [])
+    await _send_message(email, msg)
 
-    for s_data in shifts_incoming:
-        shift_id = s_data.get('id')
-        shift_service.validate_unique_shift(db, activity_id, s_data['day_of_week'], s_data['start_time'], shift_id)
 
-        if shift_id:
-            template = db.query(ShiftTemplate).filter(ShiftTemplate.id == shift_id).first()
-            if template:
-                template.day_of_week = s_data['day_of_week']
-                template.start_time = s_data['start_time']
-                template.capacity = s_data['capacity']
-                template.price = s_data.get('price', template.price)
+async def send_admin_waitlist_alert(admin_email: str, instance_id: int, count: int, actividad: str, fecha: str, hora: str):
+    """Notificación para los administradores cuando una lista de espera alcanza o supera las 10 personas."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Lista de espera con 10 inscripciones - CLUB360"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = admin_email
 
-                db.query(ShiftInstance).filter(
-                    ShiftInstance.template_id == shift_id,
-                    ShiftInstance.date >= date.today(),
-                    ShiftInstance.is_cancelled == False
-                ).update({"capacity": s_data['capacity']})
-        else:
-            new_template = ShiftTemplate(
-                activity_id=activity_id,
-                day_of_week=s_data['day_of_week'],
-                start_time=s_data['start_time'],
-                capacity=s_data['capacity']
-            )
-            db.add(new_template)
-            db.flush()
-            shift_service.create_instances_for_month(db, new_template)
+    html = f"""
+        <h2>Alerta de alta demanda - CLUB360</h2>
+        <p>Te informamos que la lista de espera para una clase ha alcanzado las 10 inscripciones.</p>
+        
+        <div style="background-color: #fff7ed; border-left: 5px solid #ff6f00; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <strong style="color: #b45309; font-size: 1.1rem;">Detalles del Turno:</strong><br>
+            <p style="margin: 5px 0; color: #4b5563;">
+                <strong>Actividad:</strong> {actividad}<br>
+                <strong>Fecha:</strong> {fecha}<br>
+                <strong>Horario:</strong> {hora} hs<br>
+                <strong>Inscriptos en espera:</strong> <span style="font-weight: 800; color: #dc2626;">{count} usuarios</span>
+            </p>
+        </div>
+        
+        <p> Considerá evaluar la apertura de un nuevo turno o ampliar el cupo de la clase si la tendencia se mantiene.</p>
+        <br>
+        <p style="font-size: 12px; color: #9ca3af;">— Sistema de Alertas Automáticas CLUB360</p>
+    """
+    msg.attach(MIMEText(html, "html"))
 
-    db.commit()
-    return {"message": "Turno actualizado"}
+    await _send_message(admin_email, msg)
 
-@router.patch("/{activity_id}/price")
-def update_activity_price(activity_id: int, price: float, db: Session = Depends(get_db)):
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
-    if not activity:
-        raise HTTPException(status_code=404, detail="Actividad no encontrada")
 
-    if price < 1:
-        raise HTTPException(status_code=400, detail="El valor debe ser mayor o igual que 1")
+async def send_price_update(email: str, nombre: str, actividad: str, nuevo_precio: float):
+    """Notificación para actualización de precio de una actividad."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Actualización de precio - {actividad}"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = email
 
-    activity.price = price  # ← actualiza en Activity
+    html = f"""
+        <h2>Hola {nombre},</h2>
+        <p>Te informamos que el precio de la actividad <strong>{actividad}</strong> ha sido actualizado.</p>
+        <p>El nuevo precio es: <strong>${nuevo_precio:.2f}</strong>.</p>
+        <br>
+        <p>— El equipo de CLUB360</p>
+    """
+    msg.attach(MIMEText(html, "html"))
 
-    templates = db.query(ShiftTemplate).filter(ShiftTemplate.activity_id == activity_id).all()
-    for t in templates:
-        t.price = price  # ← sincroniza templates existentes
-
-    db.commit()
-    return {"message": "Precio actualizado", "price": price}
+    # Actualizado para usar la infraestructura async
+    await _send_message(email, msg)
