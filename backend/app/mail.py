@@ -76,3 +76,24 @@ async def send_template_cancellation(email: str, nombre: str, actividad: str, di
         server.starttls()
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_USER, email, msg.as_string())
+
+async def send_price_update(email: str, nombre: str, actividad: str, nuevo_precio: float):
+    """Notificación para actualización de precio de una actividad."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Actualización de precio - {actividad}"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = email
+
+    html = f"""
+        <h2>Hola {nombre},</h2>
+        <p>Te informamos que el precio de la actividad <strong>{actividad}</strong> ha sido actualizado.</p>
+        <p>El nuevo precio es: <strong>${nuevo_precio:.2f}</strong>.</p>
+        <br>
+        <p>— El equipo de CLUB360</p>
+    """
+    msg.attach(MIMEText(html, "html"))
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_USER, email, msg.as_string())
