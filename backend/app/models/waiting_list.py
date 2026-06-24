@@ -12,10 +12,18 @@ class WaitingList(Base):
     # Posición en la cola (1, 2, 3...)
     position = Column(Integer, nullable=False)
 
-    # Status: 'waiting', 'notified', 'converted' (si pasó a ser reserva), 'cancelled'
+    # Status: 'waiting', 'notified', 'promoted' (si pasó a ser reserva), 'rejected', 'cancelled'
     status = Column(String, default="waiting")
 
+    entry_type = Column(String, default="single")
+    subscription_id = Column(Integer, nullable=True)
+
+    # Token para links de aceptar/rechazar la oferta
+    promotion_token = Column(String, nullable=True, unique=True)
+    promotion_expires_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=func.now())
+    promoted_at = Column(DateTime, nullable=True)
 
     # Relaciones
     user = relationship("User")

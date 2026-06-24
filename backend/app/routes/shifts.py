@@ -118,7 +118,6 @@ def reactivate_template(template_id: int, db: Session = Depends(get_db)):
         "created_instances": len(created_instances),
     }
 
-
 @router.get("/instances")
 def get_instances(db: Session = Depends(get_db)):
     from sqlalchemy import func
