@@ -461,7 +461,6 @@ const reactivateTemplate = async (templateId) => {
 
 // ── precios ───────────────────────────────────────────────────────────────────
 const savePrice = async (act) => {
-  console.log("➡️ savePrice recibió:", act)   // 👈 debug
   try {
     await api.patch(`/activities/${act.id}/price`, null, {
       params: { price: act.editPrice }
