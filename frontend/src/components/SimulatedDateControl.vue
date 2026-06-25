@@ -4,7 +4,9 @@
 
     <input
       class="sim-date-input"
-      type="date"
+      type="text"
+      inputmode="numeric"
+      placeholder="dd/mm/aaaa"
       :value="modelValue"
       @input="onInput"
     />
@@ -32,7 +34,34 @@ const props = defineProps({
 const auth = useAuthStore()
 const clock = useAppClockStore()
 
-const modelValue = computed(() => (clock.hasOverride ? clock.simulatedToday : ''))
+const formatDisplayDate = (isoDate) => {
+  if (!isoDate) return ''
+  const [year, month, day] = String(isoDate).split('-')
+  if (!year || !month || !day) return ''
+  return `${day}/${month}/${year}`
+}
+
+const parseDisplayDate = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+  const parts = raw.split(/[\/\-.]/).map(part => part.trim())
+  if (parts.length !== 3) return ''
+
+  const [day, month, year] = parts
+  if (!/^\d{1,2}$/.test(day) || !/^\d{1,2}$/.test(month) || !/^\d{4}$/.test(year)) return ''
+
+  const normalized = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  const probe = new Date(`${normalized}T12:00:00`)
+  if (Number.isNaN(probe.getTime())) return ''
+  if (probe.getFullYear() !== Number(year) || probe.getMonth() + 1 !== Number(month) || probe.getDate() !== Number(day)) return ''
+
+  return normalized
+}
+
+const modelValue = computed(() => formatDisplayDate(clock.hasOverride ? clock.simulatedToday : ''))
 
 const onInput = (e) => {
   const v = e?.target?.value
@@ -40,7 +69,11 @@ const onInput = (e) => {
     clock.clearSimulatedToday()
     return
   }
-  clock.setSimulatedToday(v)
+
+  const iso = parseDisplayDate(v)
+  if (!iso) return
+
+  clock.setSimulatedToday(iso)
 }
 </script>
 

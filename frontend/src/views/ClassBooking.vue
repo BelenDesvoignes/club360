@@ -859,7 +859,7 @@ const canStartClassPayment = async (token) => {
   const classSuspension = suspensions.find(s => s.reason === 'SUSPENSION_CLASE_LIBRE')
 
   if (classSuspension) {
-    errorMessage.value = 'No podés reservar clases libres porque tenés una suspensión activa para clases libres.'
+    errorMessage.value = 'Tu cuenta está suspendida para reservar clases libres. Debés abonar la deuda pendiente en la sección de suspensiones para poder realizar nuevas reservas.'
     return false
   }
 

@@ -1,11 +1,14 @@
+# pyright: reportGeneralTypeIssues=false, reportAssignmentType=false, reportAttributeAccessIssue=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false
+
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, text
+from sqlalchemy import and_, desc, text
 from datetime import timedelta
 
 # Modelos de la base de datos
 from ..models.payment import Payment
 from ..models.booking import Booking
 from ..models.subscription import Subscription
+from ..models.shift_template import ShiftTemplate
 from ..models.suspension import Suspension
 from ..models.user import User
 from fastapi import HTTPException
@@ -13,25 +16,38 @@ from fastapi import HTTPException
 # Utilitario del tiempo del sistema
 from ..time_override import business_utcnow
 
+
 def get_payments_by_user(db: Session, user_id: int):
     """
-    Busca los pagos del usuario e inyecta el deporte real original 
+    Busca los pagos del usuario e inyecta el deporte real original
     utilizando únicamente las columnas reales de la base de datos (instance_id).
     """
     payments = db.query(Payment).filter(Payment.user_id == user_id).all()
-    
+
     for payment in payments:
-        payment.sport_name = None  
-        
+        payment.sport_name = None
+
         # 🌟 Si es una devolución, salteamos la búsqueda por tiempo
         if payment.type in ["refund_partial", "refund_total"]:
             payment.sport_name = "Devolución"
             continue
-            
+
+        activity_id = getattr(payment, "activity_id", None)
+        if activity_id:
+            result = db.execute(
+                text("SELECT name FROM activities WHERE id = :activity_id"),
+                {"activity_id": activity_id},
+            ).fetchone()
+            if result and result[0]:
+                payment.sport_name = result[0]
+                continue
+
         if payment.type == "booking":
             try:
-                b_id = getattr(payment, 'booking_id', getattr(payment, 'id_booking', None))
-                
+                b_id = getattr(
+                    payment, "booking_id", getattr(payment, "id_booking", None)
+                )
+
                 if b_id:
                     # SQL Corregido: Limpiamos el OR b.id_instance erróneo
                     query_sql = text("""
@@ -57,31 +73,35 @@ def get_payments_by_user(db: Session, user_id: int):
                         ORDER BY b.created_at DESC
                         LIMIT 1
                     """)
-                    result = db.execute(query_sql, {
-                        "user_id": user_id, 
-                        "payment_date": payment.date
-                    }).fetchone()
-                
+                    result = db.execute(
+                        query_sql, {"user_id": user_id, "payment_date": payment.date}
+                    ).fetchone()
+
                 if result and result[0]:
                     payment.sport_name = result[0]
                 else:
                     payment.sport_name = "Clase Deportiva"
-                    
+
             except Exception as e:
                 db.rollback()
                 print(f"Error al recuperar deporte real por SQL: {str(e)}")
                 payment.sport_name = "Clase Deportiva"
-                
+
         elif payment.type in ["subscription", "suscripcion", "Subscription"]:
             payment.sport_name = "Abono Mensual"
-            
+
     return payments
 
-def complete_latest_booking_payment(db: Session, user_id: int, amount: float) -> Payment:
+
+def complete_latest_booking_payment(
+    db: Session, user_id: int, amount: float
+) -> Payment:
     return complete_booking_payment(db, user_id, amount, booking_id=None)
 
 
-def complete_booking_payment(db: Session, user_id: int, amount: float, booking_id: int | None = None) -> Payment:
+def complete_booking_payment(
+    db: Session, user_id: int, amount: float, booking_id: int | None = None
+) -> Payment:
     booking = None
     if booking_id is not None:
         booking = (
@@ -110,13 +130,23 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
     if not payment:
         payment = (
             db.query(Payment)
-            .filter(Payment.user_id == user_id, Payment.type == "booking", Payment.status == "pending")
+            .filter(
+                Payment.user_id == user_id,
+                Payment.type == "booking",
+                Payment.status == "pending",
+            )
             .order_by(desc(Payment.date))
             .first()
         )
 
     if not payment:
-        payment = Payment(user_id=user_id, amount=amount, status="completed", type="booking", date=business_utcnow())
+        payment = Payment(
+            user_id=user_id,
+            amount=amount,
+            status="completed",
+            type="booking",
+            date=business_utcnow(),
+        )
         db.add(payment)
     else:
         payment.amount = amount
@@ -133,11 +163,17 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
     if booking is not None:
         # 🌟 FIJAMOS EL ENLACE: Guardamos explícitamente el booking_id en el pago
         payment.booking_id = booking.id
+        if booking.instance and booking.instance.template:
+            payment.activity_id = booking.instance.template.activity_id
 
         # Update booking payment fields
         total_price = None
         try:
-            if booking.instance and booking.instance.template and booking.instance.template.price is not None:
+            if (
+                booking.instance
+                and booking.instance.template
+                and booking.instance.template.price is not None
+            ):
                 total_price = float(booking.instance.template.price)
         except Exception:
             total_price = None
@@ -197,7 +233,9 @@ def get_payable_suspensions_by_user(db: Session, user_id: int) -> list[dict]:
     ]
 
 
-def pay_suspension_fine(db: Session, user_id: int, suspension_id: int, amount: float = 0.0) -> dict:
+def pay_suspension_fine(
+    db: Session, user_id: int, suspension_id: int, amount: float = 0.0
+) -> dict:
     """Marks one specific suspension as paid/inactive.
 
     After lifting that suspension, the user's is_suspended flag is cleared only when
@@ -255,41 +293,85 @@ def pay_suspension_fine(db: Session, user_id: int, suspension_id: int, amount: f
     }
 
 
-def complete_subscription_payment_flow(db: Session, user_id: int, payment_id: int) -> Payment:
+def complete_subscription_payment_flow(
+    db: Session, user_id: int, payment_id: int
+) -> Payment:
     """
     Desarrollado para el flujo diferido de Abonos.
-    Busca el pago de la suscripción, lo completa, y actualiza en cadena 
+    Busca el pago de la suscripción, lo completa, y actualiza en cadena
     el estado del Abono y de todas las clases/reservas que contiene.
     """
-    payment = db.query(Payment).filter(
-        Payment.id == payment_id, 
-        Payment.user_id == user_id, 
-        Payment.type == "subscription"
-    ).first()
-    
+    payment = (
+        db.query(Payment)
+        .filter(
+            Payment.id == payment_id,
+            Payment.user_id == user_id,
+            Payment.type == "subscription",
+        )
+        .first()
+    )
+
     if not payment:
         return complete_booking_payment(db, user_id, 0.0, booking_id=payment_id)
+
+    activity_id = getattr(payment, "activity_id", None)
+    if activity_id is not None:
+        active_suspension = (
+            db.query(Suspension)
+            .filter(
+                and_(
+                    Suspension.user_id == user_id,
+                    Suspension.reason == "SUSPENSION_ABONO",
+                    Suspension.activity_id == activity_id,
+                    Suspension.status == "active",
+                    Suspension.end_date == None,
+                )
+            )
+            .first()
+        )
+        if active_suspension:
+            raise HTTPException(
+                status_code=403,
+                detail="Este abono ya generó una suspensión para este deporte. Pagá la suspensión para volver a reservar ese abono.",
+            )
 
     payment.status = "completed"
     payment.date = business_utcnow()
 
-    subscription = db.query(Subscription).filter(
-        Subscription.user_id == user_id,
-        Subscription.status == "active",
-        Subscription.price_paid == None 
-    ).order_by(desc(Subscription.purchase_date)).first()
+    subscription_query = (
+        db.query(Subscription)
+        .join(ShiftTemplate, Subscription.template_id == ShiftTemplate.id)
+        .filter(
+            Subscription.user_id == user_id,
+            Subscription.status == "active",
+            Subscription.price_paid == None,
+        )
+    )
+    if activity_id is not None:
+        subscription_query = subscription_query.filter(
+            ShiftTemplate.activity_id == activity_id
+        )
+
+    subscription = subscription_query.order_by(desc(Subscription.purchase_date)).first()
 
     if subscription:
         subscription.price_paid = float(payment.amount)
         subscription.purchase_date = business_utcnow()
-        
-        associated_bookings = db.query(Booking).filter(
-            Booking.subscription_id == subscription.id,
-            Booking.user_id == user_id
-        ).all()
-        
+
+        associated_bookings = (
+            db.query(Booking)
+            .filter(
+                Booking.subscription_id == subscription.id, Booking.user_id == user_id
+            )
+            .all()
+        )
+
         for booking in associated_bookings:
-            booking.amount_paid = round(float(payment.amount) / len(associated_bookings), 2) if associated_bookings else 0.0
+            booking.amount_paid = (
+                round(float(payment.amount) / len(associated_bookings), 2)
+                if associated_bookings
+                else 0.0
+            )
             booking.payment_status = "paid"
             booking.status = "Confirmed"
 

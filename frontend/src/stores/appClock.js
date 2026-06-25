@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
+import api from '../utils/api'
 
 const STORAGE_KEY = 'club360_simulated_today'
 const HEADER_NAME = 'X-Club360-Today'
@@ -51,6 +52,18 @@ export const useAppClockStore = defineStore('appClock', {
       }
     },
 
+    triggerPendingSubscriptionReminder(dateStr) {
+      if (!isValidIsoDate(dateStr)) return
+
+      const [, , day] = String(dateStr).split('-').map(Number)
+      if (day !== 10) return
+
+      api.get('/cron/send-pending-subscription-reminders')
+        .catch(() => {
+          // Silently ignore reminder errors; the date change must still work.
+        })
+    },
+
     setSimulatedToday(dateStr) {
       const next = String(dateStr || '').trim()
       if (!next) {
@@ -62,6 +75,7 @@ export const useAppClockStore = defineStore('appClock', {
       this.simulatedToday = next
       localStorage.setItem(STORAGE_KEY, next)
       axios.defaults.headers.common[HEADER_NAME] = next
+      this.triggerPendingSubscriptionReminder(next)
     },
 
     clearSimulatedToday() {

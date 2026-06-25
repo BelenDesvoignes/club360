@@ -61,7 +61,7 @@
         
         <div v-if="reservationSuccess" class="modal-success-state">
           <div class="success-icon">✓</div>
-          <h2>¡Reserva Confirmada!</h2>
+          <h2>¡Reserva confirmada!</h2>
           <p>Tu clase fue reservada con éxito utilizando tu crédito.</p>
         </div>
 

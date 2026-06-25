@@ -11,6 +11,22 @@ load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
+
+def _format_date_ddmmyyyy(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    raw = str(value).strip()
+    parts = raw.split("T")[0].split("-")
+    if len(parts) != 3:
+        return raw
+
+    year, month, day = parts
+    if len(year) != 4 or len(month) != 2 or len(day) != 2:
+        return raw
+
+    return f"{day}/{month}/{year}"
+
 async def send_reset_code(email: str, code: str):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Código de recuperación - CLUB360"
@@ -25,7 +41,7 @@ async def send_reset_code(email: str, code: str):
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
         server.starttls()
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_USER, email, msg.as_string())
@@ -48,7 +64,7 @@ async def send_shift_cancellation(email: str, nombre: str, actividad: str, fecha
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
         server.starttls()
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_USER, email, msg.as_string())
@@ -72,7 +88,41 @@ async def send_template_cancellation(email: str, nombre: str, actividad: str, di
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_USER, email, msg.as_string())
+
+
+async def send_subscription_payment_reminder(
+    email: str,
+    nombre: str,
+    deporte: str,
+    vencimiento: str | None = None,
+):
+    """Recordatorio de último día para pagar un abono pendiente."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Último día para pagar tu abono de {deporte} - CLUB360"
+    msg["From"] = f"CLUB360 <{GMAIL_USER}>"
+    msg["To"] = email
+
+    formatted_due_date = _format_date_ddmmyyyy(vencimiento)
+    vencimiento_html = (
+        f"<p>Fecha límite de pago: <strong>{formatted_due_date}</strong>.</p>"
+        if formatted_due_date
+        else ""
+    )
+
+    html = f"""
+        <h2>Hola {nombre}, hoy es tu último día para pagar tu abono de {deporte}.</h2>
+        <p>Si no completás el pago hoy, tu reserva puede quedar suspendida hasta regularizar la deuda.</p>
+        {vencimiento_html}
+        <p>Podés hacerlo desde la sección de <strong>Mis Pagos</strong> dentro de CLUB360.</p>
+        <p>Gracias por usar CLUB360.</p>
+    """
+    msg.attach(MIMEText(html, "html"))
+
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
         server.starttls()
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_USER, email, msg.as_string())

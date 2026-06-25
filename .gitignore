@@ -235,12 +235,18 @@ dist/
 
 .env
 
-# Local Pi / coding-agent runtime state
+# Local Pi / AI agent runtime state (local-only; not used by project teammates)
 .pi/
 .atl/
 .agents/
-openspec/
+.agent/
+.claude/
+.codex/
+.cursor/
 
-# Pi/Gentle AI temporary artifacts
-*.pi.log
-pi-debug.log
+context.md
+# Pi / agent session artifacts
+*.session.json
+*.session.log
+pi-session-*/
+subagent-*/

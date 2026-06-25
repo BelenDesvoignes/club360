@@ -74,12 +74,13 @@
 
             <td class="cell-actions text-center">
               <button 
-                v-if="p.status.toLowerCase() === 'pending' || p.status.toLowerCase() === 'pendiente' || p.status.toLowerCase() === 'partial'"
+                v-if="isPayableStatus(p.status)"
                 class="btn-primary-pay"
+                :disabled="isPaymentBlockedBySuspension(p)"
                 @click="openPaymentFlow(p)"
-                title="Hacé clic para liquidar este saldo pendiente"
+                :title="isPaymentBlockedBySuspension(p) ? 'Este abono está suspendido. Pagá primero la multa de la suspensión.' : 'Hacé clic para liquidar este saldo pendiente'"
               >
-                Pagar 💳
+                {{ isPaymentBlockedBySuspension(p) ? 'Suspendido' : 'Pagar 💳' }}
               </button>
               <span v-else class="text-disabled">
                 -
@@ -122,9 +123,11 @@
 import { ref, onMounted, computed } from 'vue'
 import api from '../utils/api'
 import { useAuthStore } from '../stores/auth'
+import { useAppClockStore } from '../stores/appClock'
 import PaymentModal from '../components/PaymentModal.vue' 
 
 const auth = useAuthStore()
+const clock = useAppClockStore()
 const payments = ref([])
 const suspensions = ref([])
 const loading = ref(false)
@@ -246,7 +249,27 @@ const getStatusClass = (status) => {
   return 'badge-danger'
 }
 
+const isPayableStatus = (status) => {
+  const s = String(status || '').toLowerCase()
+  return s === 'pending' || s === 'pendiente' || s === 'partial'
+}
+
+const isPaymentBlockedBySuspension = (payment) => {
+  const paymentType = String(payment?.type || '').toLowerCase()
+  const paymentActivityId = Number(payment?.activity_id)
+
+  if (!['subscription', 'suscripcion'].includes(paymentType) || !paymentActivityId) {
+    return false
+  }
+
+  return activeSuspensions.value.some((s) => {
+    return s.reason === 'SUSPENSION_ABONO' && Number(s.activity_id) === paymentActivityId
+  })
+}
+
 const openPaymentFlow = (payment) => {
+  if (isPaymentBlockedBySuspension(payment)) return
+
   activePaymentObject.value = payment
   selectedPaymentAmount.value = Number(payment.amount)
   selectedPaymentConcept.value = formatConcept(payment)
@@ -345,7 +368,11 @@ const fetchPayments = async () => {
   }
 }
 
-onMounted(fetchPayments)
+onMounted(async () => {
+  clock.hydrateFromStorage()
+  await fetchPayments()
+  clock.triggerPendingSubscriptionReminder(clock.simulatedToday)
+})
 </script>
 
 <style scoped>
@@ -406,10 +433,17 @@ onMounted(fetchPayments)
   align-items: center;
   gap: 6px;
 }
-.btn-primary-pay:hover {
+.btn-primary-pay:hover:not(:disabled) {
   background-color: #d97706;
   transform: translateY(-1px);
   box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);
+}
+.btn-primary-pay:disabled {
+  background-color: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 .btn-primary-pay:active {
   transform: translateY(1px);

@@ -1,4 +1,5 @@
 from __future__ import annotations
+# pyright: reportGeneralTypeIssues=false, reportAssignmentType=false, reportAttributeAccessIssue=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false
 
 from calendar import monthrange
 from dataclasses import dataclass
@@ -40,7 +41,7 @@ def _has_active_activity_suspension(
                 Suspension.reason == reason,
                 Suspension.activity_id == activity_id,
                 Suspension.status == ACTIVE_SUSPENSION_STATUS,
-                Suspension.end_date == None,
+                Suspension.end_date.is_(None),
             )
         )
         .first()
@@ -52,7 +53,9 @@ def last_day_of_month(d: date) -> date:
     return date(d.year, d.month, monthrange(d.year, d.month)[1])
 
 
-def _subscription_already_purchased_this_month(db: Session, *, user_id: int, template_id: int, today: date) -> bool:
+def _subscription_already_purchased_this_month(
+    db: Session, *, user_id: int, template_id: int, today: date
+) -> bool:
     existing = (
         db.query(Subscription)
         .filter(
@@ -60,14 +63,18 @@ def _subscription_already_purchased_this_month(db: Session, *, user_id: int, tem
                 Subscription.user_id == user_id,
                 Subscription.template_id == template_id,
                 Subscription.status == "active",
-                Subscription.purchase_date != None,
+                Subscription.purchase_date.is_not(None),
             )
         )
         .all()
     )
 
     for sub in existing:
-        if sub.purchase_date and sub.purchase_date.year == today.year and sub.purchase_date.month == today.month:
+        if (
+            sub.purchase_date
+            and sub.purchase_date.year == today.year
+            and sub.purchase_date.month == today.month
+        ):
             return True
     return False
 
@@ -92,7 +99,7 @@ def _count_cancelled_subscription_bookings_prev_month(
             and_(
                 Booking.user_id == user_id,
                 Booking.status == "Cancelled",
-                Booking.subscription_id != None,
+                Booking.subscription_id.is_not(None),
                 ShiftInstance.template_id == template_id,
                 ShiftInstance.date >= start_prev,
                 ShiftInstance.date <= end_prev,
@@ -133,7 +140,7 @@ def get_subscription_quote(
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No podés reservar abonos para este deporte porque tenés una suspensión activa.",
+            detail="Tu cuenta esta suspendida para hacer abonos de este deporte. Debés abonar la deuda pendiente en la sección de suspensiones para poder realizar nuevas reservas.",
         )
 
     valid_to = last_day_of_month(today)
@@ -148,7 +155,7 @@ def get_subscription_quote(
                 ShiftInstance.template_id == template_id,
                 ShiftInstance.date >= today,
                 ShiftInstance.date <= valid_to,
-                ShiftInstance.is_cancelled == False,
+                ShiftInstance.is_cancelled.is_(False),
             )
         )
         .order_by(ShiftInstance.date.asc())
@@ -165,7 +172,9 @@ def get_subscription_quote(
     unit_price = float(template.price or 0)
     base_amount = unit_price * remaining_classes
     if base_amount <= 0:
-        raise HTTPException(status_code=400, detail="No se pudo determinar el precio mensual")
+        raise HTTPException(
+            status_code=400, detail="No se pudo determinar el precio mensual"
+        )
 
     pay_now_required = today.day >= 11
 
@@ -187,7 +196,9 @@ def get_subscription_quote(
                 activity_id=template.activity_id,
             )
             if lost_discount or cancelled_prev >= 3:
-                discount_reason = "Sin descuento: perdiste el beneficio por 3 cancelaciones previas."
+                discount_reason = (
+                    "Sin descuento: perdiste el beneficio por 3 cancelaciones previas."
+                )
             else:
                 discount_percent = 20
                 discount_applied = True
@@ -238,13 +249,17 @@ def purchase_subscription_and_reserve(
     if not template:
         raise HTTPException(status_code=404, detail="Template no encontrado")
 
-    if _subscription_already_purchased_this_month(db, user_id=user_id, template_id=template_id, today=today):
+    if _subscription_already_purchased_this_month(
+        db, user_id=user_id, template_id=template_id, today=today
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Ya tienes un abono activo para este horario este mes.",
         )
 
-    quote = get_subscription_quote(db, user_id=user_id, template_id=template_id, today=today)
+    quote = get_subscription_quote(
+        db, user_id=user_id, template_id=template_id, today=today
+    )
 
     valid_to = quote.valid_to
     instances_created = quote.instances_created
@@ -256,7 +271,7 @@ def purchase_subscription_and_reserve(
                 ShiftInstance.template_id == template_id,
                 ShiftInstance.date >= today,
                 ShiftInstance.date <= valid_to,
-                ShiftInstance.is_cancelled == False,
+                ShiftInstance.is_cancelled.is_(False),
             )
         )
         .order_by(ShiftInstance.date.asc())
@@ -282,6 +297,7 @@ def purchase_subscription_and_reserve(
         amount=monthly_price,
         status="completed" if quote.pay_now_required else "pending",
         type="subscription",
+        activity_id=template.activity_id,
         date=purchase_dt,
     )
 
@@ -367,10 +383,14 @@ def purchase_subscription_and_reserve(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al comprar el abono: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error al comprar el abono: {str(e)}"
+        ) from e
 
 
-def suspend_users_for_unpaid_subscriptions(db: Session, *, today: date | None = None) -> dict:
+def suspend_users_for_unpaid_subscriptions(
+    db: Session, *, today: date | None = None
+) -> dict:
     """Suspend users who had a subscription last month and did not pay this month by day 30.
 
     Intended to be triggered daily by a cron job calling an admin endpoint.
@@ -391,7 +411,7 @@ def suspend_users_for_unpaid_subscriptions(db: Session, *, today: date | None = 
         db.query(Subscription.user_id)
         .filter(
             and_(
-                Subscription.purchase_date != None,
+                Subscription.purchase_date.is_not(None),
                 Subscription.purchase_date >= datetime(prev_year, prev_month, 1),
                 Subscription.purchase_date < datetime(today.year, today.month, 1),
             )
@@ -410,7 +430,7 @@ def suspend_users_for_unpaid_subscriptions(db: Session, *, today: date | None = 
             .filter(
                 and_(
                     Subscription.user_id == user_id,
-                    Subscription.purchase_date != None,
+                    Subscription.purchase_date.is_not(None),
                     Subscription.purchase_date >= datetime(today.year, today.month, 1),
                 )
             )
@@ -426,7 +446,7 @@ def suspend_users_for_unpaid_subscriptions(db: Session, *, today: date | None = 
                 and_(
                     Suspension.user_id == user_id,
                     Suspension.status == "active",
-                    Suspension.end_date == None,
+                    Suspension.end_date.is_(None),
                 )
             )
             .first()
@@ -448,88 +468,77 @@ def suspend_users_for_unpaid_subscriptions(db: Session, *, today: date | None = 
 
     db.commit()
 
-    return {"suspended": suspended, "already_suspended": already_suspended, "skipped": skipped}
+    return {
+        "suspended": suspended,
+        "already_suspended": already_suspended,
+        "skipped": skipped,
+    }
 
 
-def ensure_user_suspension_if_unpaid(db: Session, *, user_id: int, today: date | None = None) -> bool:
-    """Lazy (on-demand) version of the unpaid subscription suspension rule.
+def ensure_user_suspension_if_unpaid(
+    db: Session, *, user_id: int, today: date | None = None
+) -> bool:
+    """Create sport-specific abono suspensions for unpaid pending subscription payments.
 
-    University-friendly approach: run this check when the user interacts with the system
-    (e.g. opens booking page or tries to create a booking) instead of relying on a cron.
+    The simulator/business rule is intentionally lazy: when the user opens a relevant
+    area on day 11+, each pending subscription payment with an activity_id creates one
+    active SUSPENSION_ABONO for that same sport. Legacy payments without activity_id are
+    ignored so they do not accidentally block every sport.
 
-    Rule: if today is day 31+ and the user purchased a subscription last month but has
-    not purchased any subscription this month, create an active Suspension.
-
-    Returns True if a new suspension was created.
+    Returns True if at least one new suspension was created.
     """
     today = today or business_today()
-    if today.day <= 30:
+    if today.day < 11:
         return False
 
-    # previous month
-    prev_year = today.year
-    prev_month = today.month - 1
-    if prev_month == 0:
-        prev_month = 12
-        prev_year -= 1
-
-    start_prev = datetime(prev_year, prev_month, 1)
-    start_this = datetime(today.year, today.month, 1)
-
-    had_prev = (
-        db.query(Subscription)
+    start_this_month = datetime(today.year, today.month, 1)
+    pending_payments = (
+        db.query(Payment)
         .filter(
             and_(
-                Subscription.user_id == user_id,
-                Subscription.purchase_date != None,
-                Subscription.purchase_date >= start_prev,
-                Subscription.purchase_date < start_this,
+                Payment.user_id == user_id,
+                Payment.type == "subscription",
+                Payment.status == "pending",
+                Payment.activity_id.is_not(None),
+                Payment.date >= start_this_month,
             )
         )
-        .first()
+        .all()
     )
-    if not had_prev:
-        return False
 
-    has_current = (
-        db.query(Subscription)
-        .filter(
-            and_(
-                Subscription.user_id == user_id,
-                Subscription.purchase_date != None,
-                Subscription.purchase_date >= start_this,
+    created = False
+    for payment in pending_payments:
+        existing_susp = (
+            db.query(Suspension)
+            .filter(
+                and_(
+                    Suspension.user_id == user_id,
+                    Suspension.reason == SUSPENSION_ABONO,
+                    Suspension.activity_id == payment.activity_id,
+                    Suspension.status == ACTIVE_SUSPENSION_STATUS,
+                    Suspension.end_date.is_(None),
+                )
+            )
+            .first()
+        )
+        if existing_susp:
+            continue
+
+        db.add(
+            Suspension(
+                user_id=user_id,
+                activity_id=payment.activity_id,
+                reason=SUSPENSION_ABONO,
+                start_date=business_utcnow(),
+                end_date=None,
+                status=ACTIVE_SUSPENSION_STATUS,
             )
         )
-        .first()
-    )
-    if has_current:
-        return False
+        created = True
 
-    existing_susp = (
-        db.query(Suspension)
-        .filter(
-            and_(
-                Suspension.user_id == user_id,
-                Suspension.status == "active",
-                Suspension.end_date == None,
-            )
-        )
-        .first()
-    )
-    if existing_susp:
-        return False
-
-    db.add(
-        Suspension(
-            user_id=user_id,
-            reason="Suspensión automática por falta de pago del abono mensual (1-30).",
-            start_date=business_utcnow(),
-            end_date=None,
-            status="active",
-        )
-    )
-    db.commit()
-    return True
+    if created:
+        db.commit()
+    return created
 
 
 def purchase_half_month_subscription_and_reserve(
@@ -541,7 +550,9 @@ def purchase_half_month_subscription_and_reserve(
     if not template:
         raise HTTPException(status_code=404, detail="Template no encontrado")
 
-    if _subscription_already_purchased_this_month(db, user_id=user_id, template_id=template_id, today=today):
+    if _subscription_already_purchased_this_month(
+        db, user_id=user_id, template_id=template_id, today=today
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Ya tenés un abono activo para este horario este mes.",
@@ -559,7 +570,7 @@ def purchase_half_month_subscription_and_reserve(
                 ShiftInstance.template_id == template_id,
                 ShiftInstance.date >= date(today.year, today.month, 1),
                 ShiftInstance.date <= valid_to,
-                ShiftInstance.is_cancelled == False,
+                ShiftInstance.is_cancelled.is_(False),
             )
         )
         .order_by(ShiftInstance.date.asc())
@@ -580,7 +591,9 @@ def purchase_half_month_subscription_and_reserve(
     half_month_price = round(monthly_full_price * 0.8, 2)
 
     if half_month_price <= 0:
-        raise HTTPException(status_code=400, detail="No se pudo determinar el precio del abono.")
+        raise HTTPException(
+            status_code=400, detail="No se pudo determinar el precio del abono."
+        )
 
     purchase_dt = business_utcnow()
 
@@ -599,6 +612,7 @@ def purchase_half_month_subscription_and_reserve(
         amount=half_month_price,
         status="completed",
         type="subscription",
+        activity_id=template.activity_id,
         date=purchase_dt,
     )
 
@@ -674,4 +688,6 @@ def purchase_half_month_subscription_and_reserve(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al comprar el abono: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error al comprar el abono: {str(e)}"
+        ) from e

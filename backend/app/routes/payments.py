@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy.orm import Session
-from typing import List
 from pydantic import BaseModel
-from ..database import get_db
-from ..services import payment_service
-from ..schemas.payment import PaymentCompleteBookingRequest, PaymentResponse
+from sqlalchemy.orm import Session
+
 from ..auth_utils import get_user_id_from_token
+from ..database import get_db
+from ..schemas.payment import PaymentCompleteBookingRequest, PaymentResponse
+from ..services import payment_service
+from ..services.subscription_service import ensure_user_suspension_if_unpaid
 
 router = APIRouter()
 
@@ -17,15 +18,20 @@ class PaySuspensionRequest(BaseModel):
 
 def _extract_user_id(authorization: str | None) -> int:
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticado")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticado"
+        )
 
     token = authorization.removeprefix("Bearer ").strip()
     user_id = get_user_id_from_token(token)
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido"
+        )
     return user_id
 
-@router.get("/user/{user_id}", response_model=List[PaymentResponse])
+
+@router.get("/user/{user_id}", response_model=list[PaymentResponse])
 def get_user_payments(user_id: int, db: Session = Depends(get_db)):
     """
     Endpoint para que el socio vea su historial de pagos.
@@ -41,6 +47,7 @@ def get_my_suspensions(
     db: Session = Depends(get_db),
 ):
     user_id = _extract_user_id(authorization)
+    ensure_user_suspension_if_unpaid(db, user_id=user_id)
     return payment_service.get_payable_suspensions_by_user(db, user_id)
 
 
@@ -77,6 +84,7 @@ def complete_booking_payment(
         booking_id=payload.booking_id,
     )
 
+
 @router.post("/me/complete-subscription/{payment_id}", response_model=PaymentResponse)
 def complete_subscription_payment_route(
     payment_id: int,
@@ -88,4 +96,5 @@ def complete_subscription_payment_route(
     Actualiza el pago, la suscripción y todas sus clases hijas.
     """
     user_id = _extract_user_id(authorization)
+    ensure_user_suspension_if_unpaid(db, user_id=user_id)
     return payment_service.complete_subscription_payment_flow(db, user_id, payment_id)
