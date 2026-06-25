@@ -113,6 +113,8 @@ def purchase_subscription(
         "bookings_created": result.bookings_created,
         "skipped_full": result.skipped_full,
         "skipped_existing": result.skipped_existing,
+        "waitlist_created": result.waitlist_created,
+        "waitlist_entries": result.waitlist_entries or [],
     }
 
 @router.get("/my-active")

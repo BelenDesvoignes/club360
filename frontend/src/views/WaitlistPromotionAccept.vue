@@ -19,7 +19,7 @@
       <div class="state-icon success">✓</div>
       <h2>Reserva confirmada</h2>
       <p>{{ successMessage }}</p>
-      <button class="btn-primary" type="button" @click="goToBookings">Ir a mis reservas</button>
+      <button class="btn-primary" type="button" @click="goToBookings">Ir a Mis Reservas</button>
     </div>
 
     <div v-else-if="rejected" class="state-panel">
@@ -254,7 +254,7 @@ async function onPaymentResult(result) {
     showPaymentModal.value = false
     success.value = true
     const amountText = formatCurrency(result.amount)
-    successMessage.value = `Tu pago de ${amountText} fue aprobado. Número de reserva: ${booking.value.id}.`
+    successMessage.value = `Tu pago fue aprobado. Podés ver los detalles en Mis Reservas.`
   } catch (err) {
     actionError.value = err.response?.data?.detail || 'El pago fue aprobado, pero no pudimos confirmar la reserva. Iniciá sesión con el usuario de la lista de espera e intentá nuevamente.'
   } finally {

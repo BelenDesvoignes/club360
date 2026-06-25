@@ -31,6 +31,28 @@ def is_user_suspended(db: Session, user_id: int) -> bool:
     return suspension is not None
 
 
+def subscription_has_pending_payment(db: Session, booking: Booking) -> bool:
+    subscription = booking.subscription
+    if not subscription or not subscription.purchase_date:
+        return False
+
+    pending_payments = db.query(Payment).filter(
+        Payment.user_id == booking.user_id,
+        Payment.type == "subscription",
+        Payment.status == "pending",
+    ).all()
+
+    subscription_date = subscription.purchase_date.replace(tzinfo=None)
+    for payment in pending_payments:
+        if not payment.date:
+            continue
+        payment_date = payment.date.replace(tzinfo=None)
+        if abs((payment_date - subscription_date).total_seconds()) <= 5:
+            return True
+
+    return False
+
+
 def _subscription_covers_date(subscription: Subscription, target_date: date) -> bool:
     """Return True if this subscription should count as active for a given class date.
 
@@ -300,7 +322,7 @@ def cancel_booking(db: Session, booking_id: int, user_id: int) -> tuple[Booking,
     time_difference = class_datetime - business_utcnow()
 
     if booking.subscription_id is not None:
-        if time_difference >= timedelta(hours=48):
+        if time_difference >= timedelta(hours=48) and not subscription_has_pending_payment(db, booking):
             activity_id = instance.template.activity_id if instance.template else 1
             otorgar_credito_individual(db, booking.user_id, activity_id)
     else:

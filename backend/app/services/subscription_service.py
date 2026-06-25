@@ -180,6 +180,7 @@ class PurchaseResult:
     skipped_existing: int
     instances_created: int
     waitlist_created: int = 0
+    waitlist_entries: list[dict] | None = None
 
 
 def purchase_subscription_and_reserve(
@@ -250,6 +251,7 @@ def purchase_subscription_and_reserve(
         skipped_full = 0
 
         waitlist_created = 0
+        waitlist_entries = []
         for instance in instances:
             existing_booking = (
                 db.query(Booking)
@@ -287,14 +289,20 @@ def purchase_subscription_and_reserve(
             if booked_count >= capacity:
                 # Crear entrada en lista de espera para este usuario y esta instancia
                 try:
-                    WaitingListService.join_waiting_list(
+                    WaitingListService.join_waiting_list_record(
                         db=db,
                         user_id=user_id,
                         instance_id=instance.id,
                         entry_type="subscription",
                         subscription_id=subscription.id,
+                        commit=False,
                     )
                     waitlist_created += 1
+                    waitlist_entries.append({
+                        "instance_id": instance.id,
+                        "date": str(instance.date),
+                        "start_time": instance.template.start_time if instance.template else None,
+                    })
                     skipped_full += 1
                 except HTTPException as wle:
                     # Si no se pudo crear la entrada de waitlist, abortar toda la compra
@@ -326,6 +334,7 @@ def purchase_subscription_and_reserve(
             skipped_existing=skipped_existing,
             instances_created=instances_created,
             waitlist_created=waitlist_created,
+            waitlist_entries=waitlist_entries,
         )
     except HTTPException:
         db.rollback()
@@ -579,6 +588,7 @@ def purchase_half_month_subscription_and_reserve(
         from .waiting_list_service import WaitingListService
 
         waitlist_created = 0
+        waitlist_entries = []
 
         for instance in instances:
             existing_booking = (
@@ -609,14 +619,20 @@ def purchase_half_month_subscription_and_reserve(
 
             if booked_count >= instance.capacity:
                 try:
-                    WaitingListService.join_waiting_list(
+                    WaitingListService.join_waiting_list_record(
                         db=db,
                         user_id=user_id,
                         instance_id=instance.id,
                         entry_type="subscription",
                         subscription_id=subscription.id,
+                        commit=False,
                     )
                     waitlist_created += 1
+                    waitlist_entries.append({
+                        "instance_id": instance.id,
+                        "date": str(instance.date),
+                        "start_time": instance.template.start_time if instance.template else None,
+                    })
                     skipped_full += 1
                 except HTTPException:
                     raise
@@ -647,6 +663,7 @@ def purchase_half_month_subscription_and_reserve(
             skipped_existing=skipped_existing,
             instances_created=0,
             waitlist_created=waitlist_created,
+            waitlist_entries=waitlist_entries,
         )
     except HTTPException:
         db.rollback()

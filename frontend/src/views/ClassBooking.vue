@@ -149,14 +149,14 @@
                   type="button"
                   class="turn-card-btn"
                   :class="{
-                    disabled: isFullyBooked(turno) && !canJoinWaitlist(turno),
-                    'btn-waitlist': isFullyBooked(turno) && canJoinWaitlist(turno)
+                    disabled: isWaitlisted(turno) || (isFullyBooked(turno) && !canJoinWaitlist(turno)),
+                    'btn-waitlist': isFullyBooked(turno) && canJoinWaitlist(turno) && !isWaitlisted(turno)
                   }"
-                  :disabled="(isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
+                  :disabled="isWaitlisted(turno) || (isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
                   @click="selectInstanceForBooking(turno)"
                 >
                   <span v-if="bookingInProgress && selectedInstance?.id === turno.id" class="button-spinner" aria-hidden="true"></span>
-                  <span>{{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? (canJoinWaitlist(turno) ? 'Unirme a lista de espera' : 'Sin Cupo') : 'Reservar') }}</span>
+                  <span>{{ bookingButtonLabel(turno) }}</span>
                 </button>
               </div>
             </div>
@@ -182,6 +182,14 @@
       @result="onGatewayResult"
     />
 
+    <div v-if="finalizingPayment && !showGatewayModal" class="modal-overlay">
+      <div class="modal-content processing-modal" @click.stop>
+        <div class="spinner"></div>
+        <h2>Registrando abono</h2>
+        <p>Estamos confirmando tus reservas y listas de espera.</p>
+      </div>
+    </div>
+
     <!-- Modal de éxito -->
     <transition name="fade">
       <div v-if="successMessage" class="modal-overlay" @click="closeSuccessModal">
@@ -191,11 +199,12 @@
             'status-confirmed': bookingStatus === 'completed' || bookingStatus === 'confirmed',
             'status-pending': bookingStatus === 'pending',
             'status-waitlist': bookingStatus === 'waitlist',
-            'status-cancelled': bookingStatus === 'cancelled'
+            'status-cancelled': bookingStatus === 'cancelled',
+            'status-subscription': subscriptionSuccessDetails
           }"
           @click.stop
         >
-          <button class="modal-close" type="button" @click="successMessage = ''">✕</button>
+          <button class="modal-close" type="button" @click="closeSuccessModal">✕</button>
 
           <div class="status-modal-head">
             <div class="status-modal-icon" aria-hidden="true">
@@ -209,7 +218,45 @@
                     ? 'Reserva cancelada'
                     : 'Reserva pendiente de pago') }}
               </h2>
-              <p>{{ successMessage }}</p>
+              <template v-if="subscriptionSuccessDetails">
+                <p>{{ successMessage }}</p>
+                <div class="subscription-result">
+                  <div class="subscription-result-row">
+                    <span>Estado del pago</span>
+                    <strong>{{ subscriptionSuccessDetails.paymentText }}</strong>
+                  </div>
+                  <div class="subscription-result-row">
+                    <span>Regla aplicada</span>
+                    <strong>{{ subscriptionSuccessDetails.discountReason }}</strong>
+                  </div>
+                  <div class="subscription-result-row">
+                    <span>Reservas confirmadas</span>
+                    <strong>{{ subscriptionSuccessDetails.bookingsCreated }}</strong>
+                  </div>
+                  <div class="subscription-result-row">
+                    <span>Ya existentes</span>
+                    <strong>{{ subscriptionSuccessDetails.skippedExisting }}</strong>
+                  </div>
+                  <div class="subscription-result-row">
+                    <span>En lista de espera</span>
+                    <strong>{{ subscriptionSuccessDetails.waitlistCreated }}</strong>
+                  </div>
+                  <div class="subscription-result-row">
+                    <span>Vigencia</span>
+                    <strong>{{ subscriptionSuccessDetails.validTo }}</strong>
+                  </div>
+                </div>
+
+                <div v-if="subscriptionSuccessDetails.waitlistEntries.length" class="subscription-waitlist">
+                  <h3>Clases donde quedaste en lista de espera</h3>
+                  <ul>
+                    <li v-for="entry in subscriptionSuccessDetails.waitlistEntries" :key="entry.instance_id">
+                      {{ formatWaitlistEntry(entry) }}
+                    </li>
+                  </ul>
+                </div>
+              </template>
+              <p v-else>{{ successMessage }}</p>
             </div>
           </div>
 
@@ -275,11 +322,11 @@
 
               <button
                 @click="selectInstanceForBooking(turno)"
-                :disabled="(isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
+                :disabled="isWaitlisted(turno) || (isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
                 class="btn-turno-reserve"
-                :class="{ disabled: isFullyBooked(turno) && !canJoinWaitlist(turno) }"
+                :class="{ disabled: isWaitlisted(turno) || (isFullyBooked(turno) && !canJoinWaitlist(turno)) }"
               >
-                {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? (canJoinWaitlist(turno) ? 'Unirme a lista de espera' : 'Sin cupos') : 'Reservar') }}
+                {{ bookingButtonLabel(turno, 'Sin cupos') }}
               </button>
             </div>
           </div>
@@ -333,11 +380,13 @@ const bookingInProgress = ref(false)
 const bookingStatus = ref('')
 const successTitle = ref('')
 const successMessage = ref('')
+const subscriptionSuccessDetails = ref(null)
 const errorMessage = ref('')
 const isRefreshing = ref(false)
 const userSuspended = ref(false)
 const isUserAbonado = ref(false)
 const subscriptionPurchasedThisMonth = ref(false)
+const waitlistedInstanceIds = ref(new Set())
 
 const myBookings = ref([])
 const myBookingsLoaded = ref(false)
@@ -360,6 +409,7 @@ const closeSuccessModal = () => {
   successMessage.value = ''
   successTitle.value = ''
   bookingStatus.value = ''
+  subscriptionSuccessDetails.value = null
 }
 
 const showTurnosModal = ref(false)
@@ -422,7 +472,19 @@ const canJoinWaitlist = (instance) => {
   // Solo para reservas únicas (no abonos) y si el usuario NO es abonado
   if (reservationType.value !== 'class') return false
   if (isUserAbonado.value) return false
+  if (isWaitlisted(instance)) return false
   return true
+}
+
+const isWaitlisted = (instance) => {
+  return Boolean(instance?.id && waitlistedInstanceIds.value.has(instance.id))
+}
+
+const bookingButtonLabel = (instance, noSlotsText = 'Sin Cupo') => {
+  if (bookingInProgress.value && selectedInstance.value?.id === instance.id) return 'Procesando...'
+  if (isWaitlisted(instance)) return 'Ya estás en lista'
+  if (isFullyBooked(instance)) return canJoinWaitlist(instance) ? 'Unirme a lista de espera' : noSlotsText
+  return 'Reservar'
 }
 
 const clearSport = () => {
@@ -574,6 +636,12 @@ const formatBookingDate = (dateStr, fallbackDay) => {
 const formatTurnLabel = (instance) => {
   if (!instance) return 'Sin horario'
   return `${instance.template?.start_time || '--:--'}hs`
+}
+
+const formatWaitlistEntry = (entry) => {
+  const date = formatBookingDate(entry.date)
+  const time = entry.start_time ? `${entry.start_time} hs` : 'Horario a confirmar'
+  return `${date} - ${time}`
 }
 
 const parseLocalDate = (dateStr) => {
@@ -872,16 +940,24 @@ async function finalizeSubscriptionPurchase() {
   }
 
   bookingStatus.value = 'completed'
+  successTitle.value = 'Abono mensual registrado'
   errorMessage.value = ''
   const pagoTxt = subscriptionPayNowRequired.value
     ? 'Pago registrado.'
     : `Pago pendiente: $${pendingPaymentAmount.value}.`
-  const reglaTxt = subscriptionQuoteReason.value ? ` ${subscriptionQuoteReason.value}` : ''
+  const waitlistEntries = Array.isArray(res.data.waitlist_entries) ? res.data.waitlist_entries : []
 
-  successMessage.value = `¡Abono mensual registrado! ${pagoTxt}${reglaTxt} ` +
-    `Reservas creadas: ${res.data.bookings_created}. ` +
-    `Saltadas (sin cupo): ${res.data.skipped_full}. Ya existentes: ${res.data.skipped_existing}. ` +
-    `Vigencia hasta: ${res.data.valid_to}.`
+  subscriptionSuccessDetails.value = {
+    paymentText: pagoTxt,
+    discountReason: subscriptionQuoteReason.value || 'Sin descuento.',
+    bookingsCreated: Number(res.data.bookings_created || 0),
+    skippedExisting: Number(res.data.skipped_existing || 0),
+    waitlistCreated: Number(res.data.waitlist_created || res.data.skipped_full || 0),
+    waitlistEntries,
+    validTo: formatBookingDate(res.data.valid_to)
+  }
+
+  successMessage.value = 'Tu abono quedó registrado. Revisá el detalle de clases confirmadas y listas de espera.'
 
   closePaymentModal()
   showGatewayModal.value = false
@@ -997,11 +1073,16 @@ function onGatewayResult(result) {
   // Days 1-10: allow subscription purchase even if payment isn't effective (pending payment).
   if (isSubscription && subscriptionPayNowRequired.value === false) {
     showGatewayModal.value = false
-    finalizeSubscriptionPurchase().catch((e) => {
-      if (handleAuthError(e)) return
-      const detail = e.response?.data?.detail || 'Error al procesar la operación'
-      errorMessage.value = detail
-    })
+    finalizingPayment.value = true
+    finalizeSubscriptionPurchase()
+      .catch((e) => {
+        if (handleAuthError(e)) return
+        const detail = e.response?.data?.detail || 'Error al procesar la operación'
+        errorMessage.value = detail
+      })
+      .finally(() => {
+        finalizingPayment.value = false
+      })
     return
   }
 
@@ -1106,6 +1187,9 @@ const joinWaitlist = async (instance) => {
       params: { instance_id: instance.id },
       headers: { Authorization: `Bearer ${token}` }
     })
+
+    waitlistedInstanceIds.value = new Set([...waitlistedInstanceIds.value, instance.id])
+    instance.has_active_waiting_queue = true
 
     // Mensaje concordando con el caso de uso Jira (omitimos envío de mail por ahora)
     successTitle.value = 'Operación exitosa'
@@ -1993,6 +2077,63 @@ onMounted(() => {
   background: #5a8849;
 }
 
+.status-modal.status-subscription {
+  max-width: 680px;
+}
+
+.subscription-result {
+  margin-top: 14px;
+  border: 1px solid rgba(13, 18, 74, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fbfdff;
+}
+
+.subscription-result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(13, 18, 74, 0.08);
+}
+
+.subscription-result-row:last-child {
+  border-bottom: 0;
+}
+
+.subscription-result-row span {
+  color: rgba(13, 18, 74, 0.65);
+  font-weight: 800;
+  font-size: 0.88rem;
+}
+
+.subscription-result-row strong {
+  color: #0d124a;
+  text-align: right;
+}
+
+.subscription-waitlist {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 111, 0, 0.08);
+}
+
+.subscription-waitlist h3 {
+  margin: 0 0 8px;
+  color: #0d124a;
+  font-size: 0.95rem;
+}
+
+.subscription-waitlist ul {
+  margin: 0;
+  padding-left: 18px;
+  color: rgba(13, 18, 74, 0.75);
+  line-height: 1.5;
+  font-weight: 700;
+}
+
 .status-modal.status-waitlist .status-modal-icon {
   background: rgba(90, 136, 73, 0.16);
   color: #5a8849;
@@ -2022,6 +2163,26 @@ onMounted(() => {
 
 .payment-modal {
   text-align: left;
+}
+
+.processing-modal {
+  width: min(360px, calc(100% - 32px));
+  text-align: center;
+}
+
+.processing-modal .spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid #e5e9ef;
+  border-top-color: #2d658d;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+
+.processing-modal p {
+  margin: 0;
+  color: rgba(13, 18, 74, 0.7);
 }
 
 .modal-close {

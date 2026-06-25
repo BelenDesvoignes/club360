@@ -6,6 +6,7 @@ from datetime import timedelta
 from ..models.payment import Payment
 from ..models.booking import Booking
 from ..models.subscription import Subscription  
+from ..models.waiting_list import WaitingList
 
 # Utilitario del tiempo del sistema
 from ..time_override import business_utcnow
@@ -155,6 +156,21 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
             booking.amount_paid = new_paid
             if booking.status == "Pending":
                 booking.status = "Confirmed"
+
+        waitlist_entry = (
+            db.query(WaitingList)
+            .filter(
+                WaitingList.user_id == booking.user_id,
+                WaitingList.instance_id == booking.instance_id,
+                WaitingList.status == "accepted_pending_payment",
+            )
+            .order_by(WaitingList.promoted_at.desc())
+            .first()
+        )
+        if waitlist_entry:
+            waitlist_entry.status = "promoted"
+            waitlist_entry.promotion_token = None
+            waitlist_entry.promotion_expires_at = None
 
     db.commit()
     db.refresh(payment)

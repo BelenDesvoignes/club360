@@ -104,6 +104,10 @@
             </div>
           </div>
 
+          <div v-if="reservationError" class="modal-error" role="alert">
+            {{ reservationError }}
+          </div>
+
           <footer class="modal-actions">
             <button 
               @click="confirmReservation" 
@@ -145,6 +149,7 @@ const loadingInstances = ref(false)
 const selectedInstanceId = ref(null)
 const submittingReservation = ref(false)
 const reservationSuccess = ref(false)
+const reservationError = ref('')
 
 const sortedCredits = computed(() => {
   return [...rawCredits.value].sort((a, b) => {
@@ -260,6 +265,7 @@ const handleReserveWithCredit = async (credit) => {
   if (isCreditUsed(credit.id) || isCreditExpired(credit)) return
   selectedCredit.value = credit
   selectedInstanceId.value = null
+  reservationError.value = ''
   
   loadingInstances.value = true
   isModalOpen.value = true
@@ -279,6 +285,7 @@ const closeModal = () => {
   selectedCredit.value = null
   selectedInstanceId.value = null
   reservationSuccess.value = false
+  reservationError.value = ''
 }
 
 const confirmReservation = async () => {
@@ -288,6 +295,7 @@ const confirmReservation = async () => {
   const creditIdTarget = selectedCredit.value.id
   
   try {
+    reservationError.value = ''
     const token = localStorage.getItem('token')
     
     await axios.post(
@@ -310,10 +318,15 @@ const confirmReservation = async () => {
 
   } catch (error) {
     const errorDetail = error.response?.data?.detail || "No se pudo procesar la reserva con crédito"
-    const message = errorDetail.includes("No hay cupos disponibles")
-      ? "Error al reservar. No hay cupos disponibles"
+    const noSlots = errorDetail.includes("No hay cupos disponibles")
+    const message = noSlots
+      ? "La clase seleccionada se quedó sin cupos. Elegí otra clase disponible."
       : `Error: ${errorDetail}`
-    alert(message)
+    reservationError.value = message
+    selectedInstanceId.value = null
+    if (noSlots) {
+      await Promise.all([fetchShiftInstances(), fetchMyBookings()])
+    }
     console.error("Error en reserva por crédito:", error.response)
   } finally {
     submittingReservation.value = false
@@ -597,6 +610,17 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   color: #0d124a;
+}
+
+.modal-error {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fff0ed;
+  color: #b42318;
+  font-weight: 700;
+  line-height: 1.4;
+  border: 1px solid rgba(180, 35, 24, 0.14);
 }
 
 .clase-card {
