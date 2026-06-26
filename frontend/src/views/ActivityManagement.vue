@@ -91,7 +91,14 @@
 
           <div class="control price-input-wrap">
             <span style="color:#6b7280; margin-right:4px;">$</span>
-            <input type="number" v-model.number="act.editPrice" min="1" step="0.01" />
+            <input 
+            type="number" 
+            v-model.number="act.editPrice" 
+            min="1" 
+            step="0.01" 
+            required
+            @input="sanitizePrice(act)"
+          />
           </div>
 
           <button type="button" @click="savePrice(act)" class="price-btn">
@@ -577,20 +584,24 @@ const reactivateTemplate = async (templateId) => {
 }
 
 // ── precios ───────────────────────────────────────────────────────────────────
-const savePrice = async (act) => {
-  try {
-    await api.patch(`/activities/${act.id}/price`, null, {
-      params: { price: act.editPrice }
-    })
-    showMessage('Precio actualizado', 'success')
-    await fetchActivities()
-  } catch (e) {
-    showMessage(
-      e.response?.data?.detail || e.response?.data?.message || 'Error al actualizar precio',
-      'error'
-    )
+const sanitizePrice = (act) => {
+  let value = String(act.editPrice ?? '')
+
+  // deja solo números y punto decimal
+  value = value.replace(/[^0-9.]/g, '')
+
+  // convertir a número
+  let num = parseFloat(value)
+
+  // si está vacío, NaN o menor a 1 → forzar a 1
+  if (!Number.isFinite(num) || num < 1) {
+    act.editPrice = 1
+    return
   }
+
+  act.editPrice = num
 }
+
 
 // ── init ──────────────────────────────────────────────────────────────────────
 onMounted(() => {
