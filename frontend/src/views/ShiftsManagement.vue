@@ -31,7 +31,7 @@
           <label>Buscar por fecha exacta</label>
           <input type="date" v-model="filterDate" />
         </div>
-        <button @click="resetFilters" class="btn-clear">Limpiar</button>
+        <!-- botón Limpiar eliminado -->
       </div>
 
       <div class="table-container">
