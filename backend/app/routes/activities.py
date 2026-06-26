@@ -36,21 +36,32 @@ def create_activity(data: dict, db: Session = Depends(get_db)):
     for s in shifts_incoming:
         key = (s['day_of_week'], s['start_time'])
         if key in seen:
-            raise HTTPException(status_code=400, detail=f"Turno repetido en el formulario: {key[0]} {key[1]}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Turno repetido en el formulario: {key[0]} {key[1]}"
+            )
         seen.add(key)
 
     activity = db.query(Activity).filter(Activity.name == data['name']).first()
     if not activity:
-        raise HTTPException(status_code=404, detail=f"Actividad '{data['name']}' no encontrada")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Actividad '{data['name']}' no encontrada"
+        )
 
     for s in shifts_incoming:
-        shift_service.validate_unique_shift(db, activity.id, s['day_of_week'], s['start_time'])
+        # 🔹 Validar solo contra turnos activos
+        shift_service.validate_unique_shift(
+            db, activity.id, s['day_of_week'], s['start_time']
+        )
+
         new_template = ShiftTemplate(
             activity_id=activity.id,
             day_of_week=s['day_of_week'],
             start_time=s['start_time'],
             capacity=s['capacity'],
-            price=activity.price
+            price=activity.price,
+            is_active=True   # aseguramos que el nuevo turno se cree como activo
         )
         db.add(new_template)
         db.flush()
@@ -58,7 +69,6 @@ def create_activity(data: dict, db: Session = Depends(get_db)):
 
     db.commit()
     return {"message": "Turno creado con éxito"}
-
 
 @router.get("/templates/{template_id}/check-bookings")
 def check_template_bookings(template_id: int, db: Session = Depends(get_db)):

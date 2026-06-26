@@ -102,6 +102,21 @@ def reactivate_template(template_id: int, db: Session = Depends(get_db)):
     if not template:
         raise HTTPException(status_code=404, detail="Turno base no encontrado")
 
+    # 🔹 Validar que no exista un turno activo con mismos datos
+    exists_active = db.query(ShiftTemplate).filter(
+        ShiftTemplate.activity_id == template.activity_id,
+        ShiftTemplate.day_of_week == template.day_of_week,
+        ShiftTemplate.start_time == template.start_time,
+        ShiftTemplate.is_active == True
+    ).first()
+
+    if exists_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Ya existe un turno activo con los mismos datos"
+        )
+
+    # Si no existe, se puede reactivar
     template.is_active = True
     created_instances = shift_service.create_instances_for_month(db, template, commit=False)
 
