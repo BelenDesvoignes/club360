@@ -1,296 +1,168 @@
 <template>
-  <div class="booking-container">
-    <header class="booking-header">
-      <div class="booking-header-main">
-        <div class="booking-header-left">
-          <h1>Reservar</h1>
-          <div class="booking-stepline">
-            <span class="step-pill">Paso {{ selectedSportId ? '2' : '1' }}</span>
-            <span class="step-text">{{ selectedSportId ? 'Elegí el tipo de reserva y horario' : 'Elegí el deporte' }}</span>
-          </div>
+  <div class="page">
+    <div class="gestion-container">
+      <header class="page-header">
+        <h1>Gestión de clientes</h1>
+        <p>Panel de administración de clientes, estados de cuenta y reservas</p>
+      </header>
+
+      <div class="filters-card">
+        <div class="filter-group search-group">
+          <label>Buscar cliente</label>
+          <input 
+            type="text" 
+            v-model="filterSearch" 
+            placeholder="Ingresá nombre o DNI..." 
+            @input="fetchInstancias" 
+          />
         </div>
 
-        <div v-if="selectedSportId" class="booking-stepper" aria-label="Progreso de reserva">
-          <div class="stepper-node done">
-            <span class="node-dot">1</span>
-            <span class="node-label">Deporte</span>
-          </div>
-          <div class="stepper-line"></div>
-          <div class="stepper-node current">
-            <span class="node-dot">2</span>
-            <span class="node-label">Horario</span>
-          </div>
-          <div class="stepper-line"></div>
-          <div class="stepper-node">
-            <span class="node-dot">3</span>
-            <span class="node-label">Confirmar</span>
-          </div>
+        <div class="filter-group">
+          <label>Filtrar por estado</label>
+          <select v-model="filterStatus" @change="fetchInstancias">
+            <option value="">Todos los estados</option>
+            <option value="Activo">Activo</option>
+            <option value="Suspendido">Suspendido</option>
+          </select>
+        </div>
+
+        <div class="actions-group">
+          <!-- acá ya no hay botón Limpiar -->
         </div>
       </div>
-    </header>
 
-    <!-- Paso 1: elegir deporte -->
-    <div v-if="!selectedSportId && !loading && !userSuspended" class="sports-step">
-      <div class="sports-grid">
-        <button
-          v-for="sport in sports"
-          :key="sport.activity_id"
-          type="button"
-          class="sport-tile"
-          :style="sportHeroStyle(sport.activity_name)"
-          @click="selectSport(sport.activity_id)"
-        >
-          <div class="sport-tile-overlay">
-            <div class="sport-tile-copy">
-              <div class="sport-tile-title">{{ sport.activity_name || `Deporte ${sport.activity_id}` }}</div>
-              <div class="sport-tile-sub">Ver horarios disponibles y reservar turnos</div>
+      <div class="table-container">
+        <table class="shifts-table">
+          <thead>
+            <tr>
+              <th>Nombre y Apellido</th>
+              <th>DNI</th>
+              <th>Estado</th>
+              <th class="text-center">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="cliente in filteredClientes" :key="cliente.id">
+              <tr :class="{ 'row-suspended': cliente.estado === 'Suspendido' }">
+                <td><span class="client-name">{{ cliente.nombre }}</span></td>
+                <td>{{ cliente.dni }}</td>
+                <td>
+                  <span class="status-badge" :class="cliente.estado.toLowerCase()">{{ cliente.estado }}</span>
+                </td>
+                <td class="actions-cell justify-center">
+                  <button
+                    @click="toggleAccordion(cliente.id)"
+                    class="icon-btn"
+                    :class="{ 'rotate-arrow': activeAccordion === cliente.id }"
+                    title="Ver operaciones"
+                  >
+                    {{ activeAccordion === cliente.id ? '▲' : '▼' }}
+                  </button>
+                  <div class="dropdown-wrapper">
+                    <button @click.stop="toggleDropdown(cliente.id)" class="icon-btn" title="Más opciones">⋮</button>
+                    <div v-if="activeDropdown === cliente.id" class="dropdown-menu dropdown-right">
+                      <button @click="editCliente(cliente)">✏️ Editar Datos</button>
+                      <button @click="deleteCliente(cliente)" class="btn-delete-option">🗑️ Eliminar cliente</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+
+              <tr v-if="activeAccordion === cliente.id" class="accordion-row">
+                <td colspan="4">
+                  <div class="accordion-content">
+                    <div class="accordion-header">
+                      <h4>Operaciones asociadas a: <span>{{ cliente.nombre }}</span></h4>
+                    </div>
+                    <div class="accordion-actions">
+                      <button @click="createReserva(cliente)" class="btn-nested">Nueva reserva</button>
+                      <button @click="createAbono(cliente)" class="btn-nested"> Nuevo abono</button>
+                      <button @click="viewReservas(cliente)" class="btn-nested"> Historial reservas</button>
+                      <button @click="viewPagos(cliente)" class="btn-nested"> Ver pagos</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div v-if="filteredClientes.length === 0" class="empty-state">
+          No se encontraron clientes con los criterios de búsqueda.
+        </div>
+      </div>
+    </div> <!-- cierre gestion-container -->
+  </div> <!-- cierre page -->
+
+  <!-- Modales -->
+  <transition name="fade">
+    <div v-if="showCreateModal" class="modal-overlay">
+      <div class="modal-card form-modal-card">
+        <header class="form-header">
+          <h3>Registrar cliente</h3>
+          <p>Crea una cuenta para un nuevo cliente desde el panel.</p>
+        </header>
+        <form @submit.prevent="handleSubmitForm" class="equipo-form">
+          <div class="form-grid">
+            <div class="input-group">
+              <label>Nombre</label>
+              <input v-model="form.first_name" type="text" required />
             </div>
-            <div class="sport-tile-action">Ver horarios y reservar</div>
+            <div class="input-group">
+              <label>Apellido</label>
+              <input v-model="form.last_name" type="text" required />
+            </div>
           </div>
-        </button>
-      </div>
-
-      <div v-if="sports.length === 0" class="empty-state">
-        Todavía no hay deportes cargados para mostrar.
+          <div class="input-group">
+            <label>DNI (sin puntos)</label>
+            <input v-model="form.dni" type="text" required />
+          </div>
+          <div class="input-group">
+            <label>Correo electrónico</label>
+            <input v-model="form.email" type="email" required />
+          </div>
+          <div class="input-group">
+            <label>Contraseña</label>
+            <input v-model="form.password" type="password" required />
+          </div>
+          <div class="modal-actions-container">
+            <button type="submit" class="btn-confirm" :disabled="loadingForm">
+              <span v-if="loadingForm" class="spinner-inline"></span>
+              <span v-else>Crear cliente</span>
+            </button>
+            <button type="button" @click="closeCreateModal" class="btn-cancel" :disabled="loadingForm">Cancelar</button>
+          </div>
+        </form>
       </div>
     </div>
+  </transition>
 
-    <!-- Paso 2: tipo de reserva + filtro por día (solo si ya eligió deporte) -->
-    <div v-if="selectedSportId && !userSuspended" class="reservation-controls">
-      <div class="reserve-type">
-        <button type="button" :class="{active: reservationType === 'class'}" @click="reservationType = 'class'">Reserva Única</button>
-        <button type="button" :class="{active: reservationType === 'subscription'}" @click="reservationType = 'subscription'">Reservar Abono</button>
-      </div>
-
-      <div class="day-filter">
-        <label>Filtrar por día</label>
-        <select v-model="selectedWeekday">
-          <option value="all">Todos</option>
-          <option v-for="(label, idx) in weekDays" :key="idx" :value="label">{{ label }}</option>
-        </select>
-      </div>
-
-      <button type="button" class="change-sport" @click="clearSport">Cambiar deporte</button>
+  <transition name="fade">
+    <div v-if="showReservaModal" class="modal-overlay" @click.self="showReservaModal = false">
+      <!-- contenido de Reserva -->
     </div>
+  </transition>
 
-    <!-- Advertencia si está suspendido -->
-    <div v-if="userSuspended" class="suspension-warning">
-      <div class="warning-icon">🚫</div>
-      <div class="warning-content">
-        <h3>Tu cuenta está suspendida</h3>
-        <p>Debes solicitar reactivación para poder hacer nuevas reservas. Contacta al soporte para resolver esto.</p>
-      </div>
+  <transition name="fade">
+    <div v-if="showAbonoModal" class="modal-overlay" @click.self="showAbonoModal = false">
+      <!-- contenido de Abono -->
     </div>
+  </transition>
 
-    <div v-if="loading" class="loading-spinner">Cargando clases disponibles...</div>
-
-    <div v-else-if="isRefreshing" class="loading-refresh">Actualizando...</div>
-
-    <div v-else-if="userSuspended" class="suspended-block">
-      <p>No puedes hacer reservas mientras tu cuenta esté suspendida.</p>
+  <transition name="fade">
+    <div v-if="showReservasModal" class="modal-overlay" @click.self="showReservasModal = false">
+      <!-- contenido de Historial de Reservas -->
     </div>
+  </transition>
 
-    <div v-else-if="selectedSportId" class="classes-grid">
-      <div
-        v-for="activity in visibleActivities"
-        :key="`${activity.activity_id}`"
-        class="activity-shell"
-      >
-        <div class="activity-hero" :style="sportHeroStyle(activity.activity_name)">
-          <div class="activity-hero-overlay">
-            <div class="activity-hero-title">{{ activity.activity_name || `Actividad ${activity.activity_id}` }}</div>
-            <div class="activity-hero-sub">
-              {{ reservationType === 'subscription' ? 'Horarios recurrentes disponibles' : (activity.instances.length === 1 ? '1 turno disponible' : `${activity.instances.length} turnos disponibles`) }}
-            </div>
-          </div>
-          <div class="activity-hero-chip">
-            {{ reservationType === 'subscription' ? `${activity.templates?.length || 0} horarios` : `${activity.instances.length} turnos` }}
-          </div>
-        </div>
-
-        <div class="activity-body">
-          <template v-if="reservationType === 'subscription'">
-            <div v-if="activity.templates && activity.templates.length" class="turn-grid">
-              <div v-for="tpl in activity.templates" :key="`tpl-${tpl.id}`" class="turn-card">
-                <div class="turn-card-top">
-                  <div class="turn-card-date">{{ tpl.day_of_week }} · {{ tpl.start_time }}hs</div>
-                  <span class="turn-card-badge available">Recurrente</span>
-                </div>
-                <div class="turn-card-body">
-                  <div class="turn-card-row">Horario fijo semanal</div>
-                  <div class="turn-card-row spots">Precio por clase: ${{ tpl.price }}</div>
-                </div>
-                <button type="button" class="turn-card-btn" @click="selectTemplateForSubscription(tpl, activity.activity_name)">
-                  Seleccionar Abono
-                </button>
-              </div>
-            </div>
-            <div v-else class="no-turnos card-empty-inline">No hay horarios recurrentes para este deporte</div>
-          </template>
-
-          <template v-else>
-            <div v-if="activity.instances.length > 0" class="turn-grid">
-              <div v-for="turno in activity.instances" :key="turno.id" class="turn-card" :class="{ full: isFullyBooked(turno) }">
-                <div class="turn-card-top">
-                  <div class="turn-card-date">{{ formatBookingDate(turno.date, turno.template.day_of_week) }}</div>
-                  <span class="turn-card-badge" :class="isFullyBooked(turno) ? 'full' : 'available'">
-                    {{ isFullyBooked(turno) ? 'Completo' : 'Disponible' }}
-                  </span>
-                </div>
-
-                <div class="turn-card-body">
-                  <div class="turn-card-row">⏰ {{ formatTurnLabel(turno) }}</div>
-                  <div class="turn-card-row">📍 {{ turno.court || 'Sin cancha' }}</div>
-                  <div class="turn-card-row spots">👥 Cupos: {{ turno.booked_count }}/{{ turno.template.capacity }}</div>
-                  <div class="turn-card-price">${{ turno.template.price }}</div>
-                </div>
-
-                <button
-                  type="button"
-                  class="turn-card-btn"
-                  :class="{
-                    disabled: isFullyBooked(turno) && !canJoinWaitlist(turno),
-                    'btn-waitlist': isFullyBooked(turno) && canJoinWaitlist(turno)
-                  }"
-                  :disabled="(isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
-                  @click="selectInstanceForBooking(turno)"
-                >
-                  <span v-if="bookingInProgress && selectedInstance?.id === turno.id" class="button-spinner" aria-hidden="true"></span>
-                  <span>{{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? (canJoinWaitlist(turno) ? 'Unirme a lista de espera' : 'Sin Cupo') : 'Reservar') }}</span>
-                </button>
-              </div>
-            </div>
-
-            <div v-else class="no-turnos card-empty-inline">No hay turnos disponibles para esta actividad</div>
-          </template>
-        </div>
-      </div>
-
-      <div v-if="groupedActivities.length === 0" class="empty-state">
-        Todavía no hay clases cargadas para mostrar.
-      </div>
+  <transition name="fade">
+    <div v-if="showPagosModal" class="modal-overlay" @click.self="showPagosModal = false">
+      <!-- contenido de Historial de Pagos -->
     </div>
+  </transition>
 
-    <PaymentModal
-      v-model="showGatewayModal"
-      :amount="pendingPaymentAmount"
-      :depositAmount="Number(selectedInstance?.template?.price || 0) * 0.5"
-      :fullAmount="Number(selectedInstance?.template?.price || 0)"
-      :payeeName="selectedInstance?.activity_name || 'Reserva'"
-      :isAbono="paymentType === 'monthly'"
-      :busy="finalizingPayment"
-      @result="onGatewayResult"
-    />
-
-    <!-- Modal de éxito -->
-    <transition name="fade">
-      <div v-if="successMessage" class="modal-overlay" @click="closeSuccessModal">
-        <div
-          class="modal-content status-modal"
-          :class="{
-            'status-confirmed': bookingStatus === 'completed' || bookingStatus === 'confirmed',
-            'status-pending': bookingStatus === 'pending',
-            'status-waitlist': bookingStatus === 'waitlist',
-            'status-cancelled': bookingStatus === 'cancelled'
-          }"
-          @click.stop
-        >
-          <button class="modal-close" type="button" @click="successMessage = ''">✕</button>
-
-          <div class="status-modal-head">
-            <div class="status-modal-icon" aria-hidden="true">
-              {{ bookingStatus === 'completed' || bookingStatus === 'confirmed' || bookingStatus === 'waitlist' ? '✓' : bookingStatus === 'cancelled' ? '⨯' : '⏳' }}
-            </div>
-            <div class="status-modal-copy">
-              <h2>
-                {{ successTitle || (bookingStatus === 'completed' || bookingStatus === 'confirmed'
-                  ? '¡Reserva confirmada!'
-                  : bookingStatus === 'cancelled'
-                    ? 'Reserva cancelada'
-                    : 'Reserva pendiente de pago') }}
-              </h2>
-              <p>{{ successMessage }}</p>
-            </div>
-          </div>
-
-          <div class="status-modal-actions">
-            <button type="button" class="status-btn" @click="closeSuccessModal">Cerrar</button>
-          </div>
-        </div>
-      </div>
-    </transition>
-
-    <!-- Modal de error -->
-    <transition name="fade">
-      <div v-if="errorMessage" class="modal-overlay error" @click="errorMessage = ''">
-        <div class="modal-content" @click.stop>
-          <div class="modal-icon error">✕</div>
-          <h2>Error en la reserva</h2>
-          <p>{{ errorMessage }}</p>
-          <button @click="errorMessage = ''" class="btn btn-primary">Cerrar</button>
-        </div>
-      </div>
-    </transition>
-
-    <!-- Modal para seleccionar turno por actividad -->
-    <transition name="fade">
-      <div v-if="showTurnosModal" class="modal-overlay" @click="closeTurnosModal">
-        <div class="modal-content turnos-modal" @click.stop>
-          <button class="modal-close" @click="closeTurnosModal">✕</button>
-          
-          <h2>{{ selectedActivity?.activity_name }} - Turnos disponibles</h2>
-          
-          <div v-if="selectedActivity && selectedActivity.instances.length > 0" class="turnos-container">
-            <div
-              v-for="turno in selectedActivity.instances"
-              :key="turno.id"
-              class="turno-card"
-              :class="{ 'full': isFullyBooked(turno) }"
-            >
-              <div class="turno-header">
-                <div class="turno-date">{{ formatBookingDate(turno.date, turno.template.day_of_week) }}</div>
-                <div class="turno-badge" :class="isFullyBooked(turno) ? 'full' : 'available'">
-                  {{ isFullyBooked(turno) ? 'Sin cupos' : 'Disponible' }}
-                </div>
-              </div>
-
-              <div class="turno-details">
-                <div class="detail-row">
-                  <span class="detail-label">Horario:</span>
-                  <span class="detail-value">{{ formatTurnLabel(turno) }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-label">Cancha:</span>
-                  <span class="detail-value">{{ turno.court || 'Sin cancha' }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-label">Cupos:</span>
-                  <span class="detail-value">{{ turno.booked_count }} / {{ turno.template.capacity }}</span>
-                </div>
-                <div class="detail-row price-row">
-                  <span class="detail-label">Precio de la clase:</span>
-                  <span class="detail-value price">${{ turno.template.price }}</span>
-                </div>
-              </div>
-
-              <button
-                @click="selectInstanceForBooking(turno)"
-                :disabled="(isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
-                class="btn-turno-reserve"
-                :class="{ disabled: isFullyBooked(turno) && !canJoinWaitlist(turno) }"
-              >
-                {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? (canJoinWaitlist(turno) ? 'Unirme a lista de espera' : 'Sin cupos') : 'Reservar') }}
-              </button>
-            </div>
-          </div>
-
-          <div v-else class="no-turnos">
-            No hay turnos disponibles para esta actividad
-          </div>
-        </div>
-      </div>
-    </transition>
-  </div>
+  <transition name="fade">
+    <div v-if="toastMessage" :class="['alert-toast', toastType]">{{ toastMessage }}</div>
+  </transition>
 </template>
 
 <script setup>

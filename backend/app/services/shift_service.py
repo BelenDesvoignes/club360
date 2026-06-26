@@ -209,7 +209,7 @@ def validate_unique_shift(db: Session, activity_id: int, day_of_week: str, start
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=f"Ya existe un turno activo para {day_of_week} {start_time}"
+            detail=f"Ya existe un turno activo con esos datos"
         )
     
 def procesar_devoluciones_por_cancelacion_de_clase(db: Session, active_bookings: list, instance: ShiftInstance):
