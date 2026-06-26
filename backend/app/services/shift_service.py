@@ -198,26 +198,18 @@ def get_shift_instance_detail(db: Session, instance_id: int):
     }
 
 
-def validate_unique_shift(db: Session, activity_id, day_of_week, start_time, exclude_id=None):
-    duplicate = (
-        db.query(ShiftTemplate)
-        .filter(
-            ShiftTemplate.activity_id == activity_id,
-            ShiftTemplate.day_of_week == day_of_week,
-            ShiftTemplate.start_time == start_time,
-            ShiftTemplate.id != exclude_id,
-        )
-        .first()
-    )
+def validate_unique_shift(db: Session, activity_id: int, day_of_week: str, start_time: str):
+    existing = db.query(ShiftTemplate).filter(
+        ShiftTemplate.activity_id == activity_id,
+        ShiftTemplate.day_of_week == day_of_week,
+        ShiftTemplate.start_time == start_time,
+        ShiftTemplate.is_active == True   # 🔹 solo considerar activos
+    ).first()
 
-    if duplicate:
-        detail = "Este turno ya existe"
-        if not duplicate.is_active:
-            detail = "Este turno fue eliminado. Para volver a usarlo, reactiválo desde la tabla de turnos eliminados."
-
+    if existing:
         raise HTTPException(
             status_code=400,
-            detail=detail,
+            detail=f"Ya existe un turno activo para {day_of_week} {start_time}"
         )
     
 def procesar_devoluciones_por_cancelacion_de_clase(db: Session, active_bookings: list, instance: ShiftInstance):

@@ -1,4 +1,3 @@
-
 <template>
   <div class="page">
     <div class="gestion-container">
@@ -14,7 +13,6 @@
               <label class="label">Actividad</label>
               <div class="control">
                 <select v-model="form.name" required :disabled="isEditing">
-                  <option value="" disabled>Seleccioná actividad</option>
                   <option v-for="(court, act) in activityMap" :key="act" :value="act">
                     {{ act }}
                   </option>
@@ -320,11 +318,16 @@ const showDeletedTurns = ref(false)
 const hasInactiveTemplates = computed(() => inactiveTemplates.value.length > 0)
 
 let messageTimer = null
-
+const defaultActivity = Object.keys(activityMap)[0]  // primera actividad del mapa
 const form = ref({
-  name: '',
-  court: '',
-  shifts: [{ day_of_week: 'Lunes', start_time: '18:00', capacity: 20, price: null }]
+  name: defaultActivity,
+  court: activityMap[defaultActivity],
+  shifts: [{
+    day_of_week: 'Lunes',
+    start_time: '18:00',
+    capacity: 20,
+    price: null
+  }]
 })
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -563,14 +566,27 @@ const executeDelete = async (cancelBookings) => {
 }
 
 const reactivateTemplate = async (templateId) => {
-  loading.value = true
+  // Buscar el turno eliminado que se quiere reactivar
+  const template = inactiveTemplates.value.find(t => t.id === templateId)
 
+  // Validar si ya existe un turno activo con misma actividad/día/hora
+  const existsActive = flatActivities.value.some(
+    act => act.name === template.name &&
+           act.day === template.day_of_week &&
+           act.time === template.start_time
+  )
+
+  if (existsActive) {
+    showMessage('Ya existe un turno activo con esos datos. No se puede reactivar.', 'error')
+    return
+  }
+
+  loading.value = true
   try {
     startOperationFeedback(
       'Reactivando turno',
-      'Estamos reactivado el turno y creando las clases'
+      'Estamos reactivando el turno y creando las clases'
     )
-
     const res = await api.patch(`/shifts/templates/${templateId}/reactivate`)
     await Promise.all([fetchActivities(), fetchInactiveTemplates()])
     showMessage(res.data.message || 'Turno reactivado correctamente', 'success')
@@ -582,6 +598,7 @@ const reactivateTemplate = async (templateId) => {
     stopOperationFeedback()
   }
 }
+
 
 // ── precios ───────────────────────────────────────────────────────────────────
 const sanitizePrice = (act) => {
