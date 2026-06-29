@@ -83,28 +83,52 @@ class SubscriptionQuote:
     pay_now_required: bool
     discount_reason: str
     instances_created: int
+    pricing_mode: str = "standard"
+    reservable_classes: int = 0
+    waitlist_classes: int = 0
+    reservable_entries: list[dict] | None = None
+    waitlist_entries: list[dict] | None = None
 
 
-def get_subscription_quote(
-    db: Session, *, user_id: int, template_id: int, today: date | None = None
-) -> SubscriptionQuote:
-    today = today or business_today()
+@dataclass
+class SubscriptionAvailabilityPlan:
+    valid_to: date
+    instances: list[ShiftInstance]
+    reservable_instances: list[ShiftInstance]
+    waitlist_instances: list[ShiftInstance]
+    existing_booking_instances: list[ShiftInstance]
 
+    @property
+    def remaining_classes(self) -> int:
+        return len(self.instances)
+
+    @property
+    def billable_classes(self) -> int:
+        if self.waitlist_instances:
+            return len(self.reservable_instances)
+        return self.remaining_classes
+
+    @property
+    def pricing_mode(self) -> str:
+        return "available_only" if self.waitlist_instances else "standard"
+
+
+def _get_subscription_template(db: Session, template_id: int) -> ShiftTemplate:
     template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Template no encontrado")
+    return template
 
-    valid_to = last_day_of_month(today)
 
-    # IMPORTANT: Instancias se crean desde templates (admin), no desde abonos.
-    instances_created = 0
-
-    instances = (
+def _get_subscription_instances(
+    db: Session, *, template_id: int, start_date: date, valid_to: date
+) -> list[ShiftInstance]:
+    return (
         db.query(ShiftInstance)
         .filter(
             and_(
                 ShiftInstance.template_id == template_id,
-                ShiftInstance.date >= today,
+                ShiftInstance.date >= start_date,
                 ShiftInstance.date <= valid_to,
                 ShiftInstance.is_cancelled == False,
             )
@@ -113,26 +137,115 @@ def get_subscription_quote(
         .all()
     )
 
-    remaining_classes = len(instances)
-    if remaining_classes <= 0:
+
+def build_subscription_availability_plan(
+    db: Session, *, user_id: int, template_id: int, today: date | None = None
+) -> SubscriptionAvailabilityPlan:
+    today = today or business_today()
+    valid_to = last_day_of_month(today)
+    instances = _get_subscription_instances(
+        db,
+        template_id=template_id,
+        start_date=today,
+        valid_to=valid_to,
+    )
+
+    if not instances:
+        raise HTTPException(
+            status_code=400,
+            detail="No quedan clases disponibles para el abono en este mes. Intentá más adelante.",
+        )
+
+    reservable_instances = []
+    waitlist_instances = []
+    existing_booking_instances = []
+
+    for instance in instances:
+        existing_booking = (
+            db.query(Booking)
+            .filter(
+                and_(
+                    Booking.user_id == user_id,
+                    Booking.instance_id == instance.id,
+                    Booking.status != "Cancelled",
+                )
+            )
+            .first()
+        )
+        if existing_booking:
+            existing_booking_instances.append(instance)
+            continue
+
+        booked_count = (
+            db.query(Booking)
+            .filter(
+                and_(
+                    Booking.instance_id == instance.id,
+                    Booking.status != "Cancelled",
+                )
+            )
+            .count()
+        )
+
+        capacity = instance.template.capacity if instance.template else None
+        if capacity is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No se pudo validar la capacidad del turno para el abono.",
+            )
+
+        if booked_count >= capacity:
+            waitlist_instances.append(instance)
+        else:
+            reservable_instances.append(instance)
+
+    return SubscriptionAvailabilityPlan(
+        valid_to=valid_to,
+        instances=instances,
+        reservable_instances=reservable_instances,
+        waitlist_instances=waitlist_instances,
+        existing_booking_instances=existing_booking_instances,
+    )
+
+
+def calculate_subscription_price(
+    db: Session,
+    *,
+    user_id: int,
+    template: ShiftTemplate,
+    template_id: int,
+    today: date,
+    class_count: int,
+    valid_to: date,
+    instances_created: int = 0,
+    pricing_mode: str = "standard",
+    reservable_classes: int = 0,
+    waitlist_classes: int = 0,
+    reservable_entries: list[dict] | None = None,
+    waitlist_entries: list[dict] | None = None,
+) -> SubscriptionQuote:
+    if class_count <= 0 and pricing_mode != "available_only":
         raise HTTPException(
             status_code=400,
             detail="No quedan clases disponibles para el abono en este mes. Intentá más adelante.",
         )
 
     unit_price = float(template.price or 0)
-    base_amount = unit_price * remaining_classes
-    if base_amount <= 0:
+    if unit_price <= 0:
         raise HTTPException(status_code=400, detail="No se pudo determinar el precio mensual")
 
-    pay_now_required = today.day >= 11
+    base_amount = unit_price * class_count
+
+    pay_now_required = today.day >= 11 and base_amount > 0
 
     discount_percent = 0
     discount_applied = False
     discount_reason = "Sin descuento."
 
-    if today.day >= 15:
-        if remaining_classes <= 1:
+    if pricing_mode == "available_only":
+        discount_reason = "Se cobraron solo las clases donde tenés tu cupo asegurado."
+    elif today.day >= 15:
+        if class_count <= 1:
             discount_reason = "Sin descuento: solo queda una clase disponible."
         else:
             cancelled_prev = _count_cancelled_subscription_bookings_prev_month(
@@ -159,7 +272,7 @@ def get_subscription_quote(
     return SubscriptionQuote(
         template_id=template_id,
         valid_to=valid_to,
-        remaining_classes=remaining_classes,
+        remaining_classes=class_count,
         base_amount=base_amount,
         amount=amount,
         discount_percent=discount_percent,
@@ -167,6 +280,51 @@ def get_subscription_quote(
         pay_now_required=pay_now_required,
         discount_reason=discount_reason,
         instances_created=instances_created,
+        pricing_mode=pricing_mode,
+        reservable_classes=reservable_classes,
+        waitlist_classes=waitlist_classes,
+        reservable_entries=reservable_entries or [],
+        waitlist_entries=waitlist_entries or [],
+    )
+
+
+def _subscription_instance_entry(instance: ShiftInstance) -> dict:
+    return {
+        "instance_id": instance.id,
+        "date": str(instance.date),
+        "start_time": instance.template.start_time if instance.template else None,
+    }
+
+
+def get_subscription_quote(
+    db: Session, *, user_id: int, template_id: int, today: date | None = None
+) -> SubscriptionQuote:
+    today = today or business_today()
+    template = _get_subscription_template(db, template_id)
+    plan = build_subscription_availability_plan(
+        db,
+        user_id=user_id,
+        template_id=template_id,
+        today=today,
+    )
+
+    # IMPORTANT: Instancias se crean desde templates (admin), no desde abonos.
+    instances_created = 0
+
+    return calculate_subscription_price(
+        db,
+        user_id=user_id,
+        template=template,
+        template_id=template_id,
+        today=today,
+        class_count=plan.billable_classes,
+        valid_to=plan.valid_to,
+        instances_created=instances_created,
+        pricing_mode=plan.pricing_mode,
+        reservable_classes=len(plan.reservable_instances),
+        waitlist_classes=len(plan.waitlist_instances),
+        reservable_entries=[_subscription_instance_entry(i) for i in plan.reservable_instances],
+        waitlist_entries=[_subscription_instance_entry(i) for i in plan.waitlist_instances],
     )
 
 
@@ -188,9 +346,7 @@ def purchase_subscription_and_reserve(
 ) -> PurchaseResult:
     today = today or business_today()
 
-    template = db.query(ShiftTemplate).filter(ShiftTemplate.id == template_id).first()
-    if not template:
-        raise HTTPException(status_code=404, detail="Template no encontrado")
+    template = _get_subscription_template(db, template_id)
 
     if _subscription_already_purchased_this_month(db, user_id=user_id, template_id=template_id, today=today):
         raise HTTPException(
@@ -198,24 +354,28 @@ def purchase_subscription_and_reserve(
             detail="Ya tienes un abono activo para este horario este mes.",
         )
 
-    quote = get_subscription_quote(db, user_id=user_id, template_id=template_id, today=today)
+    plan = build_subscription_availability_plan(
+        db,
+        user_id=user_id,
+        template_id=template_id,
+        today=today,
+    )
+    quote = calculate_subscription_price(
+        db,
+        user_id=user_id,
+        template=template,
+        template_id=template_id,
+        today=today,
+        class_count=plan.billable_classes,
+        valid_to=plan.valid_to,
+        instances_created=0,
+        pricing_mode=plan.pricing_mode,
+        reservable_classes=len(plan.reservable_instances),
+        waitlist_classes=len(plan.waitlist_instances),
+    )
 
     valid_to = quote.valid_to
     instances_created = quote.instances_created
-
-    instances = (
-        db.query(ShiftInstance)
-        .filter(
-            and_(
-                ShiftInstance.template_id == template_id,
-                ShiftInstance.date >= today,
-                ShiftInstance.date <= valid_to,
-                ShiftInstance.is_cancelled == False,
-            )
-        )
-        .order_by(ShiftInstance.date.asc())
-        .all()
-    )
 
     monthly_price = float(quote.amount)
 
@@ -234,7 +394,7 @@ def purchase_subscription_and_reserve(
     payment = Payment(
         user_id=user_id,
         amount=monthly_price,
-        status="completed" if quote.pay_now_required else "pending",
+        status="completed" if quote.pay_now_required or monthly_price == 0 else "pending",
         type="subscription",
         date=purchase_dt,
     )
@@ -252,63 +412,25 @@ def purchase_subscription_and_reserve(
 
         waitlist_created = 0
         waitlist_entries = []
-        for instance in instances:
-            existing_booking = (
-                db.query(Booking)
-                .filter(
-                    and_(
-                        Booking.user_id == user_id,
-                        Booking.instance_id == instance.id,
-                        Booking.status != "Cancelled",
-                    )
+        skipped_existing = len(plan.existing_booking_instances)
+
+        for instance in plan.waitlist_instances:
+            try:
+                WaitingListService.join_waiting_list_record(
+                    db=db,
+                    user_id=user_id,
+                    instance_id=instance.id,
+                    entry_type="subscription",
+                    subscription_id=subscription.id,
+                    commit=False,
                 )
-                .first()
-            )
-            if existing_booking:
-                skipped_existing += 1
-                continue
+                waitlist_created += 1
+                waitlist_entries.append(_subscription_instance_entry(instance))
+                skipped_full += 1
+            except HTTPException:
+                raise
 
-            booked_count = (
-                db.query(Booking)
-                .filter(
-                    and_(
-                        Booking.instance_id == instance.id,
-                        Booking.status != "Cancelled",
-                    )
-                )
-                .count()
-            )
-
-            capacity = instance.template.capacity if instance.template else None
-            if capacity is None:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="No se pudo validar la capacidad del turno para el abono.",
-                )
-
-            if booked_count >= capacity:
-                # Crear entrada en lista de espera para este usuario y esta instancia
-                try:
-                    WaitingListService.join_waiting_list_record(
-                        db=db,
-                        user_id=user_id,
-                        instance_id=instance.id,
-                        entry_type="subscription",
-                        subscription_id=subscription.id,
-                        commit=False,
-                    )
-                    waitlist_created += 1
-                    waitlist_entries.append({
-                        "instance_id": instance.id,
-                        "date": str(instance.date),
-                        "start_time": instance.template.start_time if instance.template else None,
-                    })
-                    skipped_full += 1
-                except HTTPException as wle:
-                    # Si no se pudo crear la entrada de waitlist, abortar toda la compra
-                    raise
-                continue
-
+        for instance in plan.reservable_instances:
             db.add(
                 Booking(
                     user_id=user_id,
