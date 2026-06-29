@@ -36,7 +36,7 @@ class WaitingListService:
                 detail="La oferta de promoción expiró. El cupo fue asignado al siguiente en la fila."
             )
 
-        if entry.status != "notified":
+        if entry.status not in ["notified", "accepted_pending_payment"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Esta entrada ya fue procesada."
@@ -55,6 +55,7 @@ class WaitingListService:
             "price": float(template.price or 0) if template else 0.0,
             "expires_at": entry.promotion_expires_at,
             "owner_mismatch": authenticated_user_id is not None and authenticated_user_id != entry.user_id,
+            "accepted_pending_payment": entry.status == "accepted_pending_payment",
         }
 
     @staticmethod
@@ -71,7 +72,15 @@ class WaitingListService:
         )
 
     @staticmethod
-    async def join_waiting_list(db: Session, user_id: int, instance_id: int, entry_type: str = "single", subscription_id: int | None = None) -> WaitingList:
+    def join_waiting_list_record(
+        db: Session,
+        user_id: int,
+        instance_id: int,
+        entry_type: str = "single",
+        subscription_id: int | None = None,
+        *,
+        commit: bool = True,
+    ) -> WaitingList:
         instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
         if not instance:
             raise HTTPException(
@@ -90,7 +99,7 @@ class WaitingListService:
             or_(
                 WaitingList.status == "waiting",
                 and_(
-                    WaitingList.status == "notified",
+                    WaitingList.status.in_(["notified", "accepted_pending_payment"]),
                     or_(
                         WaitingList.promotion_expires_at == None,
                         WaitingList.promotion_expires_at >= now,
@@ -135,14 +144,51 @@ class WaitingListService:
 
         new_total_count = current_waiting_count + 1
 
+        next_position = current_waiting_count + 1
+
+        new_waiting = WaitingList(
+            user_id=user_id,
+            instance_id=instance_id,
+            position=next_position,
+            status="waiting",
+            entry_type=entry_type,
+            subscription_id=subscription_id,
+        )
+
+        db.add(new_waiting)
+        if commit:
+            db.commit()
+            db.refresh(new_waiting)
+        else:
+            db.flush()
+        return new_waiting
+
+    @staticmethod
+    async def join_waiting_list(db: Session, user_id: int, instance_id: int, entry_type: str = "single", subscription_id: int | None = None) -> WaitingList:
+        current_waiting_count = db.query(WaitingList).filter(
+            WaitingList.instance_id == instance_id,
+            WaitingList.status == "waiting"
+        ).count()
+
+        new_waiting = WaitingListService.join_waiting_list_record(
+            db=db,
+            user_id=user_id,
+            instance_id=instance_id,
+            entry_type=entry_type,
+            subscription_id=subscription_id,
+            commit=True,
+        )
+
+        new_total_count = current_waiting_count + 1
         if new_total_count == 10:
             admins = db.query(User).filter(User.role == UserRole.ADMIN).all()
-            
+            instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
+
             if admins and instance:
                 actividad = instance.template.activity.name if instance.template and instance.template.activity else 'Actividad'
                 fecha = instance.date.strftime("%d/%m/%Y") if instance.date else "Sin fecha"
                 hora = instance.template.start_time if instance.template and instance.template.start_time else "Sin hora"
-                
+
                 for admin in admins:
                     try:
                         await send_admin_waitlist_alert(
@@ -156,20 +202,6 @@ class WaitingListService:
                     except Exception as e:
                         print(f"Error enviando alerta de lista al admin {admin.email}: {e}", flush=True)
 
-        next_position = current_waiting_count + 1
-
-        new_waiting = WaitingList(
-            user_id=user_id,
-            instance_id=instance_id,
-            position=next_position,
-            status="waiting",
-            entry_type=entry_type,
-            subscription_id=subscription_id,
-        )
-
-        db.add(new_waiting)
-        db.commit()
-        db.refresh(new_waiting)
         return new_waiting
 
     @staticmethod
@@ -286,7 +318,7 @@ class WaitingListService:
                 detail="La oferta de promoción expiró. El cupo fue asignado al siguiente en la fila."
             )
 
-        if entry.status != "notified":
+        if entry.status not in ["notified", "accepted_pending_payment"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Esta entrada ya fue procesada."
@@ -304,6 +336,19 @@ class WaitingListService:
                 detail="Este cupo pertenece a otro socio. Iniciá sesión con la cuenta anotada en la lista de espera."
             )
 
+        existing_pending_booking = (
+            db.query(Booking)
+            .filter(
+                Booking.user_id == entry.user_id,
+                Booking.instance_id == entry.instance_id,
+                Booking.status == "Pending",
+            )
+            .order_by(Booking.created_at.desc())
+            .first()
+        )
+        if existing_pending_booking:
+            return existing_pending_booking
+
         new_booking = Booking(
             user_id=entry.user_id,
             instance_id=entry.instance_id,
@@ -315,9 +360,7 @@ class WaitingListService:
         )
         db.add(new_booking)
 
-        entry.status = "promoted"
-        entry.promotion_token = None
-        entry.promotion_expires_at = None
+        entry.status = "accepted_pending_payment"
 
         db.commit()
         db.refresh(new_booking)
@@ -336,11 +379,24 @@ class WaitingListService:
                 detail="Token de rechazo inválido."
             )
 
-        if entry.status != "notified":
+        if entry.status not in ["notified", "accepted_pending_payment"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Esta entrada ya fue procesada."
             )
+
+        if entry.status == "accepted_pending_payment":
+            pending_bookings = (
+                db.query(Booking)
+                .filter(
+                    Booking.user_id == entry.user_id,
+                    Booking.instance_id == entry.instance_id,
+                    Booking.status == "Pending",
+                )
+                .all()
+            )
+            for booking in pending_bookings:
+                booking.status = "Cancelled"
 
         entry.status = "rejected"
         entry.promotion_token = None

@@ -84,6 +84,11 @@ def get_subscription_quote(
         "pay_now_required": quote.pay_now_required,
         "discount_reason": quote.discount_reason,
         "instances_created": quote.instances_created,
+        "pricing_mode": quote.pricing_mode,
+        "reservable_classes": quote.reservable_classes,
+        "waitlist_classes": quote.waitlist_classes,
+        "reservable_entries": quote.reservable_entries or [],
+        "waitlist_entries": quote.waitlist_entries or [],
     }
 
 
@@ -113,6 +118,8 @@ def purchase_subscription(
         "bookings_created": result.bookings_created,
         "skipped_full": result.skipped_full,
         "skipped_existing": result.skipped_existing,
+        "waitlist_created": result.waitlist_created,
+        "waitlist_entries": result.waitlist_entries or [],
     }
 
 @router.get("/my-active")

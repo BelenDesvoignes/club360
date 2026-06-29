@@ -218,8 +218,11 @@ async def cancel_booking(
 
     if booking.subscription_id is not None:
         is_in_time = time_difference >= timedelta(hours=48)
-        if is_in_time:
+        has_pending_subscription_payment = booking_service.subscription_has_pending_payment(db, booking)
+        if is_in_time and not has_pending_subscription_payment:
             msg_exito = "Reserva cancelada. Se generó 1 crédito válido por 30 días."
+        elif is_in_time and has_pending_subscription_payment:
+            msg_exito = "Reserva cancelada. No se generó crédito porque tu abono está pendiente de pago."
         else:
             msg_exito = "Reserva cancelada. No se generó un crédito por cancelar dentro de las 48hs."
     else:

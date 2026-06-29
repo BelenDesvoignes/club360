@@ -219,8 +219,14 @@
                   <div class="turn-card-row">Horario fijo semanal</div>
                   <div class="turn-card-row spots">Precio por clase: ${{ tpl.price }}</div>
                 </div>
-                <button type="button" class="turn-card-btn" @click="selectTemplateForSubscription(tpl, activity.activity_name)">
-                  Seleccionar Abono
+                <button
+                  type="button"
+                  class="turn-card-btn"
+                  :disabled="isSubscriptionTemplateProcessing(tpl) || bookingInProgress"
+                  @click="selectTemplateForSubscription(tpl, activity.activity_name)"
+                >
+                  <span v-if="isSubscriptionTemplateProcessing(tpl)" class="button-spinner" aria-hidden="true"></span>
+                  <span>{{ isSubscriptionTemplateProcessing(tpl) ? 'Procesando...' : 'Seleccionar Abono' }}</span>
                 </button>
               </div>
             </div>
@@ -248,14 +254,14 @@
                   type="button"
                   class="turn-card-btn"
                   :class="{
-                    disabled: isFullyBooked(turno) && !canJoinWaitlist(turno),
-                    'btn-waitlist': isFullyBooked(turno) && canJoinWaitlist(turno)
+                    disabled: isWaitlisted(turno) || (isFullyBooked(turno) && !canJoinWaitlist(turno)),
+                    'btn-waitlist': isFullyBooked(turno) && canJoinWaitlist(turno) && !isWaitlisted(turno)
                   }"
-                  :disabled="(isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
+                  :disabled="isWaitlisted(turno) || (isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
                   @click="selectInstanceForBooking(turno)"
                 >
                   <span v-if="bookingInProgress && selectedInstance?.id === turno.id" class="button-spinner" aria-hidden="true"></span>
-                  <span>{{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? (canJoinWaitlist(turno) ? 'Unirme a lista de espera' : 'Sin Cupo') : 'Reservar') }}</span>
+                  <span>{{ bookingButtonLabel(turno) }}</span>
                 </button>
               </div>
             </div>
@@ -270,6 +276,60 @@
       </div>
     </div>
 
+    <transition name="fade">
+      <div v-if="showSubscriptionReviewModal" class="modal-overlay" @click="closeSubscriptionReviewModal">
+        <div class="modal-content subscription-review-modal" @click.stop>
+          <button class="modal-close" type="button" @click="closeSubscriptionReviewModal">✕</button>
+          <header class="subscription-review-head">
+            <h2>Revisá tu abono</h2>
+            <p>Estas son las clases que vas a reservar y las que quedarán en lista de espera.</p>
+          </header>
+
+          <div class="subscription-review-summary">
+            <div>
+              <span>Total a pagar</span>
+              <strong>{{ formatMoney(pendingPaymentAmount) }}</strong>
+            </div>
+            <div>
+              <span>Vigencia</span>
+              <strong>{{ subscriptionReviewDetails?.validTo || '-' }}</strong>
+            </div>
+          </div>
+
+          <section class="subscription-review-section">
+            <h3>Clases con cupo confirmado</h3>
+            <ul v-if="subscriptionReviewDetails?.reservableEntries?.length">
+              <li v-for="entry in subscriptionReviewDetails.reservableEntries" :key="entry.instance_id">
+                {{ formatWaitlistEntry(entry) }}
+              </li>
+            </ul>
+            <p v-else class="subscription-review-empty">No hay clases con cupo confirmado en este abono.</p>
+          </section>
+
+          <section class="subscription-review-section waitlist">
+            <h3>Clases en lista de espera</h3>
+            <ul v-if="subscriptionReviewDetails?.waitlistEntries?.length">
+              <li v-for="entry in subscriptionReviewDetails.waitlistEntries" :key="entry.instance_id">
+                {{ formatWaitlistEntry(entry) }}
+              </li>
+            </ul>
+            <p v-else class="subscription-review-empty">No quedarás en lista de espera para este abono.</p>
+          </section>
+
+          <div v-if="subscriptionReviewDetails?.waitlistEntries?.length" class="subscription-review-note">
+            Solo se cobra por las clases donde tenés tu lugar asegurado. Las clases en espera se gestionan cuando se libere un lugar.
+          </div>
+
+          <footer class="subscription-review-actions">
+            <button type="button" class="btn-review-secondary" @click="closeSubscriptionReviewModal">Volver</button>
+            <button type="button" class="btn-review-primary" :disabled="finalizingPayment || bookingInProgress" @click="confirmSubscriptionReview">
+              <span v-if="finalizingPayment || bookingInProgress" class="button-spinner" aria-hidden="true"></span>
+              <span>Confirmar</span>
+            </button>
+          </footer>
+        </div>
+      </div>
+    </transition>
 
     <PaymentModal
       v-model="showGatewayModal"
@@ -282,6 +342,14 @@
       @result="onGatewayResult"
     />
 
+    <div v-if="finalizingPayment && !showGatewayModal" class="modal-overlay">
+      <div class="modal-content processing-modal" @click.stop>
+        <div class="spinner"></div>
+        <h2>Registrando abono</h2>
+        <p>Estamos confirmando tus reservas y listas de espera.</p>
+      </div>
+    </div>
+
     <!-- Modal de éxito -->
     <transition name="fade">
       <div v-if="successMessage" class="modal-overlay" @click="closeSuccessModal">
@@ -291,11 +359,12 @@
             'status-confirmed': bookingStatus === 'completed' || bookingStatus === 'confirmed',
             'status-pending': bookingStatus === 'pending',
             'status-waitlist': bookingStatus === 'waitlist',
-            'status-cancelled': bookingStatus === 'cancelled'
+            'status-cancelled': bookingStatus === 'cancelled',
+            'status-subscription': subscriptionSuccessDetails
           }"
           @click.stop
         >
-          <button class="modal-close" type="button" @click="successMessage = ''">✕</button>
+          <button class="modal-close" type="button" @click="closeSuccessModal">✕</button>
 
           <div class="status-modal-head">
             <div class="status-modal-icon" aria-hidden="true">
@@ -309,7 +378,31 @@
                     ? 'Reserva cancelada'
                     : 'Reserva pendiente de pago') }}
               </h2>
-              <p>{{ successMessage }}</p>
+              <template v-if="subscriptionSuccessDetails">
+                <div class="subscription-result">
+                  <div class="subscription-result-row">
+                    <span>Estado del pago</span>
+                    <strong>{{ subscriptionSuccessDetails.paymentText }}</strong>
+                  </div>
+                  <div class="subscription-result-row">
+                    <span>Reservas confirmadas</span>
+                    <strong>{{ subscriptionSuccessDetails.bookingsCreated }}</strong>
+                  </div>
+                  <div class="subscription-result-row">
+                    <span>Ya existentes</span>
+                    <strong>{{ subscriptionSuccessDetails.skippedExisting }}</strong>
+                  </div>
+                  <div class="subscription-result-row">
+                    <span>En lista de espera</span>
+                    <strong>{{ subscriptionSuccessDetails.waitlistCreated }}</strong>
+                  </div>
+                  <div class="subscription-result-row">
+                    <span>Vigencia</span>
+                    <strong>{{ subscriptionSuccessDetails.validTo }}</strong>
+                  </div>
+                </div>
+              </template>
+              <p v-else>{{ successMessage }}</p>
             </div>
           </div>
 
@@ -375,11 +468,11 @@
 
               <button
                 @click="selectInstanceForBooking(turno)"
-                :disabled="(isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
+                :disabled="isWaitlisted(turno) || (isFullyBooked(turno) && !canJoinWaitlist(turno)) || bookingInProgress"
                 class="btn-turno-reserve"
-                :class="{ disabled: isFullyBooked(turno) && !canJoinWaitlist(turno) }"
+                :class="{ disabled: isWaitlisted(turno) || (isFullyBooked(turno) && !canJoinWaitlist(turno)) }"
               >
-                {{ bookingInProgress && selectedInstance?.id === turno.id ? 'Procesando...' : (isFullyBooked(turno) ? (canJoinWaitlist(turno) ? 'Unirme a lista de espera' : 'Sin cupos') : 'Reservar') }}
+                {{ bookingButtonLabel(turno, 'Sin cupos') }}
               </button>
             </div>
           </div>
@@ -433,11 +526,14 @@ const bookingInProgress = ref(false)
 const bookingStatus = ref('')
 const successTitle = ref('')
 const successMessage = ref('')
+const subscriptionSuccessDetails = ref(null)
 const errorMessage = ref('')
 const isRefreshing = ref(false)
 const userSuspended = ref(false)
 const isUserAbonado = ref(false)
 const subscriptionPurchasedThisMonth = ref(false)
+const waitlistedInstanceIds = ref(new Set())
+const subscriptionTemplateInProgress = ref(null)
 
 const myBookings = ref([])
 const myBookingsLoaded = ref(false)
@@ -460,6 +556,7 @@ const closeSuccessModal = () => {
   successMessage.value = ''
   successTitle.value = ''
   bookingStatus.value = ''
+  subscriptionSuccessDetails.value = null
 }
 
 const showTurnosModal = ref(false)
@@ -470,6 +567,8 @@ const paymentType = ref('seña')
 const showGatewayModal = ref(false)
 const pendingPaymentAmount = ref(0)
 const finalizingPayment = ref(false)
+const showSubscriptionReviewModal = ref(false)
+const subscriptionReviewDetails = ref(null)
 
 // Subscription quote state (backend is source of truth)
 const subscriptionQuoteAmount = ref(0)
@@ -522,7 +621,23 @@ const canJoinWaitlist = (instance) => {
   // Solo para reservas únicas (no abonos) y si el usuario NO es abonado
   if (reservationType.value !== 'class') return false
   if (isUserAbonado.value) return false
+  if (isWaitlisted(instance)) return false
   return true
+}
+
+const isWaitlisted = (instance) => {
+  return Boolean(instance?.id && waitlistedInstanceIds.value.has(instance.id))
+}
+
+const bookingButtonLabel = (instance, noSlotsText = 'Sin Cupo') => {
+  if (bookingInProgress.value && selectedInstance.value?.id === instance.id) return 'Procesando...'
+  if (isWaitlisted(instance)) return 'Ya estás en lista'
+  if (isFullyBooked(instance)) return canJoinWaitlist(instance) ? 'Unirme a lista de espera' : noSlotsText
+  return 'Reservar'
+}
+
+const isSubscriptionTemplateProcessing = (template) => {
+  return subscriptionTemplateInProgress.value === template?.id
 }
 
 const clearSport = () => {
@@ -588,7 +703,7 @@ function computeAmountToPay() {
   const price = Number(selectedInstance.value?.template?.price || 0)
   if (!Number.isFinite(price) || price <= 0) return 0
   if (paymentType.value === 'monthly') {
-    if (Number.isFinite(subscriptionQuoteAmount.value) && subscriptionQuoteAmount.value > 0) {
+    if (Number.isFinite(subscriptionQuoteAmount.value) && subscriptionQuoteAmount.value >= 0) {
       return subscriptionQuoteAmount.value
     }
     return price * countRemainingMonthlyOccurrences(selectedInstance.value?.template?.day_of_week)
@@ -674,6 +789,21 @@ const formatBookingDate = (dateStr, fallbackDay) => {
 const formatTurnLabel = (instance) => {
   if (!instance) return 'Sin horario'
   return `${instance.template?.start_time || '--:--'}hs`
+}
+
+const formatWaitlistEntry = (entry) => {
+  const date = formatBookingDate(entry.date)
+  const time = entry.start_time ? `${entry.start_time} hs` : 'Horario a confirmar'
+  return `${date} - ${time}`
+}
+
+const formatMoney = (value) => {
+  const amount = Number(value || 0)
+  try {
+    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(amount)
+  } catch {
+    return `$${amount}`
+  }
 }
 
 const parseLocalDate = (dateStr) => {
@@ -801,113 +931,142 @@ const hasActiveBookingForInstance = (instanceId) => {
 }
 
 const selectInstanceForBooking = async (instance) => {
+  if (bookingInProgress.value) return
+  selectedInstance.value = instance
+  bookingInProgress.value = true
+
   if (isFullyBooked(instance)) {
-    selectedInstance.value = instance
-    joinWaitlist(instance)
-    return
-  }
-  
-  selectedInstance.value = {
-    ...instance,
-    activity_name: groupedActivities.value
-      .find(a => a.activity_id === instance.template.activity_id)
-      ?.activity_name
-  }
-
-  if (!myBookingsLoaded.value) {
-    await fetchMyBookings({ showRefresh: true })
-  }
-
-  if (hasActiveBookingForInstance(instance.id)) {
-    errorMessage.value = 'Ya tenés una reserva para este turno.'
-    selectedInstance.value = null
+    bookingInProgress.value = false
+    await joinWaitlist(instance)
     return
   }
 
-  // Flujo directo: abonado reserva, no abonado abre modal de pago.
-  paymentType.value = 'seña'
-  await checkAbonado(instance.template.id)
-  await confirmBooking()
+  try {
+    selectedInstance.value = {
+      ...instance,
+      activity_name: groupedActivities.value
+        .find(a => a.activity_id === instance.template.activity_id)
+        ?.activity_name
+    }
+
+    if (!myBookingsLoaded.value) {
+      await fetchMyBookings({ showRefresh: true })
+    }
+
+    if (hasActiveBookingForInstance(instance.id)) {
+      errorMessage.value = 'Ya tenés una reserva para este turno.'
+      selectedInstance.value = null
+      return
+    }
+
+    // Flujo directo: abonado reserva, no abonado abre modal de pago.
+    paymentType.value = 'seña'
+    await checkAbonado(instance.template.id)
+    await confirmBooking()
+  } finally {
+    bookingInProgress.value = false
+  }
 }
 
 const selectTemplateForSubscription = async (template, activity_name) => {
-  if (bookingInProgress.value) return
+  if (bookingInProgress.value || subscriptionTemplateInProgress.value) return
 
-  // prepare selectedInstance shape similar to instance for reuse in modal
-  selectedInstance.value = {
-    template: template,
-    activity_name: activity_name,
-    id: null,
-    date: null,
-  }
-
-  // Compra de abono: se paga al 100% (sin "reserva" previa).
-  paymentType.value = 'monthly'
-  await checkAbonado(template.id)
-
-  // Regla real del backend: si ya se compró el abono este mes para este horario,
-  // no mostrar el modal de pago.
-  if (subscriptionPurchasedThisMonth.value) {
-    errorMessage.value = 'Ya tenés un abono activo para este horario este mes.'
-    closePaymentModal()
-    return
-  }
-
-  if (isUserAbonado.value) {
-    errorMessage.value = 'Ya tenés un abono activo para este horario.'
-    closePaymentModal()
-    return
-  }
-
-  // Ask backend for the quote (discount + remaining classes + pay-now rule)
+  subscriptionTemplateInProgress.value = template.id
   try {
-    auth.hydrateFromToken()
-    const token = auth.token || localStorage.getItem('token')
-    if (!token) {
-      errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+    // prepare selectedInstance shape similar to instance for reuse in modal
+    selectedInstance.value = {
+      template: template,
+      activity_name: activity_name,
+      id: null,
+      date: null,
+    }
+
+    // Compra de abono: se paga al 100% (sin "reserva" previa).
+    paymentType.value = 'monthly'
+    await checkAbonado(template.id)
+
+    // Regla real del backend: si ya se compró el abono este mes para este horario,
+    // no mostrar el modal de pago.
+    if (subscriptionPurchasedThisMonth.value) {
+      errorMessage.value = 'Ya tenés un abono activo para este horario este mes.'
       closePaymentModal()
       return
     }
 
-    const quoteRes = await axios.get('/subscriptions/quote', {
-      params: { template_id: template.id },
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    if (isUserAbonado.value) {
+      errorMessage.value = 'Ya tenés un abono activo para este horario.'
+      closePaymentModal()
+      return
+    }
 
-    subscriptionQuoteAmount.value = Number(quoteRes.data?.amount || 0)
-    subscriptionPayNowRequired.value = Boolean(quoteRes.data?.pay_now_required)
-    subscriptionQuoteReason.value = String(quoteRes.data?.discount_reason || '')
-  } catch (e) {
-    if (handleAuthError(e)) return
-    const detail = e.response?.data?.detail || 'No se pudo calcular el abono.'
-    errorMessage.value = detail
-    closePaymentModal()
-    return
+    // Ask backend for the quote (discount + remaining classes + pay-now rule)
+    try {
+      auth.hydrateFromToken()
+      const token = auth.token || localStorage.getItem('token')
+      if (!token) {
+        errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
+        closePaymentModal()
+        return
+      }
+
+      const quoteRes = await axios.get('/subscriptions/quote', {
+        params: { template_id: template.id },
+        headers: { Authorization: `Bearer ${token}` }
+      })
+
+      subscriptionQuoteAmount.value = Number(quoteRes.data?.amount || 0)
+      subscriptionPayNowRequired.value = Boolean(quoteRes.data?.pay_now_required)
+      subscriptionQuoteReason.value = String(quoteRes.data?.discount_reason || '')
+      subscriptionReviewDetails.value = {
+        validTo: formatBookingDate(quoteRes.data?.valid_to),
+        reservableEntries: Array.isArray(quoteRes.data?.reservable_entries) ? quoteRes.data.reservable_entries : [],
+        waitlistEntries: Array.isArray(quoteRes.data?.waitlist_entries) ? quoteRes.data.waitlist_entries : [],
+      }
+    } catch (e) {
+      if (handleAuthError(e)) return
+      const detail = e.response?.data?.detail || 'No se pudo calcular el abono.'
+      errorMessage.value = detail
+      closePaymentModal()
+      return
+    }
+
+    pendingPaymentAmount.value = computeAmountToPay()
+    if (!Number.isFinite(pendingPaymentAmount.value) || pendingPaymentAmount.value < 0) {
+      errorMessage.value = 'No se pudo determinar el monto a pagar.'
+      closePaymentModal()
+      return
+    }
+
+    showSubscriptionReviewModal.value = true
+  } finally {
+    subscriptionTemplateInProgress.value = null
   }
+}
 
-  pendingPaymentAmount.value = computeAmountToPay()
-  if (!pendingPaymentAmount.value) {
-    errorMessage.value = 'No se pudo determinar el monto a pagar.'
-    closePaymentModal()
-    return
-  }
+const closeSubscriptionReviewModal = () => {
+  if (bookingInProgress.value || finalizingPayment.value) return
+  showSubscriptionReviewModal.value = false
+}
 
-  // Days 1–10: pago pendiente permitido -> NO mostrar modal de pago.
-  if (subscriptionPayNowRequired.value === false) {
+const confirmSubscriptionReview = async () => {
+  if (!subscriptionReviewDetails.value) return
+
+  if (pendingPaymentAmount.value === 0 || subscriptionPayNowRequired.value === false) {
     bookingInProgress.value = true
-    finalizeSubscriptionPurchase()
-      .catch((e) => {
-        if (handleAuthError(e)) return
-        const detail = e.response?.data?.detail || 'Error al procesar la operación'
-        errorMessage.value = detail
-      })
-      .finally(() => {
-        bookingInProgress.value = false
-      })
+    try {
+      await finalizeSubscriptionPurchase()
+      showSubscriptionReviewModal.value = false
+    } catch (e) {
+      if (handleAuthError(e)) return
+      const detail = e.response?.data?.detail || 'Error al procesar la operación'
+      errorMessage.value = detail
+    } finally {
+      bookingInProgress.value = false
+    }
     return
   }
 
-  // Day 11+: pago en el momento -> mostrar modal.
+  showSubscriptionReviewModal.value = false
   showGatewayModal.value = true
 }
 
@@ -972,16 +1131,25 @@ async function finalizeSubscriptionPurchase() {
   }
 
   bookingStatus.value = 'completed'
+  successTitle.value = 'Abono mensual registrado'
   errorMessage.value = ''
-  const pagoTxt = subscriptionPayNowRequired.value
+  const pagoTxt = Number(res.data.price_paid || 0) === 0
+    ? 'Sin monto a cobrar.'
+    : subscriptionPayNowRequired.value
     ? 'Pago registrado.'
     : `Pago pendiente: $${pendingPaymentAmount.value}.`
-  const reglaTxt = subscriptionQuoteReason.value ? ` ${subscriptionQuoteReason.value}` : ''
+  const waitlistEntries = Array.isArray(res.data.waitlist_entries) ? res.data.waitlist_entries : []
 
-  successMessage.value = `¡Abono mensual registrado! ${pagoTxt}${reglaTxt} ` +
-    `Reservas creadas: ${res.data.bookings_created}. ` +
-    `Saltadas (sin cupo): ${res.data.skipped_full}. Ya existentes: ${res.data.skipped_existing}. ` +
-    `Vigencia hasta: ${res.data.valid_to}.`
+  subscriptionSuccessDetails.value = {
+    paymentText: pagoTxt,
+    bookingsCreated: Number(res.data.bookings_created || 0),
+    skippedExisting: Number(res.data.skipped_existing || 0),
+    waitlistCreated: Number(res.data.waitlist_created || res.data.skipped_full || 0),
+    waitlistEntries,
+    validTo: formatBookingDate(res.data.valid_to)
+  }
+
+  successMessage.value = 'Tu abono quedó registrado. Revisá el detalle de clases confirmadas y listas de espera.'
 
   closePaymentModal()
   showGatewayModal.value = false
@@ -994,6 +1162,8 @@ async function finalizeSubscriptionPurchase() {
 
 const closePaymentModal = () => {
   showGatewayModal.value = false
+  showSubscriptionReviewModal.value = false
+  subscriptionReviewDetails.value = null
   pendingPaymentAmount.value = 0
   subscriptionPurchasedThisMonth.value = false
   selectedInstance.value = null
@@ -1097,11 +1267,16 @@ function onGatewayResult(result) {
   // Days 1-10: allow subscription purchase even if payment isn't effective (pending payment).
   if (isSubscription && subscriptionPayNowRequired.value === false) {
     showGatewayModal.value = false
-    finalizeSubscriptionPurchase().catch((e) => {
-      if (handleAuthError(e)) return
-      const detail = e.response?.data?.detail || 'Error al procesar la operación'
-      errorMessage.value = detail
-    })
+    finalizingPayment.value = true
+    finalizeSubscriptionPurchase()
+      .catch((e) => {
+        if (handleAuthError(e)) return
+        const detail = e.response?.data?.detail || 'Error al procesar la operación'
+        errorMessage.value = detail
+      })
+      .finally(() => {
+        finalizingPayment.value = false
+      })
     return
   }
 
@@ -1206,6 +1381,9 @@ const joinWaitlist = async (instance) => {
       params: { instance_id: instance.id },
       headers: { Authorization: `Bearer ${token}` }
     })
+
+    waitlistedInstanceIds.value = new Set([...waitlistedInstanceIds.value, instance.id])
+    instance.has_active_waiting_queue = true
 
     // Mensaje concordando con el caso de uso Jira (omitimos envío de mail por ahora)
     successTitle.value = 'Operación exitosa'
@@ -2093,6 +2271,76 @@ onMounted(() => {
   background: #5a8849;
 }
 
+.status-modal.status-subscription {
+  max-width: 680px;
+}
+
+.status-modal.status-subscription .status-modal-head {
+  display: block;
+}
+
+.status-modal.status-subscription .status-modal-icon {
+  margin-bottom: 12px;
+}
+
+.status-modal.status-subscription .status-modal-copy {
+  width: 100%;
+}
+
+.subscription-result {
+  margin-top: 14px;
+  width: 100%;
+  border: 1px solid rgba(13, 18, 74, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fbfdff;
+}
+
+.subscription-result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(13, 18, 74, 0.08);
+}
+
+.subscription-result-row:last-child {
+  border-bottom: 0;
+}
+
+.subscription-result-row span {
+  color: rgba(13, 18, 74, 0.65);
+  font-weight: 800;
+  font-size: 0.88rem;
+}
+
+.subscription-result-row strong {
+  color: #0d124a;
+  text-align: right;
+}
+
+.subscription-waitlist {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 111, 0, 0.08);
+}
+
+.subscription-waitlist h3 {
+  margin: 0 0 8px;
+  color: #0d124a;
+  font-size: 0.95rem;
+}
+
+.subscription-waitlist ul {
+  margin: 0;
+  padding-left: 18px;
+  color: rgba(13, 18, 74, 0.75);
+  line-height: 1.5;
+  font-weight: 700;
+}
+
 .status-modal.status-waitlist .status-modal-icon {
   background: rgba(90, 136, 73, 0.16);
   color: #5a8849;
@@ -2122,6 +2370,150 @@ onMounted(() => {
 
 .payment-modal {
   text-align: left;
+}
+
+.processing-modal {
+  width: min(360px, calc(100% - 32px));
+  text-align: center;
+}
+
+.processing-modal .spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid #e5e9ef;
+  border-top-color: #2d658d;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+
+.processing-modal p {
+  margin: 0;
+  color: rgba(13, 18, 74, 0.7);
+}
+
+.subscription-review-modal {
+  width: min(720px, calc(100% - 32px));
+  padding: 24px;
+}
+
+.subscription-review-head {
+  padding-right: 28px;
+  margin-bottom: 16px;
+}
+
+.subscription-review-head h2 {
+  margin: 0 0 6px;
+}
+
+.subscription-review-head p {
+  margin: 0;
+  color: rgba(13, 18, 74, 0.68);
+  line-height: 1.45;
+}
+
+.subscription-review-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.subscription-review-summary div {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(45, 101, 141, 0.06);
+  border: 1px solid rgba(13, 18, 74, 0.08);
+}
+
+.subscription-review-summary span,
+.subscription-review-section h3 {
+  display: block;
+  color: rgba(13, 18, 74, 0.62);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.subscription-review-summary strong {
+  display: block;
+  margin-top: 4px;
+  color: #0d124a;
+  font-size: 1.05rem;
+}
+
+.subscription-review-section {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(13, 18, 74, 0.08);
+  background: #fbfdff;
+}
+
+.subscription-review-section.waitlist {
+  background: rgba(255, 111, 0, 0.08);
+}
+
+.subscription-review-section h3 {
+  margin: 0 0 8px;
+  color: #0d124a;
+}
+
+.subscription-review-section ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.55;
+  color: rgba(13, 18, 74, 0.76);
+  font-weight: 700;
+}
+
+.subscription-review-empty {
+  margin: 0;
+  color: rgba(13, 18, 74, 0.62);
+}
+
+.subscription-review-note {
+  margin-top: 12px;
+  color: rgba(13, 18, 74, 0.68);
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.subscription-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.btn-review-primary,
+.btn-review-secondary {
+  border: none;
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 12px 16px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.btn-review-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #ffffff;
+  background: #2d658d;
+}
+
+.btn-review-secondary {
+  color: #0d124a;
+  background: #edf1f5;
+}
+
+.btn-review-primary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .modal-close {
