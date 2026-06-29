@@ -9,18 +9,24 @@
       <div class="filters-card">
         <div class="filter-group search-group">
           <label>Buscar cliente</label>
-          <input type="text" v-model="filterSearch" placeholder="Ingresá nombre o DNI..." />
+          <input 
+            type="text" 
+            v-model="filterSearch" 
+            placeholder="Ingresá nombre o DNI..." 
+            @input="fetchInstancias" 
+          />
         </div>
+
         <div class="filter-group">
           <label>Filtrar por estado</label>
-          <select v-model="filterStatus">
+          <select v-model="filterStatus" @change="fetchInstancias">
             <option value="">Todos los estados</option>
             <option value="Activo">Activo</option>
             <option value="Suspendido">Suspendido</option>
           </select>
         </div>
+
         <div class="actions-group">
-          <button @click="resetFilters" class="btn-clear">Limpiar</button>
           <button @click="showCreateModal = true" class="btn-primary-action">+ Nuevo Cliente</button>
         </div>
       </div>
@@ -85,7 +91,7 @@
         </div>
       </div>
     </div>
-
+      </div>
     <transition name="fade">
       <div v-if="showCreateModal" class="modal-overlay">
         <div class="modal-card form-modal-card">
@@ -365,7 +371,6 @@
     <transition name="fade">
       <div v-if="toastMessage" :class="['alert-toast', toastType]">{{ toastMessage }}</div>
     </transition>
-  </div>
 </template>
 
 <script setup>

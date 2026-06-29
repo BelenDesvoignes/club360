@@ -8,6 +8,13 @@
             <span class="step-pill">Paso {{ selectedSportId ? '2' : '1' }}</span>
             <span class="step-text">{{ selectedSportId ? 'Elegí el tipo de reserva y horario' : 'Elegí el deporte' }}</span>
           </div>
+
+
+
+
+
+
+
         </div>
 
         <div v-if="selectedSportId" class="booking-stepper" aria-label="Progreso de reserva">
@@ -52,6 +59,7 @@
 
       <div v-if="sports.length === 0" class="empty-state">
         Todavía no hay deportes cargados para mostrar.
+
       </div>
     </div>
 
@@ -60,6 +68,59 @@
       <div class="reserve-type">
         <button type="button" :class="{active: reservationType === 'class'}" @click="reservationType = 'class'">Reserva Única</button>
         <button type="button" :class="{active: reservationType === 'subscription'}" @click="reservationType = 'subscription'">Reservar Abono</button>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       </div>
 
       <div class="day-filter">
@@ -68,10 +129,46 @@
           <option value="all">Todos</option>
           <option v-for="(label, idx) in weekDays" :key="idx" :value="label">{{ label }}</option>
         </select>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       </div>
 
       <button type="button" class="change-sport" @click="clearSport">Cambiar deporte</button>
     </div>
+
 
     <!-- Advertencia si está suspendido -->
     <div v-if="userSuspended" class="suspension-warning">
@@ -82,6 +179,7 @@
       </div>
     </div>
 
+
     <div v-if="loading" class="loading-spinner">Cargando clases disponibles...</div>
 
     <div v-else-if="isRefreshing" class="loading-refresh">Actualizando...</div>
@@ -89,6 +187,7 @@
     <div v-else-if="userSuspended" class="suspended-block">
       <p>No puedes hacer reservas mientras tu cuenta esté suspendida.</p>
     </div>
+
 
     <div v-else-if="selectedSportId" class="classes-grid">
       <div
