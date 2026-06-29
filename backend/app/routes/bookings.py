@@ -169,20 +169,15 @@ def cancel_booking(
         raise HTTPException(status_code=500, detail=f"Error al procesar la cancelación: {str(e)}")
 
 
-# =========================================================================
-# CONTROL DE ASISTENCIA QR Y CIERRE MANUAL DE PLANILLAS
-# =========================================================================
-
 @router.post("/verify-qr", response_model=dict)
 def verify_user_qr(
     booking_id: int, 
     authorization: str | None = Header(default=None), 
     db: Session = Depends(get_db)
 ):
-    """
-    Valida el QR mostrado por el socio en la recepción del club.
-    Muta el estado a 'Concreted' e impacta la tabla de asistencias.
-    """
+    # CONTROL DE ASISTENCIA POR QR (Escenarios 1 a 9):
+    
+    # PASO 0: Autorización del empleado de recepción
     staff_id = _extract_user_id(authorization)
     staff_user = db.query(User).filter(User.id_user == staff_id).first()
     if not staff_user:
@@ -195,43 +190,72 @@ def verify_user_qr(
             detail="No autorizado: Esta funcionalidad es exclusiva para la administración del club."
         )
 
+    # PASO 1: Filtro rápido antifraude (Validación de la Reserva)
+   
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
-        raise HTTPException(status_code=404, detail="Código inválido: La reserva no existe.")
+        raise HTTPException(status_code=404, detail="ERROR: CODIGO INVALIDO O EXPIRADO") # Escenario 9
 
-    #CHEQUEO 1: Validar si el cliente dueño de la reserva está suspendido
-    if booking.user_id:
-        if booking_service.is_user_suspended(db, booking.user_id):
-            raise HTTPException(
-                status_code=400, 
-                detail="Error: Cliente Suspendido"
-            )
-
-    #CHEQUEO 2: Validar estado de deuda
-    # Si el estado es 'partial' y no está asociada a un abono mensual, tiene saldo pendiente
-    if booking.payment_status == "partial" and booking.subscription_id is None:
-        raise HTTPException(
-            status_code=400, 
-            detail="Error: Reserva con deuda existente"
-        )
-
-    status_curr = _booking_status(booking)
-    if status_curr == "Concreted":
-        raise HTTPException(status_code=400, detail="Acceso denegado: Esta asistencia ya fue registrada.")
+    status_curr = booking.status or "Pending"
+    
+    #  Control de captura de pantalla de clase cancelada
     if status_curr == "Cancelled":
-        raise HTTPException(status_code=400, detail="Acceso denegado: El socio canceló esta reserva.")
-    if status_curr == "Absent":
-        raise HTTPException(status_code=400, detail="Acceso denegado: El socio ya figura como Absent.")
+        raise HTTPException(status_code=400, detail="ERROR: RESERVA CANCELADA") # Escenario 6
+        
+    #  Control de reutilización de QR ya usado (Expiración por éxito)
+    if status_curr == "Concreted":
+        raise HTTPException(status_code=400, detail="ERROR: CODIGO INVALIDO O EXPIRADO") # Escenario 3
 
+    if status_curr == "Absent":
+        raise HTTPException(status_code=400, detail="ERROR: FUERA DE TOLERANCIA HORARIA")
+
+    
+    # PASO 2: Carga de Instancia y Plantilla del Turno
+    
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
     hoy_local = business_today()
     if not instance or instance.date != hoy_local:
-        raise HTTPException(status_code=400, detail=f"Acceso denegado: Esta reserva pertenece al día {instance.date if instance else 'desconocido'}.")
+        raise HTTPException(status_code=400, detail="ERROR: CODIGO INVALIDO O EXPIRADO")
 
     template = instance.template
-    if not template or not template.start_time:
-        raise HTTPException(status_code=500, detail="Error de configuración: La clase no tiene un horario asignado.")
+    if not template or template.activity_id is None:
+        raise HTTPException(status_code=500, detail="Error de configuración: Clase sin actividad válida.")
 
+    # PASO 3: Validación segmentada de Suspensiones (Híbrido col. activity_id y reason)
+   
+    if booking.user_id:
+        from ..models.suspension import Suspension
+        from sqlalchemy import and_
+        
+        # Traemos todas las suspensiones activas del socio para evaluar el contexto completo
+        active_suspensions = db.query(Suspension).filter(
+            and_(
+                Suspension.user_id == booking.user_id,
+                Suspension.status == "active",
+                Suspension.end_date == None
+            )
+        ).all()
+
+        is_clase_suelta = booking.subscription_id is None
+
+        for suspension in active_suspensions:
+            # Escenario 7: Suspensión a Clases Sueltas (Global)
+            if suspension.reason == "SUSPENSION_CLASE_LIBRE" and is_clase_suelta:
+                raise HTTPException(status_code=400, detail="ERROR: CLIENTE SUSPENDIDO")
+
+            # Escenario 8: Suspensión de Abono (Específica por Deporte)
+            if suspension.reason == "SUSPENSION_ABONO":
+                if template.activity_id == suspension.activity_id:
+                    raise HTTPException(status_code=400, detail="ERROR: CLIENTE SUSPENDIDO")
+
+    # PASO 4: Reglas de Pago (Clase Suelta debe estar al 100%)
+   
+    if booking.subscription_id is None and booking.payment_status == "partial":
+        raise HTTPException(status_code=400, detail="ERROR: RESERVA CON SALDO PENDIENTE DE PAGO") # Escenario 5
+
+   
+    # PASO 5: Control de Tolerancia Horaria (30 min antes / 30 min después)
+   
     try:
         class_time = datetime.datetime.strptime(template.start_time, "%H:%M").time()
         class_datetime = datetime.datetime.combine(instance.date, class_time)
@@ -243,19 +267,20 @@ def verify_user_qr(
     limite_superior = class_datetime + datetime.timedelta(minutes=30)
 
     if ahora < limite_inferior:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Muy temprano. Ingreso permitido desde las {limite_inferior.strftime('%H:%M')} hs."
-        )
+        raise HTTPException(status_code=400, detail="ERROR: FUERA DE TOLERANCIA HORARIA")
         
     if ahora > limite_superior:
+        # Penalización automática por fuera de término
         booking.status = "Absent"
         user = db.query(User).filter(User.id_user == booking.user_id).first()
         if user and hasattr(user, 'missed_classes_count'):
             user.missed_classes_count = (user.missed_classes_count or 0) + 1
         db.commit()
-        raise HTTPException(status_code=400, detail="Tolerancia expirada: El socio quedó registrado como Absent.")
+        raise HTTPException(status_code=400, detail="ERROR: FUERA DE TOLERANCIA HORARIA") # Escenario 4
 
+  
+    # PASO 6: Impacto Exitoso de la Asistencia (Escenarios 1 y 2)
+  
     booking.status = "Concreted"
     
     try:
@@ -267,16 +292,16 @@ def verify_user_qr(
         )
         db.add(nueva_asistencia)
     except Exception:
-        pass
+        pass 
 
     db.commit()
 
     return {
-        "message": "¡Asistencia Concretada!",
+        "message": "REGISTRO EXITOSO", 
         "booking_id": booking.id,
         "status": booking.status,
         "client_name": f"{booking.user.first_name} {booking.user.last_name}" if booking.user else "Socio",
-        "activity_name": template.activity.name if template and template.activity else "Clase"
+        "activity_name": template.activity.name if template.activity else "Clase"
     }
 
 
