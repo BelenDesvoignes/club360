@@ -9,18 +9,24 @@
       <div class="filters-card">
         <div class="filter-group search-group">
           <label>Buscar cliente</label>
-          <input type="text" v-model="filterSearch" placeholder="Ingresá nombre o DNI..." />
+          <input 
+            type="text" 
+            v-model="filterSearch" 
+            placeholder="Ingresá nombre o DNI..." 
+            @input="fetchInstancias" 
+          />
         </div>
+
         <div class="filter-group">
           <label>Filtrar por estado</label>
-          <select v-model="filterStatus">
+          <select v-model="filterStatus" @change="fetchInstancias">
             <option value="">Todos los estados</option>
             <option value="Activo">Activo</option>
             <option value="Suspendido">Suspendido</option>
           </select>
         </div>
+
         <div class="actions-group">
-          <button @click="resetFilters" class="btn-clear">Limpiar</button>
           <button @click="showCreateModal = true" class="btn-primary-action">+ Nuevo Cliente</button>
         </div>
       </div>
@@ -44,15 +50,6 @@
                   <span class="status-badge" :class="cliente.estado.toLowerCase()">{{ cliente.estado }}</span>
                 </td>
                 <td class="actions-cell justify-center">
-                  <button
-                    @click="toggleSuspension(cliente)"
-                    class="icon-btn"
-                    :disabled="loadingSuspension[cliente.id]"
-                    :title="cliente.estado === 'Suspendido' ? 'Levantar suspensión' : 'Suspender cliente'"
-                  >
-                    <span v-if="loadingSuspension[cliente.id]" class="spinner-small"></span>
-                    <span v-else>{{ cliente.estado === 'Suspendido' ? '✅' : '🚫' }}</span>
-                  </button>
                   <button
                     @click="toggleAccordion(cliente.id)"
                     class="icon-btn"
@@ -94,8 +91,7 @@
         </div>
       </div>
     </div>
-
-    <!-- MODAL NUEVO CLIENTE -->
+      </div>
     <transition name="fade">
       <div v-if="showCreateModal" class="modal-overlay">
         <div class="modal-card form-modal-card">
@@ -138,7 +134,6 @@
       </div>
     </transition>
 
-    <!-- MODAL NUEVA RESERVA -->
     <transition name="fade">
       <div v-if="showReservaModal" class="modal-overlay" @click.self="showReservaModal = false">
         <div class="modal-card modal-large">
@@ -215,186 +210,172 @@
       </div>
     </transition>
 
-    <!-- MODAL NUEVO ABONO -->
-   <!-- MODAL NUEVO ABONO -->
-<transition name="fade">
-  <div v-if="showAbonoModal" class="modal-overlay" @click.self="showAbonoModal = false">
-    <div class="modal-card modal-large">
-      <header class="form-header">
-        <h3>Registrar Abono</h3>
-        <p>Abono mensual para: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
-      </header>
+    <transition name="fade">
+      <div v-if="showAbonoModal" class="modal-overlay" @click.self="showAbonoModal = false">
+        <div class="modal-card modal-large">
+          <header class="form-header">
+            <h3>Registrar Abono</h3>
+            <p>Abono mensual para: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
+          </header>
 
-      <div class="modal-filters">
-        <div class="input-group">
-          <label>Actividad</label>
-          <select v-model="filterAbonoActividad" @change="filtrarTemplates">
-            <option value="">Todas</option>
-            <option v-for="act in actividadesAbono" :key="act.id" :value="act.id">{{ act.name }}</option>
-          </select>
-        </div>
-        <div class="input-group">
-          <label>Día</label>
-          <select v-model="filterAbonoDia" @change="filtrarTemplates">
-            <option value="">Todos</option>
-            <option v-for="dia in diasSemana" :key="dia" :value="dia">{{ dia }}</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="instancias-list">
-        <div v-if="loadingTemplates" class="empty-state">Cargando horarios...</div>
-        <div v-else-if="templatesFiltrados.length === 0" class="empty-state">No hay horarios disponibles.</div>
-        <div
-          v-for="tmpl in templatesFiltrados"
-          :key="tmpl.id"
-          class="instancia-item"
-          :class="{ selected: templateSeleccionado?.id === tmpl.id }"
-          @click="templateSeleccionado = tmpl"
-        >
-          <div class="instancia-info">
-            <span class="instancia-actividad">{{ tmpl.activity_name }}</span>
-            <span class="instancia-detalle">{{ tmpl.day_of_week }} · {{ tmpl.start_time }}</span>
-          </div>
-          <div class="instancia-right">
-            <span class="instancia-precio">${{ tmpl.price }}/clase</span>
-            <span class="instancia-cupos">{{ tmpl.capacity }} cupos</span>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="templateSeleccionado" class="pago-section">
-        <p class="pago-label">Seleccioná el tipo de abono:</p>
-        <div class="pago-botones">
-          <button
-            class="btn-pago-opcion"
-            :class="{ active: tipoAbono === 'completo' }"
-            @click="tipoAbono = 'completo'"
-          >
-            Mes completo — ${{ Math.round(templateSeleccionado.price * 4 * 100) / 100 }}
-          </button>
-          <button
-            class="btn-pago-opcion"
-            :class="{ active: tipoAbono === 'mitad' }"
-            @click="tipoAbono = 'mitad'"
-          >
-            Mitad de mes — ${{ Math.round(templateSeleccionado.price * 4 * 0.8 * 100) / 100 }}
-          </button>
-        </div>
-      </div>
-
-      <div v-if="templateSeleccionado" class="resumen-pago">
-        Total a cobrar: <strong>${{ precioAbono }}</strong>
-      </div>
-
-      <div class="modal-actions-container">
-        <button class="btn-confirm" @click="submitAbono" :disabled="loadingAbono || !templateSeleccionado">
-          {{ loadingAbono ? 'Guardando...' : 'Confirmar Abono' }}
-        </button>
-        <button class="btn-cancel" @click="showAbonoModal = false">Cancelar</button>
-      </div>
-    </div>
-  </div>
-</transition>
-
-    <!-- MODAL HISTORIAL RESERVAS -->
-<transition name="fade">
-  <div v-if="showReservasModal" class="modal-overlay" @click.self="showReservasModal = false">
-    <div class="modal-card modal-large">
-      <header class="form-header">
-        <h3>Historial de Reservas</h3>
-        <p>Clases de: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
-      </header>
-
-      <div class="instancias-list">
-        <div v-if="loadingReservas" class="empty-state">Cargando reservas...</div>
-        <div v-else-if="reservasCliente.length === 0" class="empty-state">No hay reservas registradas.</div>
-
-        <div v-for="b in reservasCliente" :key="b.booking_id" class="reserva-item">
-          <div class="reserva-info">
-            <div class="reserva-top">
-              <span class="instancia-actividad">{{ b.activity_name }}</span>
-              <span class="reserva-badge" :class="b.status.toLowerCase()">{{ b.status }}</span>
+          <div class="modal-filters">
+            <div class="input-group">
+              <label>Actividad</label>
+              <select v-model="filterAbonoActividad" @change="filtrarTemplates">
+                <option value="">Todas</option>
+                <option v-for="act in actividadesAbono" :key="act.id" :value="act.id">{{ act.name }}</option>
+              </select>
             </div>
-            <span class="instancia-detalle">{{ b.date }} · {{ b.day_of_week }} {{ b.start_time }}</span>
-            <div class="reserva-pago-info">
-              <span v-if="b.is_subscription" class="tag-abono">Abono</span>
-              <span v-else class="tag-suelta">Clase suelta</span>
-              <span v-if="!b.is_subscription">
-                Pagado: <strong>${{ b.amount_paid }}</strong> de ${{ b.price }}
-                <span class="pago-tag" :class="b.payment_status">
-                  {{ b.payment_status === 'paid' ? '✓ Completo' : '⏳ Seña' }}
-                </span>
+            <div class="input-group">
+              <label>Día</label>
+              <select v-model="filterAbonoDia" @change="filtrarTemplates">
+                <option value="">Todos</option>
+                <option v-for="dia in diasSemana" :key="dia" :value="dia">{{ dia }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="instancias-list">
+            <div v-if="loadingTemplates" class="empty-state">Cargando horarios...</div>
+            <div v-else-if="templatesFiltrados.length === 0" class="empty-state">No hay horarios disponibles.</div>
+            <div
+              v-for="tmpl in templatesFiltrados"
+              :key="tmpl.id"
+              class="instancia-item"
+              :class="{ selected: templateSeleccionado?.id === tmpl.id }"
+              @click="seleccionarTemplate(tmpl)"
+            >
+              <div class="instancia-info">
+                <span class="instancia-actividad">{{ tmpl.activity_name }}</span>
+                <span class="instancia-detalle">{{ tmpl.day_of_week }} · {{ tmpl.start_time }}</span>
+              </div>
+              <div class="instancia-right">
+                <span class="instancia-precio">${{ tmpl.price }}/clase</span>
+                <span class="instancia-cupos">{{ tmpl.capacity }} cupos</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="templateSeleccionado" class="pago-section">
+            <div v-if="loadingQuote" class="empty-state">Calculando precio...</div>
+            <div v-else-if="abonoQuote" class="resumen-quote">
+              <p v-if="abonoQuote.discount_applied" class="descuento-info">
+                {{ abonoQuote.discount_reason }}
+              </p>
+              <p v-else class="descuento-info sin-descuento">{{ abonoQuote.discount_reason }}</p>
+              <p class="clases-info">Clases restantes del mes: <strong>{{ abonoQuote.remaining_classes }}</strong></p>
+            </div>
+          </div>
+
+          <div v-if="abonoQuote" class="resumen-pago">
+            Total a cobrar: <strong>${{ abonoQuote.amount }}</strong>
+          </div>
+
+          <div class="modal-actions-container">
+            <button class="btn-confirm" @click="submitAbono" :disabled="loadingAbono || !templateSeleccionado || !abonoQuote || loadingQuote">
+              {{ loadingAbono ? 'Guardando...' : 'Confirmar Abono' }}
+            </button>
+            <button class="btn-cancel" @click="showAbonoModal = false">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <transition name="fade">
+      <div v-if="showReservasModal" class="modal-overlay" @click.self="showReservasModal = false">
+        <div class="modal-card modal-large">
+          <header class="form-header">
+            <h3>Historial de Reservas</h3>
+            <p>Clases de: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
+          </header>
+
+          <div class="instancias-list">
+            <div v-if="loadingReservas" class="empty-state">Cargando reservas...</div>
+            <div v-else-if="reservasCliente.length === 0" class="empty-state">No hay reservas registradas.</div>
+
+            <div v-for="b in reservasCliente" :key="b.booking_id" class="reserva-item">
+              <div class="reserva-info">
+                <div class="reserva-top">
+                  <span class="instancia-actividad">{{ b.activity_name }}</span>
+                  <span class="reserva-badge" :class="b.status.toLowerCase()">{{ b.status }}</span>
+                </div>
+                <span class="instancia-detalle">{{ b.date }} · {{ b.day_of_week }} {{ b.start_time }}</span>
+                <div class="reserva-pago-info">
+                  <span v-if="b.is_subscription" class="tag-abono">Abono</span>
+                  <span v-else class="tag-suelta">Clase suelta</span>
+                  <span v-if="!b.is_subscription">
+                    Pagado: <strong>${{ b.amount_paid }}</strong> de ${{ b.price }}
+                    <span class="pago-tag" :class="b.payment_status">
+                      {{ b.payment_status === 'paid' ? '✓ Completo' : '⏳ Seña' }}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              <button
+                v-if="!b.is_subscription && b.payment_status === 'partial' && b.status !== 'Cancelled'"
+                class="btn-pagar-restante"
+                :disabled="loadingPago[b.booking_id]"
+                @click="pagarRestante(b)"
+              >
+                {{ loadingPago[b.booking_id] ? '...' : `Cobrar $${b.price - b.amount_paid}` }}
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-actions-container">
+            <button class="btn-cancel" style="flex: 0 0 auto; padding: 12px 30px;" @click="showReservasModal = false">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <transition name="fade">
+      <div v-if="showPagosModal" class="modal-overlay" @click.self="showPagosModal = false">
+        <div class="modal-card modal-large">
+          <header class="form-header">
+            <h3>Historial de Pagos</h3>
+            <p>Cuenta corriente de: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
+          </header>
+
+          <div class="instancias-list">
+            <div v-if="loadingPagos" class="empty-state">Cargando pagos...</div>
+            <div v-else-if="pagosCliente.length === 0" class="empty-state">No hay pagos registrados.</div>
+
+            <div v-for="p in pagosCliente" :key="p.payment_id" class="reserva-item">
+              <div class="reserva-info">
+                <div class="reserva-top">
+                  <span class="instancia-actividad">${{ p.amount.toFixed(2) }}</span>
+                  <span class="tag-abono" v-if="p.type === 'subscription'">Abono</span>
+                  <span class="tag-suelta" v-else>Clase suelta</span>
+                </div>
+                <span class="instancia-detalle">{{ new Date(p.date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
+              </div>
+              <span class="pago-tag" :class="p.status === 'completed' || p.status === 'paid' ? 'paid' : 'partial'">
+                {{ p.status === 'completed' || p.status === 'paid' ? '✓ Completo' : '⏳ Seña' }}
               </span>
             </div>
           </div>
 
-          <button
-            v-if="!b.is_subscription && b.payment_status === 'partial' && b.status !== 'Cancelled'"
-            class="btn-pagar-restante"
-            :disabled="loadingPago[b.booking_id]"
-            @click="pagarRestante(b)"
-          >
-            {{ loadingPago[b.booking_id] ? '...' : `Cobrar $${b.price - b.amount_paid}` }}
-          </button>
-        </div>
-      </div>
-
-      <div class="modal-actions-container">
-        <button class="btn-cancel" style="flex: 0 0 auto; padding: 12px 30px;" @click="showReservasModal = false">Cerrar</button>
-      </div>
-    </div>
-  </div>
-</transition>
-<!-- MODAL VER PAGOS -->
-<transition name="fade">
-  <div v-if="showPagosModal" class="modal-overlay" @click.self="showPagosModal = false">
-    <div class="modal-card modal-large">
-      <header class="form-header">
-        <h3>Historial de Pagos</h3>
-        <p>Cuenta corriente de: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
-      </header>
-
-      <div class="instancias-list">
-        <div v-if="loadingPagos" class="empty-state">Cargando pagos...</div>
-        <div v-else-if="pagosCliente.length === 0" class="empty-state">No hay pagos registrados.</div>
-
-        <div v-for="p in pagosCliente" :key="p.payment_id" class="reserva-item">
-          <div class="reserva-info">
-            <div class="reserva-top">
-              <span class="instancia-actividad">${{ p.amount.toFixed(2) }}</span>
-              <span class="tag-abono" v-if="p.type === 'subscription'">Abono</span>
-              <span class="tag-suelta" v-else>Clase suelta</span>
-            </div>
-            <span class="instancia-detalle">{{ new Date(p.date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
+          <div class="resumen-pago">
+            Total abonado: <strong>${{ totalPagado }}</strong>
           </div>
-          <span class="pago-tag" :class="p.status === 'completed' || p.status === 'paid' ? 'paid' : 'partial'">
-            {{ p.status === 'completed' || p.status === 'paid' ? '✓ Completo' : '⏳ Seña' }}
-          </span>
+
+          <div class="modal-actions-container">
+            <button class="btn-cancel" style="flex: 0 0 auto; padding: 12px 30px;" @click="showPagosModal = false">Cerrar</button>
+          </div>
         </div>
       </div>
+    </transition>
 
-      <div class="resumen-pago">
-        Total abonado: <strong>${{ totalPagado }}</strong>
-      </div>
-
-      <div class="modal-actions-container">
-        <button class="btn-cancel" style="flex: 0 0 auto; padding: 12px 30px;" @click="showPagosModal = false">Cerrar</button>
-      </div>
-    </div>
-  </div>
-</transition>
-
-    <!-- TOAST -->
     <transition name="fade">
       <div v-if="toastMessage" :class="['alert-toast', toastType]">{{ toastMessage }}</div>
     </transition>
-  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
+import api from '../utils/api' // 🌟 CORRECCIÓN: Usamos el cliente HTTP unificado del club para los tokens
 
 // ---- Filtros ----
 const filterSearch = ref('')
@@ -403,7 +384,6 @@ const filterStatus = ref('')
 // ---- Modales y loadings generales ----
 const showCreateModal = ref(false)
 const loadingForm = ref(false)
-const loadingSuspension = ref({})
 const activeDropdown = ref(null)
 const activeAccordion = ref(null)
 
@@ -424,7 +404,7 @@ const clientes = ref([])
 
 const fetchClientes = async () => {
   try {
-    const res = await axios.get('/admin/clientes')
+    const res = await api.get('/admin/clientes')
     clientes.value = res.data.sort((a, b) => b.id - a.id)
   } catch (e) {
     showToast('Error al cargar el listado de clientes.', 'error')
@@ -458,7 +438,7 @@ const toggleAccordion = (clienteId) => {
 const handleSubmitForm = async () => {
   loadingForm.value = true
   try {
-    const res = await axios.post('/admin/crear-cliente', form.value)
+    const res = await api.post('/admin/crear-cliente', form.value)
     const nuevoCliente = {
       id: res.data?.id_user || res.data?.id || Date.now(),
       nombre: `${form.value.first_name.trim()} ${form.value.last_name.trim()}`,
@@ -478,25 +458,6 @@ const handleSubmitForm = async () => {
 const closeCreateModal = () => {
   showCreateModal.value = false
   form.value = { first_name: '', last_name: '', dni: '', email: '', password: '' }
-}
-
-const toggleSuspension = async (cliente) => {
-  loadingSuspension.value[cliente.id] = true
-  try {
-    const res = await axios.patch(`/admin/clientes/${cliente.id}/suspension`)
-    const index = clientes.value.findIndex(c => c.id === cliente.id)
-    if (index !== -1) clientes.value[index].estado = res.data.nuevo_estado
-    showToast(
-      res.data.nuevo_estado === 'Suspendido'
-        ? `Se ha suspendido al cliente ${cliente.nombre}`
-        : `Se levantó la suspensión para ${cliente.nombre}`,
-      res.data.nuevo_estado === 'Suspendido' ? 'error' : 'success'
-    )
-  } catch (error) {
-    showToast(error.response?.data?.detail || 'No se pudo alterar el estado del cliente', 'error')
-  } finally {
-    loadingSuspension.value[cliente.id] = false
-  }
 }
 
 const editCliente = (cliente) => alert(`Editar datos de: ${cliente.nombre}`)
@@ -522,12 +483,13 @@ const filterDia = ref('')
 const instanciaSeleccionada = ref(null)
 const amountPaid = ref(0)
 const loadingInstancias = ref(false)
+const fontLoadingReserva = ref(false)
 const loadingReserva = ref(false)
 const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
 const fetchActividades = async () => {
   try {
-    const res = await axios.get('/activities')
+    const res = await api.get('/activities')
     actividades.value = res.data
   } catch (e) {
     showToast('Error al cargar actividades.', 'error')
@@ -541,7 +503,7 @@ const fetchInstancias = async () => {
     const params = {}
     if (filterActividad.value) params.activity_id = filterActividad.value
     if (filterDia.value) params.day_of_week = filterDia.value
-    const res = await axios.get(`/admin/clientes/${clienteSeleccionado.value.id}/instancias-disponibles`, { params })
+    const res = await api.get(`/admin/clientes/${clienteSeleccionado.value.id}/instancias-disponibles`, { params })
     instancias.value = res.data
   } catch (e) {
     showToast('Error al cargar instancias.', 'error')
@@ -571,18 +533,22 @@ const precioMinimo = computed(() => {
   return Math.round(instanciaSeleccionada.value.price * 0.5 * 100) / 100
 })
 
+// 🌟 ARREGLO DEL FLUJO: Ruta apuntada al endpoint vivo de reservas del sistema
 const submitReserva = async () => {
   if (!instanciaSeleccionada.value) return showToast('Seleccioná una instancia.', 'error')
   if (amountPaid.value === 0) return showToast('Seleccioná el monto a cobrar.', 'error')
 
   loadingReserva.value = true
   try {
-    await axios.post(`/admin/clientes/${clienteSeleccionado.value.id}/reservar-clase`, {
-      instance_id: instanciaSeleccionada.value.instance_id,
-      amount_paid: amountPaid.value,
+    // 🚀 Lógica alineada con la API de FastAPI para reservar clases sueltas
+    await api.post('/bookings/', {
+      instance_id: Number(instanciaSeleccionada.value.instance_id),
+      subscription_id: null,
+      target_user_id: clienteSeleccionado.value.id
     })
+
     showToast('Reserva creada con éxito.', 'success')
-    showReservaModal.value = false
+    showReservaModal.value = false // Cierre automático exitoso de la UI
   } catch (e) {
     showToast(e.response?.data?.detail || 'Error al crear la reserva.', 'error')
   } finally {
@@ -593,13 +559,13 @@ const submitReserva = async () => {
 const createReserva = (cliente) => openReservaModal(cliente)
 
 // ---- Nuevo Abono ----
-// ---- Nuevo Abono ----
 const showAbonoModal = ref(false)
 const templates = ref([])
 const templatesFiltrados = ref([])
 const actividadesAbono = ref([])
 const templateSeleccionado = ref(null)
-const tipoAbono = ref('completo')
+const abonoQuote = ref(null)
+const loadingQuote = ref(false)
 const loadingTemplates = ref(false)
 const loadingAbono = ref(false)
 const filterAbonoActividad = ref('')
@@ -608,7 +574,7 @@ const filterAbonoDia = ref('')
 const fetchTemplates = async () => {
   loadingTemplates.value = true
   try {
-    const res = await axios.get('/activities')
+    const res = await api.get('/activities')
     const allTemplates = []
     res.data.forEach(act => {
       act.templates?.forEach(tmpl => {
@@ -618,7 +584,6 @@ const fetchTemplates = async () => {
       })
     })
     templates.value = allTemplates
-    // Armar lista de actividades únicas para el filtro
     actividadesAbono.value = res.data.map(act => ({ id: act.id, name: act.name }))
     filtrarTemplates()
   } catch (e) {
@@ -630,6 +595,7 @@ const fetchTemplates = async () => {
 
 const filtrarTemplates = () => {
   templateSeleccionado.value = null
+  abonoQuote.value = null
   templatesFiltrados.value = templates.value.filter(tmpl => {
     const matchActividad = !filterAbonoActividad.value || tmpl.activity_id === filterAbonoActividad.value
     const matchDia = !filterAbonoDia.value || tmpl.day_of_week === filterAbonoDia.value
@@ -637,30 +603,44 @@ const filtrarTemplates = () => {
   })
 }
 
+const fetchAbonoQuote = async (tmpl) => {
+  if (!tmpl || !clienteSeleccionado.value) return
+  loadingQuote.value = true
+  abonoQuote.value = null
+  try {
+    const res = await api.get(`/admin/clientes/${clienteSeleccionado.value.id}/abono-quote`, {
+      params: { template_id: tmpl.id }
+    })
+    abonoQuote.value = res.data
+  } catch (e) {
+    showToast(e.response?.data?.detail || 'Error al calcular el precio del abono.', 'error')
+  } finally {
+    loadingQuote.value = false
+  }
+}
+
 const openAbonoModal = async (cliente) => {
   clienteSeleccionado.value = cliente
   templateSeleccionado.value = null
-  tipoAbono.value = 'completo'
+  abonoQuote.value = null
   filterAbonoActividad.value = ''
   filterAbonoDia.value = ''
   showAbonoModal.value = true
   await fetchTemplates()
 }
-const precioAbono = computed(() => {
-  if (!templateSeleccionado.value) return 0
-  const base = templateSeleccionado.value.price * 4
-  return tipoAbono.value === 'mitad'
-    ? Math.round(base * 0.8 * 100) / 100
-    : Math.round(base * 100) / 100
-})
+
+const seleccionarTemplate = (tmpl) => {
+  templateSeleccionado.value = tmpl
+  fetchAbonoQuote(tmpl)
+}
 
 const submitAbono = async () => {
   if (!templateSeleccionado.value) return showToast('Seleccioná un horario.', 'error')
+  if (!abonoQuote.value) return showToast('Esperá a que se calcule el precio.', 'error')
   loadingAbono.value = true
   try {
-    await axios.post(`/admin/clientes/${clienteSeleccionado.value.id}/registrar-abono`, {
+    await api.post(`/admin/clientes/${clienteSeleccionado.value.id}/registrar-abono`, {
       template_id: templateSeleccionado.value.id,
-      tipo: tipoAbono.value,
     })
     showToast('Abono registrado con éxito.', 'success')
     showAbonoModal.value = false
@@ -672,6 +652,7 @@ const submitAbono = async () => {
 }
 
 const createAbono = (cliente) => openAbonoModal(cliente)
+
 // ---- Historial Reservas ----
 const showReservasModal = ref(false)
 const reservasCliente = ref([])
@@ -681,7 +662,7 @@ const loadingPago = ref({})
 const fetchReservasCliente = async (cliente) => {
   loadingReservas.value = true
   try {
-    const res = await axios.get(`/admin/clientes/${cliente.id}/reservas`)
+    const res = await api.get(`/admin/clientes/${cliente.id}/reservas`)
     reservasCliente.value = res.data
   } catch (e) {
     showToast('Error al cargar las reservas.', 'error')
@@ -699,7 +680,7 @@ const openReservasModal = async (cliente) => {
 const pagarRestante = async (booking) => {
   loadingPago.value[booking.booking_id] = true
   try {
-    await axios.patch(`/admin/clientes/${clienteSeleccionado.value.id}/reservas/${booking.booking_id}/pagar-restante`)
+    await api.patch(`/admin/clientes/${clienteSeleccionado.value.id}/reservas/${booking.booking_id}/pagar-restante`)
     booking.payment_status = 'paid'
     booking.amount_paid = booking.price
     showToast('Pago completado correctamente.', 'success')
@@ -718,7 +699,7 @@ const loadingPagos = ref(false)
 const fetchPagosCliente = async (cliente) => {
   loadingPagos.value = true
   try {
-    const res = await axios.get(`/admin/clientes/${cliente.id}/pagos`)
+    const res = await api.get(`/admin/clientes/${cliente.id}/pagos`)
     pagosCliente.value = res.data
   } catch (e) {
     showToast('Error al cargar los pagos.', 'error')
@@ -736,8 +717,6 @@ const openPagosModal = async (cliente) => {
 const totalPagado = computed(() => {
   return pagosCliente.value.reduce((acc, p) => acc + p.amount, 0).toFixed(2)
 })
-
-
 
 onMounted(fetchClientes)
 </script>

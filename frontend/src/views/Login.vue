@@ -92,13 +92,14 @@
 <script setup>
 import { ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import ForgotPassword from '../components/ForgotPassword.vue'
 
 const mostrarRecupero = ref(false)
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const credenciales = ref({ email: '', password: '' })
 const cargando = ref(false)
@@ -110,18 +111,46 @@ const handleLogin = async () => {
   error.value = ''
   try {
     const exito = await auth.login(credenciales.value.email, credenciales.value.password)
-if (exito) {
-  if (auth.role === 'admin' || auth.role === 'empleado') {
-    router.push('/')
-  } else {
-    router.push('/dashboard')
-  }
-}
+    if (exito) {
+      const redirect = getSafeRedirect()
+      if (redirect) {
+        goToRedirect(redirect)
+      } else if (auth.role === 'admin' || auth.role === 'empleado') {
+        router.push('/')
+      } else {
+        router.push('/dashboard')
+      }
+    }
   } catch (err) {
     error.value = typeof err === 'string' ? err : 'Error al iniciar sesión'
   } finally {
     cargando.value = false
   }
+}
+
+function getSafeRedirect() {
+  const redirectFromQuery = route.query.redirect
+  const redirect = typeof redirectFromQuery === 'string'
+    ? redirectFromQuery
+    : sessionStorage.getItem('club360_post_login_redirect') ||
+      localStorage.getItem('club360_post_login_redirect') ||
+      ''
+
+  sessionStorage.removeItem('club360_post_login_redirect')
+  localStorage.removeItem('club360_post_login_redirect')
+
+  if (!redirect.startsWith('/') || redirect.startsWith('//')) return ''
+  if (redirect.startsWith('/login')) return ''
+  return redirect
+}
+
+function goToRedirect(redirect) {
+  if (redirect.startsWith('/waitlist-accept/')) {
+    window.location.assign(redirect)
+    return
+  }
+
+  router.replace(redirect)
 }
 </script>
 

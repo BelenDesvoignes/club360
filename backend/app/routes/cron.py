@@ -6,10 +6,10 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models.activity import Activity
-from app.models.shift_template import ShiftTemplate
-from app.services import shift_service
+from ..database import get_db
+from ..models.activity import Activity
+from ..models.shift_template import ShiftTemplate
+from ..services import shift_service
 
 
 router = APIRouter(prefix="/cron", tags=["cron"])

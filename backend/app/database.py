@@ -1,7 +1,7 @@
 import os
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
 from sqlalchemy.pool import NullPool
@@ -82,6 +82,12 @@ def get_engine():
         _engine = create_engine(database_url, **engine_kwargs)
 
         Base.metadata.create_all(bind=_engine)
+        inspector = inspect(_engine)
+        if inspector.has_table("users"):
+            columns = {column["name"] for column in inspector.get_columns("users")}
+            if "profile_photo_url" not in columns:
+                with _engine.begin() as connection:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN profile_photo_url TEXT"))
 
     except Exception as exc:
         # Avoid leaking the full URL, but still provide useful diagnostics.

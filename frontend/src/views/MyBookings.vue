@@ -2,7 +2,7 @@
   <div class="my-bookings-container">
     <header class="bookings-header">
       <h1>Mis Reservas</h1>
-      <p>Aquí puedes ver todas tus reservas y gestionarlas</p>
+      <p>Acá podés ver todas tus reservas y gestionarlas</p>
     </header>
 
     <div v-if="loading" class="loading-spinner">Cargando reservas...</div>
@@ -25,9 +25,19 @@
 
         <div class="booking-content">
           <div class="activity-section">
-            <h3 class="activity-name">{{ booking.activity_name || `Actividad ${booking.instance_id}` }}</h3>
-            <p class="activity-date">{{ formatDate(booking.date) }}</p>
+          <h3 class="activity-name">
+            {{ booking.activity_name || `Actividad ${booking.instance_id}` }}
+          </h3>
+
+          <div
+            class="booking-type-badge"
+            :class="booking.is_subscription ? 'badge-subscription' : 'badge-single'"
+          >
+            {{ booking.is_subscription ? 'ABONO' : 'CLASE SUELTA' }}
           </div>
+
+          <p class="activity-date">{{ formatDate(booking.date) }}</p>
+        </div>
 
           <div class="schedule-section">
             <div class="schedule-row">
@@ -44,34 +54,48 @@
             <span class="created-at">Reservada el {{ formatDateTime(booking.created_at) }}</span>
           </div>
 
-          <div v-if="isBookingExpired(booking)" class="booking-actions">
-            <div class="expired-notice">
+          <div class="booking-actions">
+            <div v-if="isBookingExpired(booking)" class="expired-notice">
               <span class="expired-icon">🕐</span>
               <span>Esta reserva ha expirado. Pasó la fecha y hora.</span>
             </div>
+
+            <template v-else-if="booking.status === 'Confirmed'">
+              <button @click="activeQrId = activeQrId === booking.id ? null : booking.id" class="btn btn-secondary btn-sm">
+                {{ activeQrId === booking.id ? 'Ocultar QR' : 'Ver QR' }}
+              </button>
+              <button
+                v-show="canPayRemaining(booking)"
+                @click="payRemaining(booking.id)"
+                class="btn btn-success btn-sm"
+              >
+                Pagar restante
+              </button>
+              <button @click="cancelBooking(booking.id)" class="btn btn-danger btn-sm">
+                Cancelar Reserva
+              </button>
+            </template>
+
+            <template v-else-if="booking.status === 'Pending'">
+              <p class="pending-notice">Pendiente de pago de seña (50%)</p>
+              <button @click="paySeña(booking.id)" class="btn btn-success btn-sm">
+                Pagar Seña
+              </button>
+              <button @click="cancelBooking(booking.id)" class="btn btn-danger btn-sm">
+                Cancelar
+              </button>
+            </template>
           </div>
 
-          <div v-else-if="booking.status === 'Confirmed'" class="booking-actions">
-            <button
-              v-if="canPayRemaining(booking)"
-              @click="payRemaining(booking.id)"
-              class="btn btn-success btn-sm"
-            >
-              Pagar restante
-            </button>
-            <button @click="cancelBooking(booking.id)" class="btn btn-danger btn-sm">
-              Cancelar Reserva
-            </button>
-          </div>
-
-          <div v-else-if="booking.status === 'Pending'" class="booking-actions">
-            <p class="pending-notice">Pendiente de pago de seña (50%)</p>
-            <button @click="paySeña(booking.id)" class="btn btn-success btn-sm">
-              Pagar Seña
-            </button>
-            <button @click="cancelBooking(booking.id)" class="btn btn-danger btn-sm">
-              Cancelar
-            </button>
+          <div v-if="activeQrId === booking.id && booking.status === 'Confirmed'" class="qr-container">
+            <p class="qr-text">Presentá este código en recepción para ingresar:</p>
+            <div class="qr-frame">
+              <qrcode-vue :value="String(booking.id)" :size="130" level="H" render-as="svg" />
+              <p class="qr-id-display">ID de Reserva: #{{ booking.id }}</p>
+              <p style="font-size: 0.85rem; color: #6b7280; margin-top: 5px; font-weight: 600;">
+                (Para Cierre Masivo - ID de Clase: #{{ booking.instance_id }})
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -86,22 +110,23 @@
       @result="onGatewayResult"
     />
 
-    <!-- Modal de confirmación de cancelación -->
     <transition name="fade">
-      <div v-if="showCancelModal" class="modal-overlay" @click="showCancelModal = false">
+      <div v-if="showCancelModal" class="modal-overlay" @click="closeCancelModal">
         <div class="modal-content" @click.stop>
           <div class="modal-icon warning">⚠️</div>
           <h2>¿Cancelar reserva?</h2>
           <p>Esta acción no se puede deshacer. ¿Estás seguro de que deseas cancelar esta reserva?</p>
           <div class="modal-actions">
-            <button @click="showCancelModal = false" class="btn btn-secondary">No, mantenerla</button>
-            <button @click="confirmCancel" class="btn btn-danger">Sí, cancelar</button>
+            <button @click="closeCancelModal" class="btn btn-secondary" :disabled="cancellingBooking">No, mantenerla</button>
+            <button @click="confirmCancel" class="btn btn-danger" :disabled="cancellingBooking">
+              <span v-if="cancellingBooking" class="btn-spinner"></span>
+              <span>{{ cancellingBooking ? 'Cancelando...' : 'Sí, cancelar' }}</span>
+            </button>
           </div>
         </div>
       </div>
     </transition>
 
-    <!-- Modal de éxito -->
     <transition name="fade">
       <div v-if="successMessage" class="modal-overlay" @click="successMessage = ''">
         <div class="modal-content" @click.stop>
@@ -113,7 +138,6 @@
       </div>
     </transition>
 
-    <!-- Modal de error -->
     <transition name="fade">
       <div v-if="errorMessage" class="modal-overlay error" @click="errorMessage = ''">
         <div class="modal-content" @click.stop>
@@ -129,10 +153,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import api from '../utils/api' 
 import { useAuthStore } from '../stores/auth'
 import { useAppClockStore } from '../stores/appClock'
 import PaymentModal from '../components/PaymentModal.vue'
+import QrcodeVue from 'qrcode.vue'
 
 const auth = useAuthStore()
 const clock = useAppClockStore()
@@ -142,11 +167,13 @@ const successMessage = ref('')
 const errorMessage = ref('')
 const showCancelModal = ref(false)
 const bookingToCancel = ref(null)
+const cancellingBooking = ref(false)
 
 const showGatewayModal = ref(false)
 const pendingPaymentAmount = ref(0)
 const pendingBookingId = ref(null)
 const pendingPayeeName = ref('Reserva')
+const activeQrId = ref(null)
 const finalizingPayment = ref(false)
 
 function parseLocalDate(dateStr) {
@@ -190,7 +217,6 @@ const isBookingExpired = (booking) => {
 }
 
 const getStatusLabel = (status, booking) => {
-  // Si ya pasó la fecha/hora, mostrar "Expirada"
   if (booking && isBookingExpired(booking)) {
     return 'Fecha pasada'
   }
@@ -198,38 +224,64 @@ const getStatusLabel = (status, booking) => {
     'Confirmed': 'Confirmada',
     'Pending': 'Pendiente de Pago',
     'Cancelled': 'Cancelada',
-    'Attended': 'Asistida'
+    'Attended': 'Asistida',
+    'Concreted': 'Asistida', 
+    'Absent': 'Ausente'      
   }
   return labels[status] || status
 }
 
 const getCardClass = (booking) => {
+  if (isBookingExpired(booking)) {
+    return 'status-expired'
+  }
+
   const classes = {
     'Confirmed': 'status-confirmed',
     'Pending': 'status-pending',
     'Cancelled': 'status-cancelled',
-    'Attended': 'status-attended'
+    'Attended': 'status-attended',
+    'Concreted': 'status-attended',
+    'Absent': 'status-absent'
   }
+
   return classes[booking.status] || ''
+}
+
+const sortBookings = (list) => {
+  const getGroup = (booking) => {
+    if (booking.status === 'Cancelled') return 2
+    if (isBookingExpired(booking)) return 3
+    return 1
+  }
+
+  return [...list].sort((a, b) => {
+    const groupA = getGroup(a)
+    const groupB = getGroup(b)
+
+    if (groupA !== groupB) {
+      return groupA - groupB
+    }
+
+    // Parche de seguridad por si los strings fallan
+    const strA = a.date && a.start_time ? `${a.date}T${a.start_time}` : '1970-01-01T00:00:00'
+    const strB = b.date && b.start_time ? `${b.date}T${b.start_time}` : '1970-01-01T00:00:00'
+
+    const dateA = new Date(strA)
+    const dateB = new Date(strB)
+
+    return dateA - dateB
+  })
 }
 
 const fetchBookings = async () => {
   loading.value = true
   try {
     auth.hydrateFromToken()
-    const token = auth.token || localStorage.getItem('token')
+    const response = await api.get('/bookings/me')
 
-    if (!token) {
-      return
-    }
-
-    const res = await axios.get('/bookings/me', {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-
-    bookings.value = res.data.filter((booking) => booking.status !== 'Cancelled')
+    const data = response.data.bookings || response.data
+    bookings.value = sortBookings(data)
   } catch (e) {
     console.error('Error al cargar reservas:', e)
     bookings.value = []
@@ -243,28 +295,35 @@ const cancelBooking = (bookingId) => {
   showCancelModal.value = true
 }
 
-const confirmCancel = async () => {
+const closeCancelModal = () => {
+  if (cancellingBooking.value) return
   showCancelModal.value = false
+}
 
+const confirmCancel = async () => {
+  if (cancellingBooking.value || !bookingToCancel.value) return
+
+  cancellingBooking.value = true
   try {
     auth.hydrateFromToken()
-    const token = auth.token || localStorage.getItem('token')
-
-    const res = await axios.post(`/bookings/${bookingToCancel.value}/cancel`, {}, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-
+    const res = await api.post(`/bookings/${bookingToCancel.value}/cancel`)
     successMessage.value = res.data.message || 'Reserva cancelada exitosamente'
+  const booking = bookings.value.find(
+    b => b.id === bookingToCancel.value
+  )
 
-    // Recargar lista
-    setTimeout(() => {
-      fetchBookings()
-    }, 1500)
+  if (booking) {
+    booking.status = 'Cancelled'
+  }
+
+  bookings.value = sortBookings(bookings.value)
   } catch (e) {
     errorMessage.value = e.response?.data?.detail || 'Error al cancelar la reserva'
     console.error('Error al cancelar:', e)
+  } finally {
+    cancellingBooking.value = false
+    showCancelModal.value = false
+    bookingToCancel.value = null
   }
 }
 
@@ -273,7 +332,7 @@ const paySeña = async (bookingId) => {
   if (!booking) return
 
   const price = Number(booking.price || 0)
-  if (!Number.isFinite(price) || price <= 0) {
+  if (!price || price <= 0) {
     errorMessage.value = 'No se pudo determinar el precio de la reserva.'
     return
   }
@@ -292,8 +351,8 @@ const canPayRemaining = (booking) => {
 
   const price = Number(booking.price || 0)
   const paid = Number(booking.amount_paid || 0)
-  if (!Number.isFinite(price) || price <= 0) return false
-  if (!Number.isFinite(paid) || paid < 0) return false
+  if (!price || price <= 0) return false
+  if (paid < 0) return false
   return price - paid > 0.01
 }
 
@@ -303,7 +362,7 @@ const payRemaining = async (bookingId) => {
 
   const price = Number(booking.price || 0)
   const paid = Number(booking.amount_paid || 0)
-  if (!Number.isFinite(price) || price <= 0) {
+  if (!price || price <= 0) {
     errorMessage.value = 'No se pudo determinar el precio de la reserva.'
     return
   }
@@ -320,9 +379,9 @@ const payRemaining = async (bookingId) => {
   showGatewayModal.value = true
 }
 
+// 🌟 CORRECCIÓN DE SINTAXIS: Se agrega 'finally' para evitar el congelamiento y garantizar el cierre del modal
 async function onGatewayResult(result) {
   if (!result) return
-
   if (result.status !== 'Aprobado') {
     if (result.status === 'Cancelado') {
       errorMessage.value = 'Pago cancelado.'
@@ -337,24 +396,18 @@ async function onGatewayResult(result) {
   finalizingPayment.value = true
   try {
     auth.hydrateFromToken()
-    const token = auth.token || localStorage.getItem('token')
 
-    if (!token) {
-      errorMessage.value = 'Tu sesión expiró. Iniciá sesión nuevamente.'
-      return
-    }
-
-    await axios.post(
-      '/payments/me/complete-booking',
-      { amount: pendingPaymentAmount.value, booking_id: pendingBookingId.value },
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
+    // Impactamos usando la instancia 'api' para inyectar las cabeceras Bearer transparentemente
+    await api.post('/payments/me/complete-booking', { 
+      amount: Number(pendingPaymentAmount.value), 
+      booking_id: Number(pendingBookingId.value) 
+    })
 
     errorMessage.value = ''
     successMessage.value = 'Pago exitoso. Tu reserva quedó confirmada.'
     pendingBookingId.value = null
     pendingPaymentAmount.value = 0
-    showGatewayModal.value = false
+    showGatewayModal.value = false // Cerramos el modal de forma reactiva al procesar con éxito
 
     setTimeout(() => {
       fetchBookings()
@@ -362,7 +415,7 @@ async function onGatewayResult(result) {
   } catch (e) {
     successMessage.value = ''
     errorMessage.value = e.response?.data?.detail || 'Error al confirmar el pago'
-  } finally {
+  } finally { //  ESTRUCTURA REPARADA: uvicorn y vite compilarán perfectamente ahora
     finalizingPayment.value = false
   }
 }
@@ -377,365 +430,91 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.my-bookings-container {
-  padding: 40px 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-  background: transparent;
-  min-height: 100vh;
-}
-
-.bookings-header {
-  text-align: center;
-  margin-bottom: 40px;
-}
-
-.bookings-header h1 {
-  font-size: 2.5rem;
-  color: #2d658d;
-  font-weight: 800;
-  margin: 0 0 10px;
-}
-
-.bookings-header p {
-  font-size: 1.1rem;
-  color: #5a8849;
-  margin: 0;
-}
-
-.loading-spinner {
-  text-align: center;
-  font-size: 1.2rem;
-  color: #6c757d;
-  padding: 60px 20px;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  background: white;
-  border-radius: 15px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}
-
-.empty-icon {
-  font-size: 4rem;
-  margin-bottom: 20px;
-}
-
-.empty-state h2 {
-  font-size: 1.8rem;
-  color: #0d124a;
-  margin: 0 0 10px;
-}
-
-.empty-state p {
-  color: #6c757d;
-  margin: 0 0 25px;
-  font-size: 1.1rem;
-}
-
-.bookings-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 25px;
-}
-
-.booking-card {
-  background: white;
-  border-radius: 15px;
-  overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  transition: all 0.3s ease;
-  display: flex;
-  flex-direction: column;
-  border-left: 5px solid #2d658d;
-}
-
-.booking-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-}
-
-.booking-card.status-confirmed {
-  border-left-color: #5a8849;
-}
-
-.booking-card.status-pending {
-  border-left-color: #ff6f00;
-}
-
-.booking-card.status-cancelled {
-  border-left-color: #2d658d;
-  opacity: 0.7;
-}
-
-.booking-card.status-attended {
-  border-left-color: #5a8849;
-}
-
-.booking-card.status-expired {
-  border-left-color: #9ca3af;
-  opacity: 0.6;
-}
-
-.booking-header-card {
-  background: #2d658d;
-  color: white;
-  padding: 15px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.booking-card.status-confirmed .booking-header-card {
-  background: #5a8849;
-}
-
-.booking-card.status-pending .booking-header-card {
-  background: #ff6f00;
-}
-
-.booking-card.status-cancelled .booking-header-card {
-  background: #2d658d;
-}
-
-.booking-card.status-expired .booking-header-card {
-  background: #9ca3af;
-}
-
-.booking-status {
-  font-weight: 700;
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.booking-id {
-  font-size: 0.85rem;
-  opacity: 0.9;
-}
-
-.booking-content {
-  padding: 20px;
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-
-.activity-section h3 {
-  margin: 0 0 5px;
-  color: #0d124a;
-  font-size: 1.3rem;
-  font-weight: 800;
-}
-
-.activity-date {
-  margin: 0;
-  color: #6c757d;
-  font-size: 1rem;
-}
-
-.schedule-section {
-  background: #f8f9fa;
-  padding: 12px;
-  border-radius: 8px;
-}
-
-.schedule-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 5px 0;
-}
-
-.schedule-row .label {
-  color: #6c757d;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.schedule-row .value {
-  color: #0d124a;
-  font-weight: 700;
-}
-
-.booking-meta {
-  font-size: 0.85rem;
-  color: #999;
-}
-
-.pending-notice {
-  background: #fff7ed;
-  color: #b45309;
-  padding: 10px;
-  border-radius: 6px;
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.booking-actions .btn-danger {
-  background: #ff6f00;
-  color: white;
-  border: none;
-}
-
-.booking-actions .btn-danger:hover {
-  background: #ff6f00;
-  box-shadow: 0 8px 18px rgba(255, 111, 0, 0.22);
-}
-
-.booking-actions .btn-success {
-  background: #5a8849;
-  color: white;
-  border: none;
-}
-
-.booking-actions .btn-success:hover {
-  background: #5a8849;
-  box-shadow: 0 8px 18px rgba(90, 136, 73, 0.22);
-}
-
-.booking-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.expired-notice {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 15px;
-  background: #f3f4f6;
-  border-radius: 8px;
-  color: #6b7280;
-  font-weight: 600;
-  font-size: 0.9rem;
-  width: 100%;
-}
-
-/* Modal styles */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
-  padding: 30px;
-  border-radius: 15px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-  max-width: 400px;
-  text-align: center;
-}
-
-.modal-icon {
-  font-size: 3rem;
-  margin-bottom: 15px;
-}
-
-.modal-icon.success {
-  color: #5a8849;
-}
-
-.modal-icon.error {
-  color: #dc3545;
-}
-
-.modal-icon.warning {
-  color: #ff6f00;
-}
-
-.modal-content h2 {
-  margin: 0 0 10px;
-  color: #0d124a;
-}
-
-.modal-content p {
-  color: #6c757d;
-  margin: 0 0 20px;
-  line-height: 1.5;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-}
-
-/* Button styles */
-.btn {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  font-size: 0.95rem;
-  transition: all 0.3s ease;
-  text-decoration: none;
+.my-bookings-container { padding: 40px 20px; max-width: 1200px; margin: 0 auto; background: transparent; min-height: 100vh; }
+.bookings-header { text-align: center; margin-bottom: 40px; }
+.bookings-header h1 { font-size: 2.5rem; color: #2d658d; font-weight: 800; margin: 0 0 10px; }
+.bookings-header p { color: #5a8849; margin: 0; font-size: 1.1rem; }
+.loading-spinner { text-align: center; font-size: 1.2rem; color: #6c757d; padding: 60px 20px; }
+.empty-state { text-align: center; padding: 60px 20px; background: white; border-radius: 15px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05); }
+.empty-icon { font-size: 4rem; margin-bottom: 20px; }
+.empty-state h2 { font-size: 1.8rem; color: #0d124a; margin: 0 0 10px; }
+.empty-state p { color: #6c757d; margin: 0 0 25px; font-size: 1.1rem; }
+.bookings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 25px; }
+.booking-card { background: white; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); transition: all 0.3s ease; display: flex; flex-direction: column; border-left: 5px solid #2d658d; }
+.booking-card:hover { transform: translateY(-5px); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12); }
+.booking-card.status-confirmed { border-left-color: #5a8849; }
+.booking-card.status-pending { border-left-color: #ff6f00; }
+.booking-card.status-cancelled { border-left-color: #2d658d; opacity: 0.7; }
+.booking-card.status-attended { border-left-color: #5a8849; }
+.booking-card.status-expired { border-left-color: #9ca3af; opacity: 0.6; }
+.booking-card.status-absent { border-left-color: #dc3545; }
+.booking-header-card { background: #2d658d; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
+.booking-card.status-confirmed .booking-header-card { background: #5a8849; }
+.booking-card.status-pending .booking-header-card { background: #ff6f00; }
+.booking-card.status-cancelled .booking-header-card { background: #2d658d; }
+.booking-card.status-expired .booking-header-card { background: #9ca3af; }
+.booking-status { font-weight: 700; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
+.booking-id { font-size: 0.85rem; opacity: 0.9; }
+.booking-content { padding: 20px; flex-grow: 1; display: flex; flex-direction: column; gap: 15px; }
+.activity-section h3 { margin: 0 0 5px; color: #0d124a; font-size: 1.3rem; font-weight: 800; }
+.activity-date { margin: 0; color: #6c757d; font-size: 1rem; }
+.schedule-section { background: #f8f9fa; padding: 12px; border-radius: 8px; }
+.schedule-row { display: flex; justify-content: space-between; align-items: center; margin: 5px 0; }
+.schedule-row .label { color: #6c757d; font-weight: 600; font-size: 0.9rem; }
+.schedule-row .value { color: #0d124a; font-weight: 700; }
+.booking-meta { font-size: 0.85rem; color: #999; }
+.pending-notice { background: #fff7ed; color: #b45309; padding: 10px; border-radius: 6px; margin: 0; font-size: 0.9rem; font-weight: 600; }
+.booking-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.booking-actions .btn-danger { background: #ff6f00; color: white; border: none; }
+.booking-actions .btn-danger:hover { background: #ff6f00; box-shadow: 0 8px 18px rgba(255, 111, 0, 0.22); }
+.booking-actions .btn-success { background: #5a8849; color: white; border: none; }
+.booking-actions .btn-success:hover { background: #5a8849; box-shadow: 0 8px 18px rgba(90, 136, 73, 0.22); }
+.expired-notice { display: flex; align-items: center; gap: 10px; padding: 12px 15px; background: #f3f4f6; border-radius: 8px; color: #6b7280; font-weight: 600; font-size: 0.9rem; width: 100%; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+.modal-content { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3); max-width: 400px; text-align: center; }
+.modal-icon { font-size: 3rem; margin-bottom: 15px; }
+.modal-icon.success { color: #5a8849; }
+.modal-icon.error { color: #dc3545; }
+.modal-icon.warning { color: #ff6f00; }
+.modal-content h2 { margin: 0 0 10px; color: #0d124a; }
+.modal-content p { color: #6c757d; margin: 0 0 20px; line-height: 1.5; }
+.modal-actions { display: flex; gap: 10px; justify-content: center; }
+.btn { padding: 10px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: all 0.3s ease; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn:disabled { opacity: 0.7; cursor: not-allowed; }
+.btn-primary { background: #007bff; color: white; }
+.btn-primary:hover { background: #0056b3; }
+.btn-secondary { background: #6c757d; color: white; }
+.btn-secondary:hover:not(:disabled) { background: #5a6268; }
+.btn-success { background: #28a745; color: white; }
+.btn-success:hover { background: #1e7e34; }
+.btn-danger { background: #dc3545; color: white; }
+.btn-danger:hover:not(:disabled) { background: #a71d2a; }
+.btn-spinner { width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #ffffff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn-sm { padding: 8px 12px; font-size: 0.85rem; }
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+.qr-container { margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ced4da; text-align: center; }
+.qr-text { font-size: 0.85rem; color: #6c757d; margin: 0 0 8px 0; font-weight: 600; }
+.qr-frame { display: inline-block; background: white; padding: 8px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+.qr-id-display { font-size: 0.95rem; font-weight: 700; color: #0d124a; margin-top: 8px; margin-bottom: 0; }
+.booking-type-badge {
   display: inline-block;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
 }
 
-.btn-primary {
-  background: #007bff;
+.badge-subscription {
+  background: #5a8849;
   color: white;
 }
 
-.btn-primary:hover {
-  background: #0056b3;
-}
-
-.btn-secondary {
-  background: #6c757d;
+.badge-single {
+  background: #ff6f00;
   color: white;
-}
-
-.btn-secondary:hover {
-  background: #5a6268;
-}
-
-.btn-success {
-  background: #28a745;
-  color: white;
-}
-
-.btn-success:hover {
-  background: #1e7e34;
-}
-
-.btn-danger {
-  background: #dc3545;
-  color: white;
-}
-
-.btn-danger:hover {
-  background: #a71d2a;
-}
-
-.btn-sm {
-  padding: 8px 12px;
-  font-size: 0.85rem;
-}
-
-/* Transitions */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 </style>

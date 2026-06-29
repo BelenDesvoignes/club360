@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import Optional
+from datetime import datetime, date  
 
 from ..auth_utils import get_user_id_from_token
 from ..database import get_db
 from ..models.credit import Credit
 from ..models.user import User, UserRole
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator  
 
 router = APIRouter(prefix="/credits", tags=["credits"])
 
@@ -16,17 +17,25 @@ class CreditOut(BaseModel):
     user_id: int
     amount: float
     activity_id: Optional[int]
+    activity_name: Optional[str] = None 
     is_used: bool
     expiry_date: Optional[str] = None
 
     class Config:
         from_attributes = True
 
+    @field_validator("expiry_date", mode="before")
+    @classmethod
+    def serialize_expiry_date(cls, value):
+        if isinstance(value, (datetime, date)):
+            return value.strftime("%Y-%m-%d")
+        return value
+
 
 class CreditCreate(BaseModel):
     user_id: int
     amount: float
-    activity_id: int = 1  # Default a 1 para testing
+    activity_id: int = 1
 
 
 @router.get("/me", response_model=list[CreditOut])
@@ -39,11 +48,17 @@ def get_my_credits(authorization: Optional[str] = Header(default=None), db: Sess
     if not user_id:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-    return (
+    db_credits = (
         db.query(Credit)
         .filter(Credit.user_id == user_id, Credit.is_used == False, Credit.amount > 0)
         .all()
     )
+
+    for credit in db_credits:
+        if credit.activity:
+            credit.activity_name = credit.activity.name 
+
+    return db_credits
 
 
 @router.get("/{user_id}", response_model=list[CreditOut])
@@ -59,6 +74,10 @@ def get_user_credits(user_id: int, db: Session = Depends(get_db)):
         Credit.amount > 0,
     ).all()
 
+    for credit in credits:
+        if credit.activity:
+            credit.activity_name = credit.activity.name
+
     return credits
 
 
@@ -69,7 +88,6 @@ def create_credit_admin_only(
     db: Session = Depends(get_db)
 ):
     """SOLO ADMIN: Asigna créditos a un usuario. El cliente NO puede crear sus propios créditos."""
-    
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="No autenticado")
 
@@ -78,7 +96,6 @@ def create_credit_admin_only(
     if not admin_user_id:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-    # Verificar que el usuario que hace la solicitud sea admin
     admin = db.query(User).filter(User.id_user == admin_user_id).first()
     if not admin or admin.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Permiso denegado: solo admin puede crear créditos")
@@ -87,7 +104,6 @@ def create_credit_admin_only(
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    # Si ya existe un crédito sin usar para la misma actividad, sumamos en vez de crear otro registro
     existing = db.query(Credit).filter(
         Credit.user_id == data.user_id,
         Credit.activity_id == data.activity_id,
@@ -98,6 +114,8 @@ def create_credit_admin_only(
         existing.amount += data.amount
         db.commit()
         db.refresh(existing)
+        if existing.activity:
+            existing.activity_name = existing.activity.name
         return existing
 
     credit = Credit(
@@ -110,6 +128,8 @@ def create_credit_admin_only(
     try:
         db.commit()
         db.refresh(credit)
+        if credit.activity:
+            credit.activity_name = credit.activity.name
         return credit
     except Exception as e:
         db.rollback()

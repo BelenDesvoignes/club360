@@ -1,12 +1,15 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
-from datetime import datetime, date
+from sqlalchemy import and_, or_
+from datetime import datetime, date, timedelta
+import calendar
 from ..models.booking import Booking
 from ..models.user import User
 from ..models.shift_instance import ShiftInstance
 from ..models.subscription import Subscription
 from ..models.suspension import Suspension
 from ..models.payment import Payment
+from ..models.credit import Credit  # Importamos el modelo de créditos necesario
+from ..models.waiting_list import WaitingList
 from .subscription_service import ensure_user_suspension_if_unpaid
 from fastapi import HTTPException, status
 from ..time_override import business_today, business_utcnow
@@ -81,7 +84,7 @@ def has_instance_capacity(db: Session, instance_id: int) -> bool:
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
     if not instance:
         raise HTTPException(status_code=404, detail="Instancia no encontrada")
-    
+
     template = instance.template
     if not template:
         raise HTTPException(status_code=500, detail="Template no encontrado para la instancia")
@@ -115,7 +118,29 @@ def get_instance_booked_count(db: Session, instance_id: int) -> int:
     )
 
 
-def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
+def has_active_waiting_queue(db: Session, instance_id: int) -> bool:
+    now = business_utcnow()
+    return (
+        db.query(WaitingList)
+        .filter(
+            WaitingList.instance_id == instance_id,
+            or_(
+                WaitingList.status == "waiting",
+                and_(
+                    WaitingList.status == "notified",
+                    or_(
+                        WaitingList.promotion_expires_at == None,
+                        WaitingList.promotion_expires_at >= now,
+                    ),
+                ),
+            )
+        )
+        .first()
+        is not None
+    )
+
+
+def create_booking(db: Session, user_id: int, instance_id: int | None, subscription_id: int | None = None) -> Booking:
     """
     Create a booking with complete business logic validation.
     
@@ -136,6 +161,9 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
     # Get instance
+    if not instance_id:
+        raise HTTPException(status_code=400, detail="Falta el identificador del turno para procesar la reserva.")
+
     instance = db.query(ShiftInstance).filter(ShiftInstance.id == instance_id).first()
     if not instance:
         raise HTTPException(status_code=404, detail="Turno no encontrado")
@@ -176,18 +204,30 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
     if existing_booking:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ya tienes una reserva para este turno"
+            detail="Ya tenés una reserva para este turno"
+        )
+
+    if has_active_waiting_queue(db, instance_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Esta clase tiene una lista de espera activa. El cupo liberado se ofrece por orden de lista."
         )
     
     # Rule 2: Check capacity
     if not has_instance_capacity(db, instance_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No hay cupos disponibles para este turno. Únetea la lista de espera."
+            detail="No hay cupos disponibles para este turno. Únete a la lista de espera."
         )
     
-    # Rule 3 & 4: Check if user is abonado for this template (and date)
-    active_subscription = get_active_subscription(db, user_id, template.id, for_date=instance.date)
+    # Rule 3 & 4: Check if user is abonado for this template (or if a subscription_id was explicitly passed)
+    active_subscription = None
+    if subscription_id:
+        active_subscription = db.query(Subscription).filter(Subscription.id == subscription_id).first()
+    
+    if not active_subscription:
+        active_subscription = get_active_subscription(db, user_id, template.id, for_date=instance.date)
+        
     is_abonado = active_subscription is not None
     
     # Create booking
@@ -220,27 +260,124 @@ def create_booking(db: Session, user_id: int, instance_id: int) -> Booking:
     
     return booking
 
-
-def cancel_booking(db: Session, booking_id: int, user_id: int) -> Booking:
+def cancel_booking(db: Session, booking_id: int, user_id: int) -> tuple[Booking, bool]:
     """
-    Cancel a booking. Only owner or admin can cancel.
-    Returns the cancelled booking.
+    Cancela una reserva aplicando límites diferenciados:
+    - Si es abono -> Verifica 48hs para devolver crédito.
+    - Si es clase suelta -> Verifica 24hs para procesar reembolso.
+    
+    Retorna: (booking, should_process_waitlist)
+    El booleano indica si se debe procesar la lista de espera desde el endpoint (async).
     """
     from ..models.user import UserRole
+    from .credit_service import otorgar_credito_individual
+    from .refund_service import procesar_reembolso_clase_suelta
+    from datetime import datetime, timedelta
     
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
     
-    # Check authorization
     user = db.query(User).filter(User.id_user == user_id).first()
     if booking.user_id != user_id and (not user or user.role != UserRole.ADMIN):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No autorizado para cancelar esta reserva"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+        
+    if booking.status == "Cancelled":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ya cancelada")
+
+    instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
+    if not instance:
+        raise HTTPException(status_code=404, detail="Turno no encontrado")
+
+    class_datetime = business_utcnow()
+    if instance.date and instance.template and instance.template.start_time:
+        try:
+            time_parts = list(map(int, instance.template.start_time.split(":")))
+            class_datetime = datetime.combine(instance.date, datetime.min.time().replace(hour=time_parts[0], minute=time_parts[1]))
+        except Exception:
+            class_datetime = datetime.combine(instance.date, datetime.min.time())
+
+    time_difference = class_datetime - business_utcnow()
+
+    if booking.subscription_id is not None:
+        if time_difference >= timedelta(hours=48):
+            activity_id = instance.template.activity_id if instance.template else 1
+            otorgar_credito_individual(db, booking.user_id, activity_id)
+    else:
+        if time_difference >= timedelta(hours=24):
+            procesar_reembolso_clase_suelta(db, booking, instance)
+
     booking.status = "Cancelled"
+    db.commit()
+    db.refresh(booking)
+    
+    # Retornar bandera para procesar waitlist en el endpoint (async)
+    should_process = True
+    return booking, should_process
+
+def create_booking_with_credit(db: Session, user_id: int, instance_id: int, credit_id: int) -> Booking:
+    """
+    Crea una reserva confirmada utilizando un token de crédito individual único.
+    """
+    from .credit_service import consumir_credito_individual
+
+    instance = (
+        db.query(ShiftInstance)
+        .filter(ShiftInstance.id == instance_id)
+        .with_for_update()
+        .first()
+    )
+    if not instance:
+        raise HTTPException(status_code=404, detail="Clase no encontrada.")
+        
+    if instance.date < business_today():
+        raise HTTPException(status_code=400, detail="No podés reservar clases pasadas.")
+
+    booked_count = (
+        db.query(Booking)
+        .filter(
+            and_(
+                Booking.instance_id == instance_id,
+                Booking.status != "Cancelled"
+            )
+        )
+        .count()
+    )
+
+    # 3. Validar capacidad del turno en el momento de confirmar.
+    if booked_count >= instance.capacity:
+        raise HTTPException(status_code=400, detail="Error al reservar. No hay cupos disponibles")
+
+    if has_active_waiting_queue(db, instance_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Esta clase tiene una lista de espera activa. El cupo liberado se ofrece por orden de lista."
+        )
+
+    existing = db.query(Booking).filter(
+        and_(
+            Booking.user_id == user_id,
+            Booking.instance_id == instance_id,
+            Booking.status != "Cancelled"
+        )
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya tenés una reserva activa para esta clase.")
+
+    activity_id = instance.template.activity_id if instance.template else 1
+    consumir_credito_individual(db, credit_id=credit_id, user_id=user_id, activity_id=activity_id)
+
+    booking = Booking(
+        user_id=user_id,
+        instance_id=instance_id,
+        created_at=business_utcnow(),
+        status="Confirmed",
+        subscription_id=None,
+        amount_paid=0.0,
+        payment_status="paid"  
+    )
+    
+    db.add(booking)
     db.commit()
     db.refresh(booking)
     

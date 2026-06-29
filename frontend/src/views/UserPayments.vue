@@ -10,14 +10,15 @@
       <p>Buscando movimientos financieros...</p>
     </div>
 
-    <div v-else-if="payments.length" class="table-wrapper">
+    <div v-else-if="filteredPayments.length" class="table-wrapper">
       <table class="custom-table">
         <thead>
           <tr>
-            <th class="col-date">Fecha de Emisión</th>
+            <th class="col-date">Fecha</th> 
             <th class="col-concept">Concepto / Categoría</th>
-            <th class="col-amount text-right">Monto Total</th>
-            <th class="col-status text-center">Estado del Pago</th>
+            <th class="col-amount text-right">Monto</th>
+            <th class="col-status text-center">Estado</th>
+            <th class="col-actions text-center">Acción</th>
           </tr>
         </thead>
         <tbody>
@@ -26,14 +27,29 @@
               {{ formatDate(p.date) }}
             </td>
             <td class="cell-concept capitalize font-semibold">
-              {{ p.type === 'booking' ? 'Reserva de clase' : p.type }}
+              {{ formatConcept(p) }}
             </td>
-            <td class="cell-amount text-right font-mono font-bold text-base">
+            <td class="cell-amount text-right font-mono font-bold text-base price-clean">
               ${{ p.amount }}
             </td>
+            
             <td class="cell-status text-center">
               <span :class="['status-badge', getStatusClass(p.status)]">
-                {{ p.status === 'pending' ? 'Pendiente' : p.status }}
+                {{ formatStatusLabel(p.status) }}
+              </span>
+            </td>
+
+            <td class="cell-actions text-center">
+              <button 
+                v-if="p.status.toLowerCase() === 'pending' || p.status.toLowerCase() === 'pendiente' || p.status.toLowerCase() === 'partial'"
+                class="btn-primary-pay"
+                @click="openPaymentFlow(p)"
+                title="Hacé clic para liquidar este saldo pendiente"
+              >
+                Pagar 💳
+              </button>
+              <span v-else class="text-disabled">
+                -
               </span>
             </td>
           </tr>
@@ -41,35 +57,30 @@
       </table>
 
       <div class="pagination-footer" v-if="totalPages !== 1">
-        <button
-          @click="prevPage"
-          :disabled="currentPage === 1"
-          class="page-btn"
-        >
+        <button @click="prevPage" :disabled="currentPage === 1" class="page-btn">
           ← Anterior
         </button>
-
         <span class="page-info">
           Página <strong>{{ currentPage }}</strong> de {{ totalPages }}
         </span>
-
-        <button
-          @click="nextPage"
-          :disabled="currentPage === totalPages"
-          class="page-btn"
-        >
+        <button @click="nextPage" :disabled="currentPage === totalPages" class="page-btn">
           Siguiente →
         </button>
       </div>
     </div>
 
-    <div v-else class="empty-state-card">
-      <div class="empty-icon-circle">
-        <span role="img" aria-label="tarjeta"></span>
-      </div>
-      <h3>Sin pagos registrados</h3>
+    <div v-else class="empty-state-card-unified">
+      <div class="empty-icon-large">💳</div>
+      <h2>No tienes pagos registrados aún</h2>
       <p>No encontramos ningún movimiento financiero asociado a tu cuenta actualmente.</p>
     </div>
+
+    <PaymentModal
+      v-model="isModalOpen"
+      :amount="selectedPaymentAmount"
+      :payeeName="selectedPaymentConcept"
+      @result="handlePaymentResult"
+    />
   </div>
 </template>
 
@@ -77,6 +88,7 @@
 import { ref, onMounted, computed } from 'vue'
 import api from '../utils/api'
 import { useAuthStore } from '../stores/auth'
+import PaymentModal from '../components/PaymentModal.vue' 
 
 const auth = useAuthStore()
 const payments = ref([])
@@ -85,26 +97,34 @@ const loading = ref(false)
 const currentPage = ref(1)
 const itemsPerPage = ref(5)
 
+const isModalOpen = ref(false)
+const selectedPaymentAmount = ref(0)
+const selectedPaymentConcept = ref('')
+const activePaymentObject = ref(null)
+
+// Ordenamos los pagos por fecha de emisión (del más reciente al más antiguo) antes de aplicar la paginación:
+const filteredPayments = computed(() => {
+  return [...payments.value].sort((a, b) => {
+    return new Date(b.date) - new Date(a.date)
+  })
+})
+
+// Paginación reactiva sobre la lista
 const totalPages = computed(() => {
-  return Math.ceil(payments.value.length / itemsPerPage.value)
+  return Math.ceil(filteredPayments.value.length / itemsPerPage.value)
 })
 
 const paginatedPayments = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage.value
   const end = start + itemsPerPage.value
-  return payments.value.slice(start, end)
+  return filteredPayments.value.slice(start, end)
 })
 
 const nextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
+  if (currentPage.value < totalPages.value) currentPage.value++
 }
-
 const prevPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
+  if (currentPage.value > 1) currentPage.value--
 }
 
 const formatDate = (dateStr) => {
@@ -116,15 +136,100 @@ const formatDate = (dateStr) => {
   return `${d} - ${t}`
 }
 
+const formatConcept = (payment) => {
+  if (payment.type === 'subscription' || payment.type === 'suscripcion') {
+    return 'Abono Mensual'
+  }
+
+  if (payment.type === 'refund_partial') {
+    return 'Devolución por cancelación: Seña 50% '
+  }
+  if (payment.type === 'refund_total') {
+    return 'Devolución por cancelación: Pago total '
+  }
+
+  if (payment.type === 'booking') {
+    const amount = Number(payment.amount)
+    if (amount === 10000) return 'Reserva: clase 50%'
+    if (amount > 10000) return 'Reserva: pago total'
+    return 'Reserva: pago'
+  }
+  
+  return payment.type
+}
+
+const formatStatusLabel = (status) => {
+  const s = status ? status.toLowerCase() : ''
+  if (s === 'completed' || s === 'approved' || s === 'pagado') {
+    return 'Pagado'
+  }
+  if (s === 'partial') {
+    return 'Pendiente parcial'
+  }
+  if (s === 'pending' || s === 'pendiente') {
+    return 'Pendiente'
+  }
+  return status
+}
+
 const getStatusClass = (status) => {
   const s = status ? status.toLowerCase() : ''
-  if (s.includes('pagado') || s.includes('approved') || s.includes('exitoso')) {
+  if (s.includes('pagado') || s.includes('approved') || s.includes('completed')) {
     return 'badge-success'
   }
-  if (s.includes('pending') || s.includes('pendiente')) {
+  if (s.includes('pending') || s.includes('pendiente') || s.includes('partial')) {
     return 'badge-warning'
   }
   return 'badge-danger'
+}
+
+const openPaymentFlow = (payment) => {
+  activePaymentObject.value = payment
+  selectedPaymentAmount.value = Number(payment.amount)
+  selectedPaymentConcept.value = formatConcept(payment)
+  isModalOpen.value = true
+}
+
+// Manejador de pago unificado y corregido sintácticamente
+const handlePaymentResult = async (result) => {
+  if (result && result.status === 'Aprobado') {
+    const paymentId = activePaymentObject.value?.id
+    const isAbono = activePaymentObject.value?.type === 'subscription'
+
+    // Mutación visual rápida para optimizar la respuesta en la interfaz
+    const target = payments.value.find(p => p.id === paymentId)
+    if (target) {
+      target.status = 'completed' 
+    }
+
+    try {
+      loading.value = true
+
+      if (isAbono) {
+        await api.post(`/payments/me/complete-subscription/${paymentId}`)
+        console.log('¡Suscripción y todas sus reservas mutadas con éxito!')
+      } else {
+        const bookingId = activePaymentObject.value?.booking_id || paymentId
+        await api.post('/payments/me/complete-booking', {
+          amount: Number(selectedPaymentAmount.value),
+          booking_id: Number(bookingId)
+        })
+        console.log('¡Reserva de clase única actualizada correctamente!')
+      }
+
+      isModalOpen.value = false
+
+    } catch (err) {
+      console.error("Error al persistir la transacción en el servidor:", err)
+      if (target) {
+        target.status = 'pending' 
+      }
+      alert("Hubo un error al registrar el pago en el servidor.")
+    } finally {
+      await fetchPayments() 
+      loading.value = false
+    }
+  }
 }
 
 const getUserIdFromExistingToken = () => {
@@ -160,34 +265,10 @@ onMounted(fetchPayments)
 </script>
 
 <style scoped>
-.payments-container {
-  padding: 28px 40px 40px;
-  max-width: 1200px;
-  margin: 0 auto;
-  background: transparent;
-  min-height: 100vh;
-  font-family: system-ui, -apple-system, sans-serif;
-}
-
-.payments-header {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  margin-bottom: 18px;
-}
-
-.payments-header h1 {
-  font-size: 2.5rem;
-  color: #2d658d;
-  font-weight: 900;
-  margin: 0 0 10px;
-}
-
-.payments-header p {
-  font-size: 1.1rem;
-  color: #5a8849;
-  margin: 0;
-}
+.payments-container { padding: 28px 40px 40px; max-width: 1200px; margin: 0 auto; background: transparent; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; }
+.payments-header { display: flex; flex-direction: column; align-items: flex-start; margin-bottom: 18px; }
+.payments-header h1 { font-size: 2.5rem; color: #2d658d; font-weight: 900; margin: 0 0 10px; }
+.payments-header p { font-size: 1.1rem; color: #5a8849; margin: 0; }
 .table-wrapper { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); overflow: hidden; }
 .custom-table { width: 100%; border-collapse: collapse; text-align: left; margin: 0; }
 .custom-table th { background-color: #0d124a; color: #ffffff; padding: 16px 20px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
@@ -212,10 +293,53 @@ onMounted(fetchPayments)
 .badge-warning { background-color: #fffbeb; color: #92400e; border-color: #fde68a; }
 .badge-danger { background-color: #fef2f2; color: #991b1b; border-color: #fca5a5; }
 .loading-state, .empty-state-card { text-align: center; padding: 60px 20px; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-.empty-state-card h3 { margin: 0; font-size: 1.2rem; color: #1e293b; font-weight: 700; }
-.empty-state-card p { color: #94a3b8; font-size: 0.85rem; margin-top: 6px; }
-.empty-icon-circle { width: 56px; height: 56px; background-color: #f1f5f9; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.5rem; margin: 0 auto 16px auto; }
 .spinner { border: 3px solid #f3f4f6; border-top: 3px solid #0d124a; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 12px auto; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-</style>
+.price-clean { text-decoration: none !important; color: #0d124a !important; }
 
+.btn-primary-pay {
+  background-color: #f59e0b;
+  color: #ffffff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 8px; 
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-primary-pay:hover {
+  background-color: #d97706;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);
+}
+.btn-primary-pay:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(217, 119, 6, 0.2);
+}
+.text-disabled { color: #94a3b8; font-size: 0.9rem; font-weight: 500; }
+.col-actions { width: 140px; }
+.cell-actions { padding: 12px 20px; }
+
+.empty-state-card-unified {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 60px 40px;
+  max-width: 1120px;
+  margin: 30px auto 0 auto;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.empty-icon-large { font-size: 4rem; margin-bottom: 16px; line-height: 1; }
+.empty-state-card-unified h2 { font-size: 1.8rem; color: #0d124a; font-weight: 800; margin: 0 0 12px 0; }
+.empty-state-card-unified p { font-size: 1.05rem; color: #64748b; margin: 0; max-width: 600px; }
+</style>

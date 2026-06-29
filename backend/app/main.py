@@ -11,6 +11,7 @@ from .models.suspension import Suspension
 from .models.credit import Credit
 from fastapi import FastAPI
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from datetime import date as date_type
@@ -20,10 +21,29 @@ from .models.shift_template import ShiftTemplate # Nueva
 from .models.shift_instance import ShiftInstance # Nueva
 from .models.waiting_list import WaitingList
 from .routes import dashboard
+from .routes import waiting_lists
 from .time_override import set_business_today_override, reset_business_today_override
 
 # 1. Instancia de FastAPI
 app = FastAPI(title="CLUB360 API", root_path="/api")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    for error in exc.errors():
+        location = error.get("loc", [])
+        field = location[-1] if location else ""
+
+        if field == "email":
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "El correo electrónico no es válido. Revisá que no termine en punto o tenga espacios de más."},
+            )
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Revisá los datos ingresados porque hay campos que no son válidos."},
+    )
 
 
 @app.middleware("http")
@@ -77,4 +97,4 @@ app.include_router(cron.router)
 app.include_router(dashboard.router)
 from .routes import attendances  # ← agregar al import
 app.include_router(attendances.router)  # ← agregar junto a los otros
-
+app.include_router(waiting_lists.router)

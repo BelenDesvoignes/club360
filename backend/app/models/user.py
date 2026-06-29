@@ -18,6 +18,7 @@ class User(Base):
     last_name = Column(String, nullable=False)
     dni = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
+    profile_photo_url = Column(String, nullable=True)
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(UserRole), default=UserRole.CLIENT)
     is_suspended = Column(Boolean, default=False)

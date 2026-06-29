@@ -46,3 +46,16 @@ def complete_booking_payment(
         float(payload.amount),
         booking_id=payload.booking_id,
     )
+
+@router.post("/me/complete-subscription/{payment_id}", response_model=PaymentResponse)
+def complete_subscription_payment_route(
+    payment_id: int,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint dedicado para liquidar deudas de Abonos Mensuales de forma diferida.
+    Actualiza el pago, la suscripción y todas sus clases hijas.
+    """
+    user_id = _extract_user_id(authorization)
+    return payment_service.complete_subscription_payment_flow(db, user_id, payment_id)

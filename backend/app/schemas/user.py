@@ -12,12 +12,30 @@ class UserRegister(BaseModel):
 
 class UserResponse(BaseModel):
     id_user: int
+    first_name: str
+    last_name: str
+    dni: str
     email: str
     role: UserRole
 
     class Config:
         from_attributes = True
 
+class UserProfileUpdate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+
+class UserProfileResponse(BaseModel):
+    id_user: int
+    first_name: str
+    last_name: str
+    dni: str
+    email: str
+    role: UserRole
+
+    class Config:
+        from_attributes = True
 
 class UserLogin(BaseModel):
     email: EmailStr

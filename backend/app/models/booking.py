@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Float
 from sqlalchemy.orm import relationship
 
-from app.database import Base
+from ..database import Base
 
 
 class Booking(Base):
@@ -24,3 +24,4 @@ class Booking(Base):
     instance = relationship("ShiftInstance", back_populates="bookings")
     user = relationship("User", back_populates="bookings")
     subscription = relationship("Subscription", back_populates="bookings")
+    

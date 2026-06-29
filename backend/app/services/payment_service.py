@@ -1,17 +1,78 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import desc, text
+from datetime import timedelta
+
+# Modelos de la base de datos
 from ..models.payment import Payment
 from ..models.booking import Booking
-from sqlalchemy import desc
-from datetime import timedelta
+from ..models.subscription import Subscription  
+
+# Utilitario del tiempo del sistema
 from ..time_override import business_utcnow
 
 def get_payments_by_user(db: Session, user_id: int):
     """
-    Busca en la base de datos todos los registros de la tabla 'payments'
-    que pertenezcan al socio (id_user).
+    Busca los pagos del usuario e inyecta el deporte real original 
+    utilizando únicamente las columnas reales de la base de datos (instance_id).
     """
-    return db.query(Payment).filter(Payment.user_id == user_id).all()
-
+    payments = db.query(Payment).filter(Payment.user_id == user_id).all()
+    
+    for payment in payments:
+        payment.sport_name = None  
+        
+        # 🌟 Si es una devolución, salteamos la búsqueda por tiempo
+        if payment.type in ["refund_partial", "refund_total"]:
+            payment.sport_name = "Devolución"
+            continue
+            
+        if payment.type == "booking":
+            try:
+                b_id = getattr(payment, 'booking_id', getattr(payment, 'id_booking', None))
+                
+                if b_id:
+                    # SQL Corregido: Limpiamos el OR b.id_instance erróneo
+                    query_sql = text("""
+                        SELECT a.name 
+                        FROM bookings b
+                        JOIN shift_instances i ON b.instance_id = i.id
+                        JOIN shift_templates t ON i.template_id = t.id
+                        JOIN activities a ON t.activity_id = a.id
+                        WHERE b.id = :booking_id
+                    """)
+                    result = db.execute(query_sql, {"booking_id": b_id}).fetchone()
+                else:
+                    # SQL Corregido: Limpiamos el OR b.id_instance erróneo
+                    query_sql = text("""
+                        SELECT a.name 
+                        FROM bookings b
+                        JOIN shift_instances i ON b.instance_id = i.id
+                        JOIN shift_templates t ON i.template_id = t.id
+                        JOIN activities a ON t.activity_id = a.id
+                        WHERE b.user_id = :user_id 
+                          AND b.status != 'Cancelled'
+                          AND b.created_at <= :payment_date
+                        ORDER BY b.created_at DESC
+                        LIMIT 1
+                    """)
+                    result = db.execute(query_sql, {
+                        "user_id": user_id, 
+                        "payment_date": payment.date
+                    }).fetchone()
+                
+                if result and result[0]:
+                    payment.sport_name = result[0]
+                else:
+                    payment.sport_name = "Clase Deportiva"
+                    
+            except Exception as e:
+                db.rollback()
+                print(f"Error al recuperar deporte real por SQL: {str(e)}")
+                payment.sport_name = "Clase Deportiva"
+                
+        elif payment.type in ["subscription", "suscripcion", "Subscription"]:
+            payment.sport_name = "Abono Mensual"
+            
+    return payments
 
 def complete_latest_booking_payment(db: Session, user_id: int, amount: float) -> Payment:
     return complete_booking_payment(db, user_id, amount, booking_id=None)
@@ -67,6 +128,9 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
         )
 
     if booking is not None:
+        # 🌟 FIJAMOS EL ENLACE: Guardamos explícitamente el booking_id en el pago
+        payment.booking_id = booking.id
+
         # Update booking payment fields
         total_price = None
         try:
@@ -86,13 +150,54 @@ def complete_booking_payment(db: Session, user_id: int, amount: float, booking_i
             else:
                 booking.amount_paid = new_paid
                 booking.payment_status = "partial"
-                # paying a deposit confirms the booking spot
                 booking.status = "Confirmed"
         else:
-            # Fallback: keep previous semantics but ensure confirmed if payment was completed
             booking.amount_paid = new_paid
             if booking.status == "Pending":
                 booking.status = "Confirmed"
+
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+def complete_subscription_payment_flow(db: Session, user_id: int, payment_id: int) -> Payment:
+    """
+    Desarrollado para el flujo diferido de Abonos.
+    Busca el pago de la suscripción, lo completa, y actualiza en cadena 
+    el estado del Abono y de todas las clases/reservas que contiene.
+    """
+    payment = db.query(Payment).filter(
+        Payment.id == payment_id, 
+        Payment.user_id == user_id, 
+        Payment.type == "subscription"
+    ).first()
+    
+    if not payment:
+        return complete_booking_payment(db, user_id, 0.0, booking_id=payment_id)
+
+    payment.status = "completed"
+    payment.date = business_utcnow()
+
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == user_id,
+        Subscription.status == "active",
+        Subscription.price_paid == None 
+    ).order_by(desc(Subscription.purchase_date)).first()
+
+    if subscription:
+        subscription.price_paid = float(payment.amount)
+        subscription.purchase_date = business_utcnow()
+        
+        associated_bookings = db.query(Booking).filter(
+            Booking.subscription_id == subscription.id,
+            Booking.user_id == user_id
+        ).all()
+        
+        for booking in associated_bookings:
+            booking.amount_paid = round(float(payment.amount) / len(associated_bookings), 2) if associated_bookings else 0.0
+            booking.payment_status = "paid"
+            booking.status = "Confirmed"
 
     db.commit()
     db.refresh(payment)

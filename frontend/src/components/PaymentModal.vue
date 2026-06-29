@@ -306,6 +306,10 @@ async function pay() {
     if (res.status === 'approved') {
       message.value = 'Pago exitoso.'
       messageType.value = 'success'
+      
+      // 🌟 SOLUCIÓN: Apagamos el procesamiento antes del return para que no se congele
+      isProcessing.value = false 
+      
       emit('result', {
         status: 'Aprobado',
         amount: effectiveAmount.value,
