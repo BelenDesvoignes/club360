@@ -333,11 +333,12 @@
             <div v-else-if="pagosCliente.length === 0" class="empty-state">No hay pagos registrados.</div>
 
             <div v-for="p in pagosCliente" :key="p.payment_id" class="pago-item">
-              <div class="pago-tipo-icono" :class="p.type === 'subscription' ? 'icono-abono' : 'icono-suelta'">
-                {{ p.type === 'subscription' ? 'A' : 'C' }}
-              </div>
+              <div class="pago-tipo-barra" :class="p.type === 'subscription' ? 'barra-abono' : 'barra-suelta'"></div>
               <div class="pago-detalle">
-                <span class="pago-concepto">{{ p.type === 'subscription' ? 'Abono mensual' : 'Clase suelta' }}</span>
+                <span class="pago-concepto">
+                  {{ p.type === 'subscription' ? 'Abono' : 'Clase' }}
+                  <span v-if="p.activity_name"> de {{ p.activity_name }}</span>
+                </span>
                 <span class="pago-fecha">{{ new Date(p.date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
               </div>
               <div class="pago-derecha">
@@ -1104,20 +1105,15 @@ input:focus { border-color: #2d658d; }
 
 .pago-item:hover { background: #f0f7ff; border-color: #c7dff0; }
 
-.pago-tipo-icono {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  font-size: 15px;
+.pago-tipo-barra {
+  width: 4px;
+  border-radius: 4px;
+  align-self: stretch;
   flex-shrink: 0;
 }
 
-.icono-abono { background: #ede9fe; color: #5b21b6; }
-.icono-suelta { background: #e0f2fe; color: #0369a1; }
+.barra-abono { background: #5b21b6; }
+.barra-suelta { background: #0369a1; }
 
 .pago-detalle {
   display: flex;

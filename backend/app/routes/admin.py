@@ -559,6 +559,9 @@ def registrar_abono(
 
 @router.get("/clientes/{client_id}/pagos")
 def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
+    from ..models.subscription import Subscription
+    from ..models.activity import Activity
+
     cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
@@ -570,6 +573,43 @@ def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
+    # Cargamos subscriptions y bookings una sola vez para correlacionar por fecha
+    subscriptions = (
+        db.query(Subscription)
+        .filter(Subscription.user_id == client_id)
+        .all()
+    )
+    bookings = (
+        db.query(Booking)
+        .filter(Booking.user_id == client_id)
+        .all()
+    )
+
+    def _activity_for_payment(p: Payment) -> str | None:
+        if p.type == "subscription":
+            closest = min(
+                (s for s in subscriptions if s.purchase_date),
+                key=lambda s: abs((s.purchase_date - p.date).total_seconds()),
+                default=None,
+            )
+            if closest:
+                try:
+                    return closest.template.activity.name
+                except Exception:
+                    pass
+        elif p.type == "booking":
+            closest = min(
+                (b for b in bookings if b.created_at),
+                key=lambda b: abs((b.created_at - p.date).total_seconds()),
+                default=None,
+            )
+            if closest:
+                try:
+                    return closest.instance.template.activity.name
+                except Exception:
+                    pass
+        return None
+
     return [
         {
             "payment_id": p.id,
@@ -577,6 +617,7 @@ def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
             "status": p.status,
             "type": p.type,
             "date": p.date,
+            "activity_name": _activity_for_payment(p),
         }
         for p in pagos
     ]
