@@ -262,7 +262,10 @@ def verify_user_qr(
     except Exception:
         raise HTTPException(status_code=500, detail="Error interno al procesar el horario de la clase.")
 
-    ahora = datetime.datetime.now()
+    # 🌟 CALIBRACIÓN: Usamos la simulación del sistema para alinearnos al huso horario del club
+    from ..time_override import business_utcnow
+    ahora = business_utcnow()
+
     limite_inferior = class_datetime - datetime.timedelta(minutes=30)
     limite_superior = class_datetime + datetime.timedelta(minutes=30)
 
@@ -277,7 +280,6 @@ def verify_user_qr(
             user.missed_classes_count = (user.missed_classes_count or 0) + 1
         db.commit()
         raise HTTPException(status_code=400, detail="ERROR: FUERA DE TOLERANCIA HORARIA") # Escenario 4
-
   
     # PASO 6: Impacto Exitoso de la Asistencia (Escenarios 1 y 2)
   
