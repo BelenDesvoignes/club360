@@ -586,6 +586,8 @@ def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
     )
 
     def _activity_for_payment(p: Payment) -> str | None:
+        if not p.date:
+            return None
         if p.type == "subscription":
             closest = min(
                 (s for s in subscriptions if s.purchase_date),

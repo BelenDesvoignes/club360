@@ -287,16 +287,16 @@
               <div class="reserva-info">
                 <div class="reserva-top">
                   <span class="instancia-actividad">{{ b.activity_name }}</span>
-                  <span class="reserva-badge" :class="b.status.toLowerCase()">{{ b.status }}</span>
+                  <span class="reserva-badge" :class="b.status.toLowerCase()">{{ { 'Confirmed': 'Confirmada', 'Cancelled': 'Cancelada', 'Pending': 'Pendiente', 'Concreted': 'Concretada', 'Absent': 'Ausente' }[b.status] || b.status }}</span>
                 </div>
                 <span class="instancia-detalle">{{ b.date }} · {{ b.day_of_week }} {{ b.start_time }}</span>
                 <div class="reserva-pago-info">
                   <span v-if="b.is_subscription" class="tag-abono">Abono</span>
-                  <span v-else class="tag-suelta">Clase suelta</span>
+                  <span v-else class="tag-suelta">Clase</span>
                   <span v-if="!b.is_subscription">
                     Pagado: <strong>${{ b.amount_paid }}</strong> de ${{ b.price }}
                     <span class="pago-tag" :class="b.payment_status">
-                      {{ b.payment_status === 'paid' ? '✓ Completo' : '⏳ Seña' }}
+                      {{ b.payment_status === 'paid' ? 'Completo' : 'Seña' }}
                     </span>
                   </span>
                 </div>
@@ -690,6 +690,7 @@ const fetchPagosCliente = async (cliente) => {
     const res = await api.get(`/admin/clientes/${cliente.id}/pagos`)
     pagosCliente.value = res.data
   } catch (e) {
+    console.error('Error al cargar pagos:', e.response?.data || e.message)
     showToast('Error al cargar los pagos.', 'error')
   } finally {
     loadingPagos.value = false
