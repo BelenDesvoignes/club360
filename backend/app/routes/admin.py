@@ -185,10 +185,7 @@ def listar_instancias_disponibles(
         ).count()
         disponibles = inst.capacity - ocupados
 
-        if disponibles <= 0:
-            continue
-
-        # Verificar si el cliente ya tiene reserva en esta instancia
+        # Verificar si el cliente ya tiene reserva o está en lista de espera
         ya_reservado = db.query(Booking).filter(
             Booking.instance_id == inst.id,
             Booking.user_id == client_id,
@@ -198,6 +195,18 @@ def listar_instancias_disponibles(
         if ya_reservado:
             continue
 
+        from ..models.waiting_list import WaitingList
+        ya_en_espera = db.query(WaitingList).filter(
+            WaitingList.instance_id == inst.id,
+            WaitingList.user_id == client_id,
+            WaitingList.status == "waiting"
+        ).first()
+
+        if ya_en_espera:
+            continue
+
+        esta_llena = disponibles <= 0
+
         result.append({
             "instance_id": inst.id,
             "date": inst.date,
@@ -206,7 +215,8 @@ def listar_instancias_disponibles(
             "activity_id": inst.template.activity_id,
             "activity_name": inst.template.activity.name if inst.template.activity else None,
             "price": inst.template.price,
-            "cupos_disponibles": disponibles,
+            "cupos_disponibles": max(disponibles, 0),
+            "esta_llena": esta_llena,
         })
 
     return result
@@ -214,7 +224,6 @@ def listar_instancias_disponibles(
 
 class ReservaParaClientePayload(BaseModel):
     instance_id: int
-    amount_paid: float  # 50% o 100% del precio
 
 @router.post("/clientes/{client_id}/reservar-clase")
 def reservar_clase_para_cliente(
@@ -222,6 +231,9 @@ def reservar_clase_para_cliente(
     payload: ReservaParaClientePayload,
     db: Session = Depends(get_db)
 ):
+    from ..services.waiting_list_service import WaitingListService
+    from ..models.waiting_list import WaitingList
+
     cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
@@ -229,13 +241,6 @@ def reservar_clase_para_cliente(
     instancia = db.query(ShiftInstance).filter(ShiftInstance.id == payload.instance_id).first()
     if not instancia:
         raise HTTPException(status_code=404, detail="Instancia no encontrada.")
-
-    ocupados = db.query(Booking).filter(
-        Booking.instance_id == payload.instance_id,
-        Booking.status != "Cancelled"
-    ).count()
-    if ocupados >= instancia.capacity:
-        raise HTTPException(status_code=400, detail="No hay cupos disponibles.")
 
     ya_reservado = db.query(Booking).filter(
         Booking.instance_id == payload.instance_id,
@@ -245,30 +250,48 @@ def reservar_clase_para_cliente(
     if ya_reservado:
         raise HTTPException(status_code=400, detail="El cliente ya tiene una reserva en este turno.")
 
-    precio_total = instancia.template.price
-    minimo = round(precio_total * 0.5, 2)
-    if payload.amount_paid < minimo:
-        raise HTTPException(
-            status_code=400,
-            detail=f"El monto mínimo para reservar es ${minimo} (50% del precio)."
-        )
+    ocupados = db.query(Booking).filter(
+        Booking.instance_id == payload.instance_id,
+        Booking.status != "Cancelled"
+    ).count()
 
-    payment_status = "paid" if payload.amount_paid >= precio_total else "partial"
+    precio_total = instancia.template.price
+
+    if ocupados >= instancia.capacity:
+        # Sin cupo: anotar en lista de espera
+        try:
+            entry = WaitingListService.join_waiting_list_record(
+                db=db,
+                user_id=client_id,
+                instance_id=payload.instance_id,
+                entry_type="single",
+            )
+            return {
+                "resultado": "lista_espera",
+                "waiting_list_id": entry.id,
+                "position": entry.position,
+                "mensaje": f"Sin cupos disponibles. {cliente.first_name} {cliente.last_name} fue anotado/a en la lista de espera (posición {entry.position}).",
+            }
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Error al anotar en lista de espera: {str(e)}")
 
     try:
         booking = Booking(
             user_id=client_id,
             instance_id=payload.instance_id,
             status="Confirmed",
-            amount_paid=payload.amount_paid,
-            payment_status=payment_status,
+            amount_paid=precio_total,
+            payment_status="paid",
         )
         db.add(booking)
 
         payment = Payment(
             user_id=client_id,
-            amount=payload.amount_paid,
-            status=payment_status,
+            amount=precio_total,
+            status="completed",
             type="booking",
             date=business_utcnow(),
         )
@@ -278,12 +301,12 @@ def reservar_clase_para_cliente(
         db.refresh(booking)
 
         return {
+            "resultado": "confirmado",
             "booking_id": booking.id,
             "status": booking.status,
             "amount_paid": booking.amount_paid,
             "payment_status": booking.payment_status,
             "precio_total": precio_total,
-            "saldo_pendiente": round(precio_total - booking.amount_paid, 2),
         }
     except Exception as e:
         db.rollback()
@@ -419,10 +442,11 @@ def registrar_abono(
     if not template.is_active:
         raise HTTPException(status_code=400, detail="Este horario no está activo.")
 
-    # Precio y estado de pago con las mismas reglas que el flujo del cliente
+    from ..services.waiting_list_service import WaitingListService
+
+    # Precio con las mismas reglas que el flujo del cliente
     quote = get_subscription_quote(db, user_id=client_id, template_id=payload.template_id)
     monto = quote.amount
-    payment_status = "completed" if quote.pay_now_required else "pending"
 
     hoy = business_utcnow()
     mes_actual = hoy.month
@@ -462,6 +486,7 @@ def registrar_abono(
         db.flush()
 
         bookings_creados = 0
+        clases_en_espera = 0
         for instancia in instancias:
             ya_reservado = db.query(Booking).filter(
                 Booking.instance_id == instancia.id,
@@ -475,32 +500,44 @@ def registrar_abono(
                 Booking.instance_id == instancia.id,
                 Booking.status != "Cancelled"
             ).count()
+
             if ocupados >= instancia.capacity:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"No hay cupos disponibles para asegurar el mes completo en este horario (sin cupo el {instancia.date})."
+                # Sin cupo: anotar en lista de espera con prioridad de abono
+                WaitingListService.join_waiting_list_record(
+                    db=db,
+                    user_id=client_id,
+                    instance_id=instancia.id,
+                    entry_type="subscription",
+                    subscription_id=subscription.id,
+                    commit=False,
                 )
+                clases_en_espera += 1
+            else:
+                booking = Booking(
+                    user_id=client_id,
+                    instance_id=instancia.id,
+                    subscription_id=subscription.id,
+                    status="Confirmed",
+                    amount_paid=0,
+                    payment_status="paid",
+                )
+                db.add(booking)
+                bookings_creados += 1
 
-            booking = Booking(
-                user_id=client_id,
-                instance_id=instancia.id,
-                subscription_id=subscription.id,
-                status="Confirmed",
-                amount_paid=0,
-                payment_status="paid",
-            )
-            db.add(booking)
-            bookings_creados += 1
-
+        # El admin cobra en efectivo: siempre pago completo
         payment = Payment(
             user_id=client_id,
             amount=monto,
-            status=payment_status,
+            status="completed",
             type="subscription",
             date=hoy,
         )
         db.add(payment)
         db.commit()
+
+        mensaje = f"Abono registrado con éxito. Se reservaron {bookings_creados} clases."
+        if clases_en_espera:
+            mensaje += f" {clases_en_espera} clase(s) sin cupo fueron anotadas en lista de espera."
 
         return {
             "subscription_id": subscription.id,
@@ -511,7 +548,8 @@ def registrar_abono(
             "month": mes_actual,
             "valid_to": valid_to,
             "clases_reservadas": bookings_creados,
-            "mensaje": f"Abono registrado con éxito. Se reservaron {bookings_creados} clases."
+            "clases_en_espera": clases_en_espera,
+            "mensaje": mensaje,
         }
     except Exception as e:
         db.rollback()
