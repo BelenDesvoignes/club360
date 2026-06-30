@@ -586,30 +586,34 @@ def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
     )
 
     def _activity_for_payment(p: Payment) -> str | None:
-        if not p.date:
-            return None
-        if p.type == "subscription":
-            closest = min(
-                (s for s in subscriptions if s.purchase_date),
-                key=lambda s: abs((s.purchase_date - p.date).total_seconds()),
-                default=None,
-            )
-            if closest:
-                try:
-                    return closest.template.activity.name
-                except Exception:
-                    pass
-        elif p.type == "booking":
-            closest = min(
-                (b for b in bookings if b.created_at),
-                key=lambda b: abs((b.created_at - p.date).total_seconds()),
-                default=None,
-            )
-            if closest:
-                try:
-                    return closest.instance.template.activity.name
-                except Exception:
-                    pass
+        try:
+            if not p.date:
+                return None
+            p_dt = p.date.replace(tzinfo=None) if hasattr(p.date, 'tzinfo') and p.date.tzinfo else p.date
+            if p.type == "subscription":
+                closest = min(
+                    (s for s in subscriptions if s.purchase_date),
+                    key=lambda s: abs(((s.purchase_date.replace(tzinfo=None) if s.purchase_date.tzinfo else s.purchase_date) - p_dt).total_seconds()),
+                    default=None,
+                )
+                if closest:
+                    try:
+                        return closest.template.activity.name
+                    except Exception:
+                        pass
+            elif p.type == "booking":
+                closest = min(
+                    (b for b in bookings if b.created_at),
+                    key=lambda b: abs(((b.created_at.replace(tzinfo=None) if b.created_at.tzinfo else b.created_at) - p_dt).total_seconds()),
+                    default=None,
+                )
+                if closest:
+                    try:
+                        return closest.instance.template.activity.name
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         return None
 
     return [

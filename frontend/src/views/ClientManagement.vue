@@ -279,38 +279,44 @@
             <p>Clases de: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
           </header>
 
-          <div class="instancias-list">
+          <div class="pagos-list">
             <div v-if="loadingReservas" class="empty-state">Cargando reservas...</div>
             <div v-else-if="reservasCliente.length === 0" class="empty-state">No hay reservas registradas.</div>
 
-            <div v-for="b in reservasCliente" :key="b.booking_id" class="reserva-item">
-              <div class="reserva-info">
-                <div class="reserva-top">
-                  <span class="instancia-actividad">{{ b.activity_name }}</span>
-                  <span class="reserva-badge" :class="b.status.toLowerCase()">{{ { 'Confirmed': 'Confirmada', 'Cancelled': 'Cancelada', 'Pending': 'Pendiente', 'Concreted': 'Concretada', 'Absent': 'Ausente' }[b.status] || b.status }}</span>
-                </div>
-                <span class="instancia-detalle">{{ b.date }} · {{ b.day_of_week }} {{ b.start_time }}</span>
-                <div class="reserva-pago-info">
-                  <span v-if="b.is_subscription" class="tag-abono">Abono</span>
-                  <span v-else class="tag-suelta">Clase</span>
-                  <span v-if="!b.is_subscription">
-                    Pagado: <strong>${{ b.amount_paid }}</strong> de ${{ b.price }}
-                    <span class="pago-tag" :class="b.payment_status">
-                      {{ b.payment_status === 'paid' ? 'Completo' : 'Seña' }}
-                    </span>
-                  </span>
-                </div>
+            <div v-for="b in reservasCliente" :key="b.booking_id" class="pago-item">
+              <div class="pago-tipo-barra" :class="b.is_subscription ? 'barra-abono' : 'barra-suelta'"></div>
+              <div class="pago-detalle">
+                <span class="pago-concepto">
+                  {{ b.is_subscription ? 'Abono' : 'Clase' }}
+                  <span v-if="b.activity_name"> de {{ b.activity_name }}</span>
+                </span>
+                <span class="pago-fecha">{{ b.date }} · {{ b.day_of_week }} {{ b.start_time }}</span>
               </div>
-
-              <button
-                v-if="!b.is_subscription && b.payment_status === 'partial' && b.status !== 'Cancelled'"
-                class="btn-pagar-restante"
-                :disabled="loadingPago[b.booking_id]"
-                @click="pagarRestante(b)"
-              >
-                {{ loadingPago[b.booking_id] ? '...' : `Cobrar $${b.price - b.amount_paid}` }}
-              </button>
+              <div class="pago-derecha">
+                <span class="pago-estado" :class="{
+                  'estado-completo': b.status === 'Confirmed' || b.status === 'Concreted',
+                  'estado-sena': b.status === 'Pending',
+                  'estado-cancelada': b.status === 'Cancelled',
+                  'estado-ausente': b.status === 'Absent',
+                }">
+                  {{ { 'Confirmed': 'Confirmada', 'Cancelled': 'Cancelada', 'Pending': 'Pendiente', 'Concreted': 'Concretada', 'Absent': 'Ausente' }[b.status] || b.status }}
+                </span>
+                <span v-if="!b.is_subscription" class="pago-fecha">${{ b.amount_paid }} de ${{ b.price }}</span>
+                <button
+                  v-if="!b.is_subscription && b.payment_status === 'partial' && b.status !== 'Cancelled'"
+                  class="btn-cobrar-mini"
+                  :disabled="loadingPago[b.booking_id]"
+                  @click="pagarRestante(b)"
+                >
+                  {{ loadingPago[b.booking_id] ? '...' : `Cobrar $${b.price - b.amount_paid}` }}
+                </button>
+              </div>
             </div>
+          </div>
+
+          <div class="pagos-resumen">
+            <span class="pagos-resumen-label">Total reservas</span>
+            <span class="pagos-resumen-monto">{{ reservasCliente.length }}</span>
           </div>
 
           <div class="modal-actions-container">
@@ -1160,6 +1166,21 @@ input:focus { border-color: #2d658d; }
 
 .estado-completo { background: #e6f4ea; color: #137333; }
 .estado-sena { background: #fef9c3; color: #854d0e; }
+.estado-cancelada { background: #f3f4f6; color: #6b7280; }
+.estado-ausente { background: #fee2e2; color: #991b1b; }
+
+.btn-cobrar-mini {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: none;
+  background: #2d658d;
+  color: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-cobrar-mini:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .pagos-resumen {
   display: flex;
