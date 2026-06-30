@@ -57,9 +57,22 @@
 
     <!-- Paso 2: tipo de reserva + filtro por día (solo si ya eligió deporte) -->
     <div v-if="selectedSportId" class="reservation-controls">
-      <div class="reserve-type">
-        <button type="button" :class="{active: reservationType === 'class'}" @click="reservationType = 'class'">Reserva Única</button>
-        <button type="button" :class="{active: reservationType === 'subscription'}" @click="reservationType = 'subscription'">Reservar Abono</button>
+      <div v-if="hasVisibleReservationOptions" class="reserve-type">
+        <button
+          v-if="canShowSingleClassReservation"
+          type="button"
+          :class="{active: reservationType === 'class'}"
+          @click="reservationType = 'class'"
+        >Reserva Única</button>
+        <button
+          v-if="canShowSubscriptionReservation"
+          type="button"
+          :class="{active: reservationType === 'subscription'}"
+          @click="reservationType = 'subscription'"
+        >Reservar Abono</button>
+      </div>
+      <div v-else class="reservation-blocked">
+        {{ reservationUnavailableMessage }}
       </div>
 
       <div class="day-filter">
@@ -149,8 +162,8 @@
         </div>
       </div>
 
-      <div v-if="groupedActivities.length === 0" class="empty-state">
-        Todavía no hay clases cargadas para mostrar.
+      <div v-if="visibleActivities.length === 0" class="empty-state">
+        {{ reservationUnavailableMessage || 'Todavía no hay clases cargadas para mostrar.' }}
       </div>
     </div>
 
@@ -276,7 +289,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -321,6 +334,7 @@ const subscriptionPurchasedThisMonth = ref(false)
 
 const myBookings = ref([])
 const myBookingsLoaded = ref(false)
+const activeSuspensions = ref([])
 
 const isAuthError = (e) => {
   const status = e?.response?.status
@@ -358,6 +372,50 @@ const selectedSportId = ref(null)
 
 const sports = computed(() => groupedActivities.value.map(a => ({ activity_id: a.activity_id, activity_name: a.activity_name })))
 
+const isActiveSuspension = (suspension) => String(suspension?.status || '').toLowerCase() === 'active'
+const sameActivityId = (left, right) => String(left ?? '') === String(right ?? '')
+
+const hasActiveClassFreeSuspension = computed(() => activeSuspensions.value.some(
+  s => s.reason === 'SUSPENSION_CLASE_LIBRE'
+))
+
+const hasSelectedSportSubscriptionSuspension = computed(() => {
+  if (!selectedSportId.value) return false
+  return activeSuspensions.value.some(s =>
+    s.reason === 'SUSPENSION_ABONO' && sameActivityId(s.activity_id, selectedSportId.value)
+  )
+})
+
+const canShowSingleClassReservation = computed(() => !hasActiveClassFreeSuspension.value)
+const canShowSubscriptionReservation = computed(() => !hasSelectedSportSubscriptionSuspension.value)
+const hasVisibleReservationOptions = computed(() => canShowSingleClassReservation.value || canShowSubscriptionReservation.value)
+const reservationUnavailableMessage = computed(() => {
+  if (!selectedSportId.value) return ''
+  if (!hasVisibleReservationOptions.value) {
+    return 'No tenés opciones de reserva disponibles para este deporte hasta regularizar las suspensiones activas.'
+  }
+  if (reservationType.value === 'class' && !canShowSingleClassReservation.value) {
+    return 'La Reserva Única está suspendida hasta registrar el pago correspondiente.'
+  }
+  if (reservationType.value === 'subscription' && !canShowSubscriptionReservation.value) {
+    return 'Reservar Abono está suspendido para este deporte hasta registrar el pago correspondiente.'
+  }
+  return ''
+})
+
+const ensureReservationTypeAllowed = () => {
+  if (!selectedSportId.value) return
+  if (reservationType.value === 'class' && !canShowSingleClassReservation.value && canShowSubscriptionReservation.value) {
+    reservationType.value = 'subscription'
+    return
+  }
+  if (reservationType.value === 'subscription' && !canShowSubscriptionReservation.value && canShowSingleClassReservation.value) {
+    reservationType.value = 'class'
+  }
+}
+
+watch([selectedSportId, canShowSingleClassReservation, canShowSubscriptionReservation], ensureReservationTypeAllowed)
+
 const sportHeroStyle = (name) => {
   const normalized = String(name || '').toLowerCase()
 
@@ -388,8 +446,9 @@ const sportHeroStyle = (name) => {
 
 const selectSport = (sportId) => {
   selectedSportId.value = sportId
-  reservationType.value = 'class'
+  reservationType.value = canShowSingleClassReservation.value ? 'class' : 'subscription'
   selectedWeekday.value = 'all'
+  fetchSuspensions().then(ensureReservationTypeAllowed)
 }
 
 const clearSport = () => {
@@ -399,6 +458,9 @@ const clearSport = () => {
 }
 
 const visibleActivities = computed(() => {
+  if (reservationType.value === 'class' && !canShowSingleClassReservation.value) return []
+  if (reservationType.value === 'subscription' && !canShowSubscriptionReservation.value) return []
+
   const dayFilter = selectedWeekday.value
   const base = selectedSportId.value
     ? groupedActivities.value.filter(a => a.activity_id === selectedSportId.value)
@@ -592,6 +654,29 @@ const fetchInstances = async ({ showRefresh = false } = {}) => {
     instances.value = []
   } finally {
     if (showRefresh) isRefreshing.value = false
+  }
+}
+
+const fetchSuspensions = async () => {
+  try {
+    auth.hydrateFromToken()
+    const token = auth.token || localStorage.getItem('token')
+    if (!token) {
+      activeSuspensions.value = []
+      return []
+    }
+
+    const res = await axios.get('/payments/me/suspensions', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const suspensions = Array.isArray(res.data) ? res.data : []
+    activeSuspensions.value = suspensions.filter(isActiveSuspension)
+    return activeSuspensions.value
+  } catch (e) {
+    if (handleAuthError(e)) return []
+    console.error('Error al cargar suspensiones:', e)
+    activeSuspensions.value = []
+    return []
   }
 }
 
@@ -856,7 +941,8 @@ const canStartClassPayment = async (token) => {
   })
 
   const suspensions = Array.isArray(res.data) ? res.data : []
-  const classSuspension = suspensions.find(s => s.reason === 'SUSPENSION_CLASE_LIBRE')
+  activeSuspensions.value = suspensions.filter(isActiveSuspension)
+  const classSuspension = activeSuspensions.value.find(s => s.reason === 'SUSPENSION_CLASE_LIBRE')
 
   if (classSuspension) {
     errorMessage.value = 'Tu cuenta está suspendida para reservar clases libres. Debés abonar la deuda pendiente en la sección de suspensiones para poder realizar nuevas reservas.'
@@ -1071,7 +1157,7 @@ const joinWaitlist = async (instance) => {
 
 onMounted(() => {
   loading.value = true
-  Promise.all([fetchActivities(), fetchInstances()])
+  Promise.all([fetchActivities(), fetchInstances(), fetchSuspensions()])
     .finally(() => {
       loading.value = false
     })
@@ -1224,6 +1310,15 @@ onMounted(() => {
   background: #2d658d;
   color: white;
   border-color: transparent;
+}
+
+.reservation-blocked {
+  border: 1px solid rgba(220, 53, 69, 0.18);
+  background: rgba(220, 53, 69, 0.08);
+  color: #721c24;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-weight: 800;
 }
 
 .day-filter {
