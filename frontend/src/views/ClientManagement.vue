@@ -9,11 +9,11 @@
       <div class="filters-card">
         <div class="filter-group search-group">
           <label>Buscar cliente</label>
-          <input 
-            type="text" 
-            v-model="filterSearch" 
-            placeholder="Ingresá nombre o DNI..." 
-            @input="fetchInstancias" 
+          <input
+            type="text"
+            v-model="filterSearch"
+            placeholder="Ingresá nombre o DNI..."
+            @input="fetchInstancias"
           />
         </div>
 
@@ -61,8 +61,8 @@
                   <div class="dropdown-wrapper">
                     <button @click.stop="toggleDropdown(cliente.id)" class="icon-btn" title="Más opciones">⋮</button>
                     <div v-if="activeDropdown === cliente.id" class="dropdown-menu dropdown-right">
-                      <button @click="editCliente(cliente)">✏️ Editar Datos</button>
-                      <button @click="deleteCliente(cliente)" class="btn-delete-option">🗑️ Eliminar cliente</button>
+                      <button @click="editCliente(cliente)"><span class="dropdown-icon">✏️</span> Editar datos</button>
+                      <button @click="deleteCliente(cliente)" class="btn-delete-option"><span class="dropdown-icon">🗑️</span> Eliminar cliente</button>
                     </div>
                   </div>
                 </td>
@@ -75,9 +75,9 @@
                       <h4>Operaciones asociadas a: <span>{{ cliente.nombre }}</span></h4>
                     </div>
                     <div class="accordion-actions">
-                      <button @click="createReserva(cliente)" class="btn-nested">Nueva reserva</button>
-                      <button @click="createAbono(cliente)" class="btn-nested"> Nuevo abono</button>
-                      <button @click="viewReservas(cliente)" class="btn-nested"> Historial reservas</button>
+                      <button @click="createReserva(cliente)" class="btn-nested">Nueva reserva de clase</button>
+                      <button @click="createAbono(cliente)" class="btn-nested">Nueva reserva de abono</button>
+                      <button @click="viewReservas(cliente)" class="btn-nested">Historial de reservas</button>
                       <button @click="viewPagos(cliente)" class="btn-nested"> Ver pagos</button>
                     </div>
                   </div>
@@ -166,7 +166,7 @@
               v-for="inst in instancias"
               :key="inst.instance_id"
               class="instancia-item"
-              :class="{ selected: instanciaSeleccionada?.instance_id === inst.instance_id }"
+              :class="{ selected: instanciaSeleccionada?.instance_id === inst.instance_id, 'instancia-llena': inst.esta_llena }"
               @click="selectInstancia(inst)"
             >
               <div class="instancia-info">
@@ -175,34 +175,24 @@
               </div>
               <div class="instancia-right">
                 <span class="instancia-precio">${{ inst.price }}</span>
-                <span class="instancia-cupos">{{ inst.cupos_disponibles }} cupos</span>
+                <span v-if="inst.esta_llena" class="instancia-cupos sin-cupo">Sin cupos · Lista de espera</span>
+                <span v-else class="instancia-cupos">{{ inst.cupos_disponibles }} cupos</span>
               </div>
             </div>
           </div>
 
           <div v-if="instanciaSeleccionada" class="pago-section">
-            <p class="pago-label">Seleccioná el monto a cobrar:</p>
-            <div class="pago-botones">
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: amountPaid === precioMinimo }"
-                @click="amountPaid = precioMinimo"
-              >
-                50% — ${{ precioMinimo }}
-              </button>
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: amountPaid === instanciaSeleccionada.price }"
-                @click="amountPaid = instanciaSeleccionada.price"
-              >
-                100% — ${{ instanciaSeleccionada.price }}
-              </button>
+            <div v-if="instanciaSeleccionada.esta_llena" class="info-espera">
+              Esta clase no tiene cupos. Al confirmar, el cliente quedará anotado en la lista de espera.
+            </div>
+            <div v-else class="resumen-pago">
+              Total a cobrar: <strong>${{ instanciaSeleccionada.price }}</strong>
             </div>
           </div>
 
           <div class="modal-actions-container">
-            <button class="btn-confirm" @click="submitReserva" :disabled="loadingReserva || !instanciaSeleccionada || amountPaid === 0">
-              {{ loadingReserva ? 'Guardando...' : 'Confirmar Reserva' }}
+            <button class="btn-confirm" @click="submitReserva" :disabled="loadingReserva || !instanciaSeleccionada">
+              {{ loadingReserva ? 'Guardando...' : (instanciaSeleccionada?.esta_llena ? 'Anotar en lista de espera' : 'Confirmar Reserva') }}
             </button>
             <button class="btn-cancel" @click="showReservaModal = false">Cancelar</button>
           </div>
@@ -338,27 +328,30 @@
             <p>Cuenta corriente de: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
           </header>
 
-          <div class="instancias-list">
+          <div class="pagos-list">
             <div v-if="loadingPagos" class="empty-state">Cargando pagos...</div>
             <div v-else-if="pagosCliente.length === 0" class="empty-state">No hay pagos registrados.</div>
 
-            <div v-for="p in pagosCliente" :key="p.payment_id" class="reserva-item">
-              <div class="reserva-info">
-                <div class="reserva-top">
-                  <span class="instancia-actividad">${{ p.amount.toFixed(2) }}</span>
-                  <span class="tag-abono" v-if="p.type === 'subscription'">Abono</span>
-                  <span class="tag-suelta" v-else>Clase suelta</span>
-                </div>
-                <span class="instancia-detalle">{{ new Date(p.date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
+            <div v-for="p in pagosCliente" :key="p.payment_id" class="pago-item">
+              <div class="pago-tipo-icono" :class="p.type === 'subscription' ? 'icono-abono' : 'icono-suelta'">
+                {{ p.type === 'subscription' ? 'A' : 'C' }}
               </div>
-              <span class="pago-tag" :class="p.status === 'completed' || p.status === 'paid' ? 'paid' : 'partial'">
-                {{ p.status === 'completed' || p.status === 'paid' ? '✓ Completo' : '⏳ Seña' }}
-              </span>
+              <div class="pago-detalle">
+                <span class="pago-concepto">{{ p.type === 'subscription' ? 'Abono mensual' : 'Clase suelta' }}</span>
+                <span class="pago-fecha">{{ new Date(p.date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
+              </div>
+              <div class="pago-derecha">
+                <span class="pago-monto">${{ p.amount.toFixed(2) }}</span>
+                <span class="pago-estado" :class="p.status === 'completed' || p.status === 'paid' ? 'estado-completo' : 'estado-sena'">
+                  {{ p.status === 'completed' || p.status === 'paid' ? 'Completo' : 'Seña' }}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div class="resumen-pago">
-            Total abonado: <strong>${{ totalPagado }}</strong>
+          <div class="pagos-resumen">
+            <span class="pagos-resumen-label">Total abonado</span>
+            <span class="pagos-resumen-monto">${{ totalPagado }}</span>
           </div>
 
           <div class="modal-actions-container">
@@ -481,9 +474,7 @@ const actividades = ref([])
 const filterActividad = ref('')
 const filterDia = ref('')
 const instanciaSeleccionada = ref(null)
-const amountPaid = ref(0)
 const loadingInstancias = ref(false)
-const fontLoadingReserva = ref(false)
 const loadingReserva = ref(false)
 const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
@@ -515,7 +506,6 @@ const fetchInstancias = async () => {
 const openReservaModal = async (cliente) => {
   clienteSeleccionado.value = cliente
   instanciaSeleccionada.value = null
-  amountPaid.value = 0
   filterActividad.value = ''
   filterDia.value = ''
   showReservaModal.value = true
@@ -525,30 +515,23 @@ const openReservaModal = async (cliente) => {
 
 const selectInstancia = (inst) => {
   instanciaSeleccionada.value = inst
-  amountPaid.value = 0
 }
 
-const precioMinimo = computed(() => {
-  if (!instanciaSeleccionada.value) return 0
-  return Math.round(instanciaSeleccionada.value.price * 0.5 * 100) / 100
-})
-
-// 🌟 ARREGLO DEL FLUJO: Ruta apuntada al endpoint vivo de reservas del sistema
 const submitReserva = async () => {
   if (!instanciaSeleccionada.value) return showToast('Seleccioná una instancia.', 'error')
-  if (amountPaid.value === 0) return showToast('Seleccioná el monto a cobrar.', 'error')
 
   loadingReserva.value = true
   try {
-    // 🚀 Lógica alineada con la API de FastAPI para reservar clases sueltas
-    await api.post('/bookings/', {
+    const res = await api.post(`/admin/clientes/${clienteSeleccionado.value.id}/reservar-clase`, {
       instance_id: Number(instanciaSeleccionada.value.instance_id),
-      subscription_id: null,
-      target_user_id: clienteSeleccionado.value.id
     })
 
-    showToast('Reserva creada con éxito.', 'success')
-    showReservaModal.value = false // Cierre automático exitoso de la UI
+    if (res.data.resultado === 'lista_espera') {
+      showToast(`Sin cupos. ${clienteSeleccionado.value.nombre} anotado/a en lista de espera (posición ${res.data.position}).`, 'success')
+    } else {
+      showToast('Reserva confirmada con éxito.', 'success')
+    }
+    showReservaModal.value = false
   } catch (e) {
     showToast(e.response?.data?.detail || 'Error al crear la reserva.', 'error')
   } finally {
@@ -639,10 +622,14 @@ const submitAbono = async () => {
   if (!abonoQuote.value) return showToast('Esperá a que se calcule el precio.', 'error')
   loadingAbono.value = true
   try {
-    await api.post(`/admin/clientes/${clienteSeleccionado.value.id}/registrar-abono`, {
+    const res = await api.post(`/admin/clientes/${clienteSeleccionado.value.id}/registrar-abono`, {
       template_id: templateSeleccionado.value.id,
     })
-    showToast('Abono registrado con éxito.', 'success')
+    let msg = `Abono registrado. ${res.data.clases_reservadas} clase(s) confirmada(s) — cobradas en efectivo.`
+    if (res.data.clases_en_espera > 0) {
+      msg += ` ${res.data.clases_en_espera} clase(s) sin cupo anotadas en lista de espera: el cliente las pagará cuando se libere un lugar.`
+    }
+    showToast(msg, 'success')
     showAbonoModal.value = false
   } catch (e) {
     showToast(e.response?.data?.detail || 'Error al registrar el abono.', 'error')
@@ -890,6 +877,7 @@ input:focus { border-color: #2d658d; }
 .dropdown-menu button:hover { background-color: #f3f4f6; color: #111827; }
 .dropdown-menu button.btn-delete-option { color: #dc2626; border-top: 1px solid #f3f4f6; }
 .dropdown-menu button.btn-delete-option:hover { background-color: #fef2f2; }
+.dropdown-icon { filter: grayscale(1) opacity(0.45); }
 
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -954,6 +942,9 @@ input:focus { border-color: #2d658d; }
 }
 .instancia-item:hover { border-color: #2d658d; background: #f0f7ff; }
 .instancia-item.selected { border-color: #2d658d; background: #e8f4fd; }
+.instancia-item.instancia-llena { border-color: #f59e0b; background: #fffbeb; }
+.instancia-item.instancia-llena:hover { border-color: #d97706; background: #fef3c7; }
+.instancia-item.instancia-llena.selected { border-color: #d97706; background: #fde68a; }
 
 .instancia-info { display: flex; flex-direction: column; gap: 4px; }
 .instancia-actividad { font-weight: 700; color: #111827; font-size: 14px; }
@@ -962,19 +953,15 @@ input:focus { border-color: #2d658d; }
 .instancia-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .instancia-precio { font-weight: 800; color: #ff6f00; font-size: 15px; }
 .instancia-cupos { font-size: 11px; color: #6b7280; }
+.instancia-cupos.sin-cupo { color: #d97706; font-weight: 700; }
 
 .pago-section { border-top: 1px solid #e5e7eb; padding-top: 16px; }
-.pago-label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px; }
 
-.pago-botones { display: flex; gap: 10px; margin-top: 8px; }
-
-.btn-pago-opcion {
-  flex: 1; padding: 10px; border: 1px solid #2d658d; border-radius: 8px;
-  background: white; color: #2d658d; font-weight: 700; cursor: pointer;
-  font-size: 13px; transition: all 0.2s;
+.info-espera {
+  font-size: 13px; font-weight: 600; color: #92400e;
+  background: #fef3c7; border: 1px solid #f59e0b;
+  border-radius: 10px; padding: 12px 16px; text-align: center;
 }
-.btn-pago-opcion:hover { background: #2d658d; color: white; }
-.btn-pago-opcion.active { background: #2d658d; color: white; }
 
 .resumen-pago {
   text-align: center; font-size: 15px; color: #374151;
@@ -1094,4 +1081,111 @@ input:focus { border-color: #2d658d; }
 
 .btn-pagar-restante:hover:not(:disabled) { opacity: 0.85; }
 .btn-pagar-restante:disabled { background: #d1d5db; cursor: not-allowed; }
+
+/* ---- Historial de Pagos ---- */
+.pagos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.pago-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  transition: background 0.15s;
+}
+
+.pago-item:hover { background: #f0f7ff; border-color: #c7dff0; }
+
+.pago-tipo-icono {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.icono-abono { background: #ede9fe; color: #5b21b6; }
+.icono-suelta { background: #e0f2fe; color: #0369a1; }
+
+.pago-detalle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pago-concepto {
+  font-weight: 700;
+  font-size: 13px;
+  color: #111827;
+}
+
+.pago-fecha {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.pago-derecha {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pago-monto {
+  font-weight: 800;
+  font-size: 15px;
+  color: #111827;
+}
+
+.pago-estado {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.estado-completo { background: #e6f4ea; color: #137333; }
+.estado-sena { background: #fef9c3; color: #854d0e; }
+
+.pagos-resumen {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: #f0f7ff;
+  border: 1px solid #c7dff0;
+  border-radius: 12px;
+  margin-top: 4px;
+}
+
+.pagos-resumen-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.pagos-resumen-monto {
+  font-size: 20px;
+  font-weight: 900;
+  color: #2d658d;
+}
 </style>
