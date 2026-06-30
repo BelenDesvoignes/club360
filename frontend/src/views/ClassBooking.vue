@@ -584,7 +584,7 @@ const selectedSportId = ref(null)
 const sports = computed(() => groupedActivities.value.map(a => ({ activity_id: a.activity_id, activity_name: a.activity_name })))
 
 const sportHeroStyle = (name) => {
-  const normalized = String(name || '').toLowerCase()
+  const normalized = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
   const base = {
     backgroundSize: 'cover',
