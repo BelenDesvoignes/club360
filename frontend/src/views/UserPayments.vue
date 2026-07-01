@@ -10,69 +10,118 @@
       <p>Buscando movimientos financieros...</p>
     </div>
 
-    <div v-else-if="filteredPayments.length" class="table-wrapper">
+    <div v-else>
+      <section class="payments-section suspensions-section">
+        <div class="section-heading">
+          <div>
+            <h2>Mis suspensiones</h2>
+            <p>Acá aparecen tus suspensiones activas para regularizarlas.</p>
+          </div>
+        </div>
 
-    <table class="custom-table">
-        <thead>
-          <tr>
-            <th class="col-date">Fecha</th> <th class="col-concept">Concepto / Categoría</th>
-            <th class="col-amount text-right">Monto</th>
-            <th class="col-status text-center">Estado</th>
-            <th class="col-actions text-center">Acción</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in paginatedPayments" :key="p.id" class="table-row">
-            <td class="cell-date font-medium text-nowrap">
-              {{ formatDate(p.date) }}
-            </td>
-            <td class="cell-concept capitalize font-semibold">
-              {{ formatConcept(p) }}
-            </td>
-            <td class="cell-amount text-right font-mono font-bold text-base price-clean">
-              ${{ p.amount }}
-            </td>
-            
-            <td class="cell-status text-center">
-              <span :class="['status-badge', getStatusClass(p.status)]">
-                {{ formatStatusLabel(p.status) }}
-              </span>
-            </td>
+        <div v-if="suspensionPayments.length" class="table-wrapper">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th class="col-date">Fecha</th>
+                <th class="col-concept">Suspensión</th>
+                <th class="col-amount text-right">Monto</th>
+                <th class="col-status text-center">Estado</th>
+                <th class="col-actions text-center">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in suspensionPayments" :key="p.id" class="table-row suspension-row">
+                <td class="cell-date font-medium text-nowrap">{{ formatDate(p.date) }}</td>
+                <td class="cell-concept font-semibold">{{ formatConcept(p) }}</td>
+                <td class="cell-amount text-right font-mono font-bold text-base price-clean">${{ p.amount }}</td>
+                <td class="cell-status text-center">
+                  <span :class="['status-badge', getStatusClass(p.status)]">
+                    {{ formatStatusLabel(p.status) }}
+                  </span>
+                </td>
+                <td class="cell-actions text-center">
+                  <button
+                    v-if="isPayableStatus(p.status)"
+                    class="btn-primary-pay"
+                    @click="openPaymentFlow(p)"
+                    title="Hacé clic para pagar esta suspensión"
+                  >
+                    Pagar suspensión 💳
+                  </button>
+                  <span v-else class="text-disabled">-</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-            <td class="cell-actions text-center">
-              <button 
-                v-if="p.status.toLowerCase() === 'pending' || p.status.toLowerCase() === 'pendiente' || p.status.toLowerCase() === 'partial'"
-                class="btn-primary-pay"
-                @click="openPaymentFlow(p)"
-                title="Hacé clic para liquidar este saldo pendiente"
-              >
-                Pagar 💳
-              </button>
-              <span v-else class="text-disabled">
-                -
-              </span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+        <div v-else class="empty-state-card-unified compact-empty">
+          <div class="empty-icon-large">✅</div>
+          <h2>No tenés suspensiones activas</h2>
+          <p>Cuando tengas una suspensión activa, va a aparecer acá para poder pagarla.</p>
+        </div>
+      </section>
 
-      <div class="pagination-footer" v-if="totalPages !== 1">
-        <button @click="prevPage" :disabled="currentPage === 1" class="page-btn">
-          ← Anterior
-        </button>
-        <span class="page-info">
-          Página <strong>{{ currentPage }}</strong> de {{ totalPages }}
-        </span>
-        <button @click="nextPage" :disabled="currentPage === totalPages" class="page-btn">
-          Siguiente →
-        </button>
-      </div>
-    </div>
+      <section class="payments-section">
+        <div class="section-heading">
+          <div>
+            <h2>Historial de pagos</h2>
+            <p>Movimientos financieros y comprobantes registrados en tu cuenta.</p>
+          </div>
+        </div>
 
-   <div v-else class="empty-state-card-unified">
-      <div class="empty-icon-large">💳</div>
-      <h2>No tienes pagos registrados aún</h2>
-      <p>No encontramos ningún movimiento financiero asociado a tu cuenta actualmente.</p>
+        <div v-if="filteredPayments.length" class="table-wrapper">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th class="col-date">Fecha</th>
+                <th class="col-concept">Concepto / Categoría</th>
+                <th class="col-amount text-right">Monto</th>
+                <th class="col-status text-center">Estado</th>
+                <th class="col-actions text-center">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in paginatedPayments" :key="p.id" class="table-row">
+                <td class="cell-date font-medium text-nowrap">{{ formatDate(p.date) }}</td>
+                <td class="cell-concept capitalize font-semibold">{{ formatConcept(p) }}</td>
+                <td class="cell-amount text-right font-mono font-bold text-base price-clean">${{ p.amount }}</td>
+                <td class="cell-status text-center">
+                  <span :class="['status-badge', getStatusClass(p.status)]">
+                    {{ formatStatusLabel(p.status) }}
+                  </span>
+                </td>
+                <td class="cell-actions text-center">
+                  <button
+                    v-if="isPayableStatus(p.status)"
+                    class="btn-primary-pay"
+                    :class="{ disabled: isMonthlyPaymentBlocked(p) }"
+                    :disabled="isMonthlyPaymentBlocked(p)"
+                    @click="openPaymentFlow(p)"
+                    :title="isMonthlyPaymentBlocked(p) ? 'Tenés una suspensión activa para este deporte' : 'Hacé clic para liquidar este saldo pendiente'"
+                  >
+                    Pagar 💳
+                  </button>
+                  <span v-else class="text-disabled">-</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="pagination-footer" v-if="totalPages !== 1">
+            <button @click="prevPage" :disabled="currentPage === 1" class="page-btn">← Anterior</button>
+            <span class="page-info">Página <strong>{{ currentPage }}</strong> de {{ totalPages }}</span>
+            <button @click="nextPage" :disabled="currentPage === totalPages" class="page-btn">Siguiente →</button>
+          </div>
+        </div>
+
+        <div v-else class="empty-state-card-unified">
+          <div class="empty-icon-large">💳</div>
+          <h2>No tienes pagos registrados aún</h2>
+          <p>No encontramos ningún movimiento financiero asociado a tu cuenta actualmente.</p>
+        </div>
+      </section>
     </div>
 
     <PaymentModal
@@ -101,11 +150,20 @@ const isModalOpen = ref(false)
 const selectedPaymentAmount = ref(0)
 const selectedPaymentConcept = ref('')
 const activePaymentObject = ref(null)
+const SUSPENSION_PAYMENT_AMOUNT = 8000
+
+const suspensionPayments = computed(() => {
+  return payments.value
+    .filter(p => p.is_suspension)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+})
+
+const paymentHistory = computed(() => payments.value.filter(p => !p.is_suspension))
 
 // Ordenamos los pagos por fecha de emisión (del más reciente al más antiguo) antes de aplicar la paginación:
 const filteredPayments = computed(() => {
-  return [...payments.value].sort((a, b) => {
-  return new Date(b.date) - new Date(a.date)
+  return [...paymentHistory.value].sort((a, b) => {
+    return new Date(b.date) - new Date(a.date)
   })
 })
 
@@ -137,31 +195,33 @@ const formatDate = (dateStr) => {
 }
 
 const formatConcept = (payment) => {
-  // 1. Si es una suscripción o abono mensual (lo dejamos tal cual)
+  if (payment.is_suspension) {
+    if (payment.reason === 'SUSPENSION_CLASE_LIBRE') return 'Suspensión de clase libre'
+    if (payment.reason === 'SUSPENSION_ABONO') {
+      return payment.sport_name ? `Suspensión de abono - ${payment.sport_name}` : 'Suspensión de abono'
+    }
+    return 'Suspensión activa'
+  }
+
   if (payment.type === 'subscription' || payment.type === 'suscripcion') {
     return 'Abono Mensual'
   }
 
-  // 2. Si es una reserva de turno (aplicamos tu nuevo criterio momentáneo)
+  if (payment.type === 'refund_partial') {
+    return 'Devolución por cancelación: Seña 50% '
+  }
+  if (payment.type === 'refund_total') {
+    return 'Devolución por cancelación: Pago total '
+  }
+
   if (payment.type === 'booking') {
     const amount = Number(payment.amount)
-    
-    // Si el monto es igual a 10000 (el 50%), unificamos el concepto sin adivinar
-    if (amount === 10000) {
-      return 'Reserva: clase 50%'
-    }
-    
-    // Si el monto es mayor, asumimos el pago total directo
-    if (amount > 10000) {
-      return 'Reserva: pago total'
-    }
-    
-    // Salvaguarda por si viene un monto menor o diferente
+    if (amount === 10000) return 'Reserva: clase 50%'
+    if (amount > 10000) return 'Reserva: pago total'
     return 'Reserva: pago'
   }
   
-  // 3. Salvaguarda por si viene el tipo con mayúscula
-  return payment.type === 'Subscription' ? 'Abono Mensual' : payment.type
+  return payment.type
 }
 
 const formatStatusLabel = (status) => {
@@ -189,7 +249,26 @@ const getStatusClass = (status) => {
   return 'badge-danger'
 }
 
+const isPayableStatus = (status) => {
+  const s = String(status || '').toLowerCase()
+  return s === 'pending' || s === 'pendiente' || s === 'partial'
+}
+
+const sameActivityId = (left, right) => String(left ?? '') === String(right ?? '')
+
+const isSubscriptionPayment = (payment) => {
+  return ['subscription', 'suscripcion', 'Subscription'].includes(payment?.type)
+}
+
+const isMonthlyPaymentBlocked = (payment) => {
+  if (!isSubscriptionPayment(payment) || !payment?.activity_id) return false
+  return suspensionPayments.value.some(s =>
+    s.reason === 'SUSPENSION_ABONO' && sameActivityId(s.activity_id, payment.activity_id)
+  )
+}
+
 const openPaymentFlow = (payment) => {
+  if (isMonthlyPaymentBlocked(payment)) return
   activePaymentObject.value = payment
   selectedPaymentAmount.value = Number(payment.amount)
   selectedPaymentConcept.value = formatConcept(payment)
@@ -200,7 +279,8 @@ const openPaymentFlow = (payment) => {
 const handlePaymentResult = async (result) => {
   if (result && result.status === 'Aprobado') {
     const paymentId = activePaymentObject.value?.id
-    const isAbono = activePaymentObject.value?.type === 'subscription'
+    const isSuspension = Boolean(activePaymentObject.value?.is_suspension)
+    const isAbono = isSubscriptionPayment(activePaymentObject.value)
 
     // Mutación visual rápida para optimizar la respuesta en la interfaz
     const target = payments.value.find(p => p.id === paymentId)
@@ -211,10 +291,15 @@ const handlePaymentResult = async (result) => {
     try {
       loading.value = true
 
-      if (isAbono) {
-        // Flujo del Abono: Endpoint dedicado que creamos para modificar abonos y reservas agrupadas
+      if (isSuspension) {
+        await api.post('/payments/pagar-suspension', {
+          suspension_id: activePaymentObject.value.suspension_id,
+          amount: Number(selectedPaymentAmount.value)
+        })
+        console.log('¡Suspensión pagada y levantada con éxito!')
+      } else if (isAbono) {
         await api.post(`/payments/me/complete-subscription/${paymentId}`)
-        console.log('¡Suscripción y todas sus reservas mutadas con éxito en la Base de Datos!')
+        console.log('¡Suscripción y todas sus reservas mutadas con éxito!')
       } else {
         const bookingId = activePaymentObject.value?.booking_id || paymentId
         await api.post('/payments/me/complete-booking', {
@@ -229,11 +314,11 @@ const handlePaymentResult = async (result) => {
     } catch (err) {
       console.error("Error al persistir la transacción en el servidor:", err)
       if (target) {
-        target.status = 'pending' // Revertimos en caso de falla de conexión
+        target.status = 'pending' 
       }
       alert("Hubo un error al registrar el pago en el servidor.")
     } finally {
-      await fetchPayments() // Volvemos a sincronizar la lista desde la base de datos
+      await fetchPayments() 
       loading.value = false
     }
   }
@@ -254,13 +339,42 @@ const getUserIdFromExistingToken = () => {
   return 1
 }
 
+const isKnownSuspensionReason = (reason) => {
+  return reason === 'SUSPENSION_CLASE_LIBRE' || reason === 'SUSPENSION_ABONO'
+}
+
+const mapSuspensionToPaymentRow = (suspension) => ({
+  id: `suspension-${suspension.id}`,
+  suspension_id: suspension.id,
+  payment_id: suspension.payment_id,
+  amount: Number(suspension.amount || SUSPENSION_PAYMENT_AMOUNT),
+  status: isKnownSuspensionReason(suspension.reason) ? 'pending' : 'active',
+  type: 'suspension',
+  date: suspension.start_date,
+  reason: suspension.reason,
+  activity_id: suspension.activity_id,
+  sport_name: suspension.sport_name,
+  is_suspension: true,
+})
+
 const fetchPayments = async () => {
   loading.value = true
   try {
     currentPage.value = 1
     const userId = getUserIdFromExistingToken()
-    const response = await api.get(`/payments/user/${userId}`)
-    payments.value = response.data
+    const [paymentsResponse, suspensionsResponse] = await Promise.all([
+      api.get(`/payments/user/${userId}`),
+      api.get('/payments/me/suspensions')
+    ])
+
+    const suspensionRows = Array.isArray(suspensionsResponse.data)
+      ? suspensionsResponse.data.map(mapSuspensionToPaymentRow)
+      : []
+    const normalPayments = Array.isArray(paymentsResponse.data)
+      ? paymentsResponse.data
+      : []
+
+    payments.value = [...suspensionRows, ...normalPayments]
   } catch (e) {
     console.error("Error cargando pagos:", e)
   } finally {
@@ -276,6 +390,15 @@ onMounted(fetchPayments)
 .payments-header { display: flex; flex-direction: column; align-items: flex-start; margin-bottom: 18px; }
 .payments-header h1 { font-size: 2.5rem; color: #2d658d; font-weight: 900; margin: 0 0 10px; }
 .payments-header p { font-size: 1.1rem; color: #5a8849; margin: 0; }
+.payments-section { margin-top: 26px; }
+.suspensions-section { margin-top: 0; }
+.section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.section-heading h2 { color: #0d124a; font-size: 1.35rem; font-weight: 900; margin: 0 0 4px; }
+.section-heading p { color: #64748b; font-size: 0.95rem; margin: 0; }
+.suspension-row { background: #fffaf0; }
+.compact-empty { padding: 28px 24px; margin: 0; max-width: none; }
+.compact-empty .empty-icon-large { font-size: 2.4rem; margin-bottom: 10px; }
+.compact-empty h2 { font-size: 1.2rem; }
 .table-wrapper { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); overflow: hidden; }
 .custom-table { width: 100%; border-collapse: collapse; text-align: left; margin: 0; }
 .custom-table th { background-color: #0d124a; color: #ffffff; padding: 16px 20px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
@@ -299,26 +422,13 @@ onMounted(fetchPayments)
 .badge-success { background-color: #f0fdf4; color: #166534; border-color: #bbf7d0; }
 .badge-warning { background-color: #fffbeb; color: #92400e; border-color: #fde68a; }
 .badge-danger { background-color: #fef2f2; color: #991b1b; border-color: #fca5a5; }
-.btn-action-pay { cursor: pointer; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 4px rgba(245, 158, 11, 0.15); }
-.btn-action-pay:hover { background-color: #fde68a; color: #78350f; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3); }
-.btn-action-pay:active { transform: translateY(0); }
 .loading-state, .empty-state-card { text-align: center; padding: 60px 20px; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-.empty-state-card h3 { margin: 0; font-size: 1.2rem; color: #1e293b; font-weight: 700; }
-.empty-state-card p { color: #94a3b8; font-size: 0.85rem; margin-top: 6px; }
-.empty-icon-circle { width: 56px; height: 56px; background-color: #f1f5f9; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.5rem; margin: 0 auto 16px auto; }
 .spinner { border: 3px solid #f3f4f6; border-top: 3px solid #0d124a; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 12px auto; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-.col-actions { width: 120px; }
-.cell-actions { padding: 12px 20px; }
-/* Limpieza definitiva del tachado en los montos */
-.price-clean {
-  text-decoration: none !important;
-  color: #0d124a !important;
-}
+.price-clean { text-decoration: none !important; color: #0d124a !important; }
 
-/* botón Pagar */
 .btn-primary-pay {
-  background-color: #f59e0b; /* Color ámbar/alerta llamativo */
+  background-color: #f59e0b;
   color: #ffffff;
   border: none;
   padding: 8px 18px;
@@ -332,60 +442,42 @@ onMounted(fetchPayments)
   align-items: center;
   gap: 6px;
 }
-
 .btn-primary-pay:hover {
-  background-color: #d97706; /* Oscurece al pasar el mouse */
+  background-color: #d97706;
   transform: translateY(-1px);
   box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);
 }
-
+.btn-primary-pay.disabled,
+.btn-primary-pay:disabled {
+  background-color: #9ca3af;
+  color: #f8fafc;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 .btn-primary-pay:active {
   transform: translateY(1px);
   box-shadow: 0 1px 2px rgba(217, 119, 6, 0.2);
 }
-
-.text-disabled {
-  color: #94a3b8;
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
+.text-disabled { color: #94a3b8; font-size: 0.9rem; font-weight: 500; }
 .col-actions { width: 140px; }
 .cell-actions { padding: 12px 20px; }
+
 .empty-state-card-unified {
   background: #ffffff;
   border-radius: 16px;
   border: 1px solid #e2e8f0;
   padding: 60px 40px;
-  max-width: 1120px; /* Se alinea con el ancho de la tabla principal */
+  max-width: 1120px;
   margin: 30px auto 0 auto;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-  
-  /* Flexbox para centrar absolutamente todo el contenido */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
 }
-
-.empty-icon-large {
-  font-size: 4rem;
-  margin-bottom: 16px;
-  line-height: 1;
-}
-
-.empty-state-card-unified h2 {
-  font-size: 1.8rem;
-  color: #0d124a; /* Usamos el azul oscuro de tu paleta del club */
-  font-weight: 800;
-  margin: 0 0 12px 0;
-}
-
-.empty-state-card-unified p {
-  font-size: 1.05rem;
-  color: #64748b;
-  margin: 0;
-  max-width: 600px; /* Evita que el texto se estire demasiado a lo ancho */
-}
+.empty-icon-large { font-size: 4rem; margin-bottom: 16px; line-height: 1; }
+.empty-state-card-unified h2 { font-size: 1.8rem; color: #0d124a; font-weight: 800; margin: 0 0 12px 0; }
+.empty-state-card-unified p { font-size: 1.05rem; color: #64748b; margin: 0; max-width: 600px; }
 </style>

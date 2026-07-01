@@ -1,4 +1,7 @@
-# club360
+# CLUB360
+
+**Demo:** [https://club360.vercel.app](https://club360.vercel.app)
+
 El proyecto CLUB360 consiste en la transformación digital de un centro de actividades deportivas. El sistema busca automatizar la gestión de turnos, cobros, asistencias y la comunicación con los socios.
 
 ## Cómo iniciar la app

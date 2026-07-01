@@ -1,19 +1,42 @@
-from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+
+from pydantic import BaseModel
+
 
 class PaymentCompleteBookingRequest(BaseModel):
     amount: float
-    booking_id: Optional[int] = None
+    booking_id: int | None = None
+
+
+class SuspensionPaymentRequest(BaseModel):
+    suspension_id: int
+    amount: float | None = None
+
+
+class SuspensionResponse(BaseModel):
+    id: int
+    reason: str
+    status: str | None = None
+    start_date: datetime
+    end_date: datetime | None = None
+    activity_id: int | None = None
+    sport_name: str | None = None
+    amount: float = 0
+    payment_id: int | None = None
+
+    class Config:
+        from_attributes = True
+
 
 class PaymentResponse(BaseModel):
     id: int
     amount: float
-    status: Optional[str] = None
-    type: Optional[str] = None
+    status: str | None = None
+    type: str | None = None
     date: datetime
-    # 🌟 AGREGAMOS ESTO: Permitimos que el deporte viaje en el JSON hacia la web
-    sport_name: Optional[str] = None 
+    # Permitimos que el deporte viaje en el JSON hacia la web.
+    sport_name: str | None = None
+    activity_id: int | None = None
 
     class Config:
         from_attributes = True

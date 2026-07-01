@@ -37,16 +37,49 @@ def create_booking(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db)
 ):
-    user_id = _extract_user_id(authorization)
-    
+    requester_id = _extract_user_id(authorization)
+
+    # Si el admin envía target_user_id, la reserva se crea para ese cliente
+    if data.target_user_id:
+        user_id = data.target_user_id
+    else:
+        user_id = requester_id
+
     # FIX BLINDADO PARA SOPORTAR RESERVA DE ABONOS (EVITA EL ERROR 422 SI VIAJA NULL)
     inst_id = data.instance_id if (hasattr(data, 'instance_id') and data.instance_id != 0) else None
     sub_id = data.subscription_id if hasattr(data, 'subscription_id') else None
 
-    # Se delega al servicio pasándole los parámetros limpios mapeados desde Pydantic
     booking = booking_service.create_booking(db, user_id=user_id, instance_id=inst_id, subscription_id=sub_id)
     return booking
 
+
+@router.post("/reserve-with-credit", response_model=BookingOut)
+def reserve_with_credit(
+    instance_id: int,
+    credit_id: int,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
+):
+    """Crea una reserva consumiendo un token de crédito individual único."""
+    user_id = _extract_user_id(authorization)
+    
+    try:
+        booking = booking_service.create_booking_with_credit(
+            db=db, 
+            user_id=user_id, 
+            instance_id=instance_id, 
+            credit_id=credit_id
+        )
+        return booking
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Error interno al procesar el crédito: {str(e)}"
+        )
 
 @router.get("/user/{user_id}", response_model=list[BookingListOut])
 def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
@@ -67,9 +100,10 @@ def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
         price = None
 
         if instance:
-            booking_date = instance.date
+            # Forzamos conversión a string de la fecha (YYYY-MM-DD) para que Javascript la digiera bien
+            booking_date = str(instance.date) if instance.date else None
             day_of_week = instance.template.day_of_week if instance.template else None
-            start_time = instance.template.start_time if instance.template else None
+            start_time = instance.template.start_time if instance.template else "00:00" # Evita NULL en JS
             price = float(instance.template.price) if instance.template and instance.template.price is not None else None
             if instance.template and instance.template.activity:
                 activity_name = instance.template.activity.name
@@ -81,14 +115,14 @@ def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
             "status": _booking_status(booking),
             "subscription_id": booking.subscription_id,
             "is_subscription": booking.subscription_id is not None,
-            "amount_paid": float(booking.amount_paid) if booking.amount_paid is not None else None,
-            "payment_status": booking.payment_status,
+            "amount_paid": float(booking.amount_paid) if booking.amount_paid is not None else 0.0,
+            "payment_status": booking.payment_status or "paid",
             "created_at": booking.created_at,
-            "activity_name": activity_name,
+            "activity_name": activity_name or f"Clase #{booking.instance_id}",
             "date": booking_date,
-            "day_of_week": day_of_week,
+            "day_of_week": day_of_week or "Sin especificar",
             "start_time": start_time,
-            "price": price,
+            "price": price or 0.0,
         })
 
     return result
@@ -149,19 +183,69 @@ def get_my_next_booking(
     proxima["date"] = str(proxima["date"])
     return proxima
 
-
 @router.post("/{booking_id}/cancel", response_model=dict)
-def cancel_booking(
+async def cancel_booking(
     booking_id: int, 
     authorization: str | None = Header(default=None), 
     db: Session = Depends(get_db)
 ):
-    """Cancela la reserva delegando la operación de forma segura a la lógica de servicios"""
+    """Cancela la reserva con mensajes dinámicos según las nuevas reglas de negocio."""
+    from datetime import datetime, timedelta
+    from ..time_override import business_utcnow
+
     user_id = _extract_user_id(authorization)
 
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Reserva no encontrada")
+        
+    if booking.status == "Cancelled":
+        raise HTTPException(status_code=400, detail="Esta reserva ya se encuentra cancelada")
+
+    instance = db.query(ShiftInstance).filter(ShiftInstance.id == booking.instance_id).first()
+    if not instance:
+        raise HTTPException(status_code=404, detail="Turno no encontrado")
+
+    class_datetime = datetime.combine(instance.date, datetime.min.time())
+    if instance.template and instance.template.start_time:
+        try:
+            time_parts = list(map(int, instance.template.start_time.split(":")))
+            class_datetime = datetime.combine(instance.date, datetime.min.time().replace(hour=time_parts[0], minute=time_parts[1]))
+        except Exception:
+            pass
+
+    time_difference = class_datetime - business_utcnow()
+
+    if booking.subscription_id is not None:
+        is_in_time = time_difference >= timedelta(hours=48)
+        has_pending_subscription_payment = booking_service.subscription_has_pending_payment(db, booking)
+        if is_in_time and not has_pending_subscription_payment:
+            msg_exito = "Reserva cancelada. Se generó 1 crédito válido por 30 días."
+        elif is_in_time and has_pending_subscription_payment:
+            msg_exito = "Reserva cancelada. No se generó crédito porque tu abono está pendiente de pago."
+        else:
+            msg_exito = "Reserva cancelada. No se generó un crédito por cancelar dentro de las 48hs."
+    else:
+        is_in_time = time_difference >= timedelta(hours=24)
+        if is_in_time:
+            msg_exito = "Reserva cancelada. Se generó un reembolso del monto pagado."
+        else:
+            msg_exito = "Reserva cancelada. No se genera reembolso por cancelar dentro de las 24hs."
+
     try:
-        booking_service.cancel_booking(db, booking_id, user_id)
-        return {"message": "Reserva cancelada exitosamente"}
+        booking_cancelled, should_process_waitlist = booking_service.cancel_booking(db, booking_id, user_id)
+        
+        # Procesar waitlist de forma async si fue cancelada una reserva
+        if should_process_waitlist:
+            from ..services.waiting_list_service import WaitingListService
+            prefer_sub = booking_cancelled.subscription_id is not None
+            await WaitingListService.process_waiting_list_on_cancellation(
+                db, 
+                instance_id=booking_cancelled.instance_id, 
+                prefer_subscription=prefer_sub
+            )
+        
+        return {"message": msg_exito}
     except HTTPException as he:
         raise he
     except Exception as e:

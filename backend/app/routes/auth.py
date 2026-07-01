@@ -2,28 +2,43 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.user import User, UserRole
-from ..schemas.user import UserRegister, UserResponse, UserLogin, Token, UserProfileResponse, UserProfileUpdate
-from ..auth_utils import get_password_hash, verify_password, create_access_token
+from ..schemas.user import (
+    UserRegister,
+    UserResponse,
+    UserLogin,
+    Token,
+    UserProfileResponse,
+    UserProfileUpdate,
+)
+from ..auth_utils import (
+    get_password_hash,
+    verify_password,
+    create_access_token,
+    SECRET_KEY,
+    ALGORITHM,
+)
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
+from typing import Any, cast
 import random
 from ..mail import send_reset_code
 from ..models.password_reset import PasswordResetCode
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+
 @router.post("/register", response_model=UserResponse)
 def register(user_in: UserRegister, db: Session = Depends(get_db)):
     if db.query(User).filter(User.dni == user_in.dni).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ya existe un usuario registrado con ese DNI."
+            detail="Ya existe un usuario registrado con ese DNI.",
         )
 
     if db.query(User).filter(User.email == user_in.email).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ya existe una cuenta con ese correo electrónico."
+            detail="Ya existe una cuenta con ese correo electrónico.",
         )
 
     new_user = User(
@@ -32,7 +47,7 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         dni=user_in.dni,
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
-        role=UserRole.CLIENT
+        role=UserRole.CLIENT,
     )
 
     try:
@@ -44,8 +59,9 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al crear el usuario: {str(e)}"
-        )
+            detail=f"Error al crear el usuario: {str(e)}",
+        ) from e
+
 
 @router.post("/login", response_model=Token)
 def login(user_in: UserLogin, db: Session = Depends(get_db)):
@@ -54,46 +70,49 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="El correo electrónico no está registrado."
+            detail="El correo electrónico no está registrado.",
         )
 
-    if not verify_password(user_in.password, user.hashed_password):
+    user_record = cast(Any, user)
+
+    if not verify_password(user_in.password, user_record.hashed_password):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Contraseña incorrecta."
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Contraseña incorrecta."
         )
 
+    role_value = user_record.role.value
     access_token = create_access_token(
-        data={"sub": user.email, "id": user.id_user, "role": user.role.value}
+        data={"sub": user_record.email, "id": user_record.id_user, "role": role_value}
     )
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "role": user.role.value
-    }
+    return {"access_token": access_token, "token_type": "bearer", "role": role_value}
+
 
 class EmailRequest(BaseModel):
     email: EmailStr
 
+
 class VerifyCodeRequest(BaseModel):
     email: EmailStr
     code: str
+
 
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
     code: str
     new_password: str
 
+
 @router.post("/forgot-password")
 async def forgot_password(data: EmailRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == data.email).first()
     if not user:
-        raise HTTPException(status_code=404, detail="El correo ingresado no se encuentra registrado.")
+        raise HTTPException(
+            status_code=404, detail="El correo ingresado no se encuentra registrado."
+        )
 
     db.query(PasswordResetCode).filter(
-        PasswordResetCode.email == data.email,
-        PasswordResetCode.used == False
+        PasswordResetCode.email == data.email, PasswordResetCode.used.is_(False)
     ).update({"used": True})
 
     code = str(random.randint(100000, 999999))
@@ -106,72 +125,86 @@ async def forgot_password(data: EmailRequest, db: Session = Depends(get_db)):
     await send_reset_code(data.email, code)
     return {"message": "Si el email existe, recibirás un código."}
 
+
 @router.post("/verify-reset-code")
 def verify_code(data: VerifyCodeRequest, db: Session = Depends(get_db)):
-    record = db.query(PasswordResetCode).filter(
-        PasswordResetCode.email == data.email,
-        PasswordResetCode.code == data.code,
-        PasswordResetCode.used == False,
-        PasswordResetCode.expires_at > datetime.utcnow()
-    ).first()
+    record = (
+        db.query(PasswordResetCode)
+        .filter(
+            PasswordResetCode.email == data.email,
+            PasswordResetCode.code == data.code,
+            PasswordResetCode.used.is_(False),
+            PasswordResetCode.expires_at > datetime.utcnow(),
+        )
+        .first()
+    )
 
     if not record:
         raise HTTPException(status_code=400, detail="Código inválido o expirado.")
 
     return {"valid": True}
 
+
 @router.post("/reset-password")
 def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
-    record = db.query(PasswordResetCode).filter(
-        PasswordResetCode.email == data.email,
-        PasswordResetCode.code == data.code,
-        PasswordResetCode.used == False,
-        PasswordResetCode.expires_at > datetime.utcnow()
-    ).first()
+    record = (
+        db.query(PasswordResetCode)
+        .filter(
+            PasswordResetCode.email == data.email,
+            PasswordResetCode.code == data.code,
+            PasswordResetCode.used.is_(False),
+            PasswordResetCode.expires_at > datetime.utcnow(),
+        )
+        .first()
+    )
 
     if not record:
         raise HTTPException(status_code=400, detail="Código inválido o expirado.")
 
     user = db.query(User).filter(User.email == data.email).first()
-    user.hashed_password = get_password_hash(data.new_password)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
-    record.used = True
+    user_record = cast(Any, user)
+    reset_record = cast(Any, record)
+    user_record.hashed_password = get_password_hash(data.new_password)
+    reset_record.used = True
     db.commit()
 
     return {"message": "Contraseña actualizada correctamente."}
 
 
 @router.get("/me", response_model=UserProfileResponse)
-def get_me(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+def get_me(
+    authorization: str | None = Header(default=None), db: Session = Depends(get_db)
+):
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="No autorizado. Inicie sesión nuevamente.")
-    
+        raise HTTPException(
+            status_code=401, detail="No autorizado. Inicie sesión nuevamente."
+        )
+
     token = authorization.split(" ")[1]
     user_email = None
-    
+
     try:
         from jose import jwt
-        SECRET_KEY = "key"
-        ALGORITHM = "HS256"
+
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("id")
         user_email = payload.get("sub")
     except Exception:
-        try:
-            import jwt
-            SECRET_KEY = "key"
-            ALGORITHM = "HS256"
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            user_email = payload.get("sub")
-        except Exception:
-            user_email = None
+        user_id = None
+        user_email = None
 
-    if not user_email:
-        user = db.query(User).filter(User.role == UserRole.ADMIN).first()
-        if not user:
-            user = db.query(User).first()
-        return user
+    if not user_id and not user_email:
+        raise HTTPException(
+            status_code=401, detail="Sesión inválida. Inicie sesión nuevamente."
+        )
 
-    user = db.query(User).filter(User.email == user_email).first() 
+    if user_id:
+        user = db.query(User).filter(User.id_user == user_id).first()
+    else:
+        user = db.query(User).filter(User.email == user_email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
@@ -189,33 +222,37 @@ def update_me(
     token = authorization.split(" ")[1]
     try:
         from jose import jwt
-        payload_data = jwt.decode(token, "key", algorithms=["HS256"])
-        user_email = payload_data.get("sub")
-    except:
-        user_email = None
 
-    # Buscamos al usuario
-    user = db.query(User).filter(User.email == (user_email or payload.email)).first()
-    if not user:
-        user = db.query(User).filter(User.role == UserRole.ADMIN).first()
-    
+        payload_data = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload_data.get("id")
+        user_email = payload_data.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Sesión inválida.") from None
+
+    # Buscamos al usuario autenticado
+    if user_id:
+        user = db.query(User).filter(User.id_user == user_id).first()
+    else:
+        user = db.query(User).filter(User.email == user_email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
     # --- AQUÍ ESTÁ LA MAGIA ---
     # Solo validamos duplicados si el correo del formulario es DISTINTO al que el usuario tiene ahora
-    if payload.email != user.email:
+    user_record = cast(Any, user)
+
+    if payload.email != user_record.email:
         existing_user = db.query(User).filter(User.email == payload.email).first()
         if existing_user:
             raise HTTPException(
-                status_code=400, 
-                detail="Ese correo electrónico ya está registrado por otro usuario."
+                status_code=400,
+                detail="Ese correo electrónico ya está registrado por otro usuario.",
             )
 
     # Actualizamos los datos
-    user.first_name = payload.first_name
-    user.last_name = payload.last_name
-    user.email = payload.email
+    user_record.first_name = payload.first_name
+    user_record.last_name = payload.last_name
+    user_record.email = payload.email
 
     db.commit()
     db.refresh(user)

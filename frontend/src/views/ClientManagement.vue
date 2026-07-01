@@ -9,18 +9,17 @@
       <div class="filters-card">
         <div class="filter-group search-group">
           <label>Buscar cliente</label>
-          <input type="text" v-model="filterSearch" placeholder="Ingresá nombre o DNI..." />
+          <input
+            type="text"
+            v-model="filterSearch"
+            placeholder="Ingresá nombre o DNI..."
+            @input="fetchInstancias"
+          />
         </div>
-        <div class="filter-group">
-          <label>Filtrar por estado</label>
-          <select v-model="filterStatus">
-            <option value="">Todos los estados</option>
-            <option value="Activo">Activo</option>
-            <option value="Suspendido">Suspendido</option>
-          </select>
-        </div>
+
+
+
         <div class="actions-group">
-          <button @click="resetFilters" class="btn-clear">Limpiar</button>
           <button @click="showCreateModal = true" class="btn-primary-action">+ Nuevo Cliente</button>
         </div>
       </div>
@@ -31,28 +30,15 @@
             <tr>
               <th>Nombre y Apellido</th>
               <th>DNI</th>
-              <th>Estado</th>
               <th class="text-center">Acciones</th>
             </tr>
           </thead>
           <tbody>
             <template v-for="cliente in filteredClientes" :key="cliente.id">
-              <tr :class="{ 'row-suspended': cliente.estado === 'Suspendido' }">
+              <tr>
                 <td><span class="client-name">{{ cliente.nombre }}</span></td>
                 <td>{{ cliente.dni }}</td>
-                <td>
-                  <span class="status-badge" :class="cliente.estado.toLowerCase()">{{ cliente.estado }}</span>
-                </td>
                 <td class="actions-cell justify-center">
-                  <button
-                    @click="toggleSuspension(cliente)"
-                    class="icon-btn"
-                    :disabled="loadingSuspension[cliente.id]"
-                    :title="cliente.estado === 'Suspendido' ? 'Levantar suspensión' : 'Suspender cliente'"
-                  >
-                    <span v-if="loadingSuspension[cliente.id]" class="spinner-small"></span>
-                    <span v-else>{{ cliente.estado === 'Suspendido' ? '✅' : '🚫' }}</span>
-                  </button>
                   <button
                     @click="toggleAccordion(cliente.id)"
                     class="icon-btn"
@@ -64,8 +50,8 @@
                   <div class="dropdown-wrapper">
                     <button @click.stop="toggleDropdown(cliente.id)" class="icon-btn" title="Más opciones">⋮</button>
                     <div v-if="activeDropdown === cliente.id" class="dropdown-menu dropdown-right">
-                      <button @click="editCliente(cliente)">✏️ Editar Datos</button>
-                      <button @click="deleteCliente(cliente)" class="btn-delete-option">🗑️ Eliminar cliente</button>
+                      <button @click="editCliente(cliente)"><span class="dropdown-icon">✏️</span> Editar datos</button>
+                      <button @click="deleteCliente(cliente)" class="btn-delete-option"><span class="dropdown-icon">🗑️</span> Eliminar cliente</button>
                     </div>
                   </div>
                 </td>
@@ -78,9 +64,9 @@
                       <h4>Operaciones asociadas a: <span>{{ cliente.nombre }}</span></h4>
                     </div>
                     <div class="accordion-actions">
-                      <button @click="createReserva(cliente)" class="btn-nested">Nueva reserva</button>
-                      <button @click="createAbono(cliente)" class="btn-nested"> Nuevo abono</button>
-                      <button @click="viewReservas(cliente)" class="btn-nested"> Historial reservas</button>
+                      <button @click="createReserva(cliente)" class="btn-nested">Nueva reserva de clase</button>
+                      <button @click="createAbono(cliente)" class="btn-nested">Nueva reserva de abono</button>
+                      <button @click="viewReservas(cliente)" class="btn-nested">Historial de reservas</button>
                       <button @click="viewPagos(cliente)" class="btn-nested"> Ver pagos</button>
                     </div>
                   </div>
@@ -94,7 +80,7 @@
         </div>
       </div>
     </div>
-
+      </div>
     <transition name="fade">
       <div v-if="showCreateModal" class="modal-overlay">
         <div class="modal-card form-modal-card">
@@ -169,7 +155,7 @@
               v-for="inst in instancias"
               :key="inst.instance_id"
               class="instancia-item"
-              :class="{ selected: instanciaSeleccionada?.instance_id === inst.instance_id }"
+              :class="{ selected: instanciaSeleccionada?.instance_id === inst.instance_id, 'instancia-llena': inst.esta_llena }"
               @click="selectInstancia(inst)"
             >
               <div class="instancia-info">
@@ -178,34 +164,24 @@
               </div>
               <div class="instancia-right">
                 <span class="instancia-precio">${{ inst.price }}</span>
-                <span class="instancia-cupos">{{ inst.cupos_disponibles }} cupos</span>
+                <span v-if="inst.esta_llena" class="instancia-cupos sin-cupo">Sin cupos · Lista de espera</span>
+                <span v-else class="instancia-cupos">{{ inst.cupos_disponibles }} cupos</span>
               </div>
             </div>
           </div>
 
           <div v-if="instanciaSeleccionada" class="pago-section">
-            <p class="pago-label">Seleccioná el monto a cobrar:</p>
-            <div class="pago-botones">
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: amountPaid === precioMinimo }"
-                @click="amountPaid = precioMinimo"
-              >
-                50% — ${{ precioMinimo }}
-              </button>
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: amountPaid === instanciaSeleccionada.price }"
-                @click="amountPaid = instanciaSeleccionada.price"
-              >
-                100% — ${{ instanciaSeleccionada.price }}
-              </button>
+            <div v-if="instanciaSeleccionada.esta_llena" class="info-espera">
+              Esta clase no tiene cupos. Al confirmar, el cliente quedará anotado en la lista de espera.
+            </div>
+            <div v-else class="resumen-pago">
+              Total a cobrar: <strong>${{ instanciaSeleccionada.price }}</strong>
             </div>
           </div>
 
           <div class="modal-actions-container">
-            <button class="btn-confirm" @click="submitReserva" :disabled="loadingReserva || !instanciaSeleccionada || amountPaid === 0">
-              {{ loadingReserva ? 'Guardando...' : 'Confirmar Reserva' }}
+            <button class="btn-confirm" @click="submitReserva" :disabled="loadingReserva || !instanciaSeleccionada">
+              {{ loadingReserva ? 'Guardando...' : (instanciaSeleccionada?.esta_llena ? 'Anotar en lista de espera' : 'Confirmar Reserva') }}
             </button>
             <button class="btn-cancel" @click="showReservaModal = false">Cancelar</button>
           </div>
@@ -246,7 +222,7 @@
               :key="tmpl.id"
               class="instancia-item"
               :class="{ selected: templateSeleccionado?.id === tmpl.id }"
-              @click="templateSeleccionado = tmpl"
+              @click="seleccionarTemplate(tmpl)"
             >
               <div class="instancia-info">
                 <span class="instancia-actividad">{{ tmpl.activity_name }}</span>
@@ -260,31 +236,33 @@
           </div>
 
           <div v-if="templateSeleccionado" class="pago-section">
-            <p class="pago-label">Seleccioná el tipo de abono:</p>
-            <div class="pago-botones">
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: tipoAbono === 'completo' }"
-                @click="tipoAbono = 'completo'"
-              >
-                Mes completo — ${{ Math.round(templateSeleccionado.price * 4 * 100) / 100 }}
-              </button>
-              <button
-                class="btn-pago-opcion"
-                :class="{ active: tipoAbono === 'mitad' }"
-                @click="tipoAbono = 'mitad'"
-              >
-                Mitad de mes — ${{ Math.round(templateSeleccionado.price * 4 * 0.8 * 100) / 100 }}
-              </button>
+            <div v-if="loadingQuote" class="empty-state">Calculando precio...</div>
+            <div v-else-if="abonoQuote" class="resumen-quote">
+              <p v-if="abonoQuote.discount_applied && abonoQuote.pricing_mode !== 'available_only'" class="descuento-info">
+                {{ abonoQuote.discount_reason }}
+              </p>
+              <p v-else-if="abonoQuote.pricing_mode !== 'available_only'" class="descuento-info sin-descuento">{{ abonoQuote.discount_reason }}</p>
+              <p class="clases-info">Clases restantes del mes: <strong>{{ abonoQuote.remaining_classes }}</strong></p>
+              <p v-if="abonoQuote.waitlist_classes > 0" class="clases-info">
+                Clases en lista de espera: <strong>{{ abonoQuote.waitlist_classes }}</strong>
+              </p>
             </div>
           </div>
 
-          <div v-if="templateSeleccionado" class="resumen-pago">
-            Total a cobrar: <strong>${{ precioAbono }}</strong>
+          <div v-if="abonoQuote" class="resumen-pago">
+            Total a cobrar: <strong>${{ abonoQuote.amount }}</strong>
+          </div>
+
+          <div v-if="templateSeleccionado && suspensionesCliente.actividades_suspendidas_abono.includes(templateSeleccionado.activity_id)" class="suspension-warning">
+            Este cliente está suspendido para reservar abonos de <strong>{{ templateSeleccionado.activity_name }}</strong>. Debe solicitar la reactivación.
           </div>
 
           <div class="modal-actions-container">
-            <button class="btn-confirm" @click="submitAbono" :disabled="loadingAbono || !templateSeleccionado">
+            <button
+              class="btn-confirm"
+              @click="submitAbono"
+              :disabled="loadingAbono || !templateSeleccionado || !abonoQuote || loadingQuote || suspensionesCliente.actividades_suspendidas_abono.includes(templateSeleccionado?.activity_id)"
+            >
               {{ loadingAbono ? 'Guardando...' : 'Confirmar Abono' }}
             </button>
             <button class="btn-cancel" @click="showAbonoModal = false">Cancelar</button>
@@ -301,38 +279,44 @@
             <p>Clases de: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
           </header>
 
-          <div class="instancias-list">
+          <div class="pagos-list">
             <div v-if="loadingReservas" class="empty-state">Cargando reservas...</div>
             <div v-else-if="reservasCliente.length === 0" class="empty-state">No hay reservas registradas.</div>
 
-            <div v-for="b in reservasCliente" :key="b.booking_id" class="reserva-item">
-              <div class="reserva-info">
-                <div class="reserva-top">
-                  <span class="instancia-actividad">{{ b.activity_name }}</span>
-                  <span class="reserva-badge" :class="b.status.toLowerCase()">{{ b.status }}</span>
-                </div>
-                <span class="instancia-detalle">{{ b.date }} · {{ b.day_of_week }} {{ b.start_time }}</span>
-                <div class="reserva-pago-info">
-                  <span v-if="b.is_subscription" class="tag-abono">Abono</span>
-                  <span v-else class="tag-suelta">Clase suelta</span>
-                  <span v-if="!b.is_subscription">
-                    Pagado: <strong>${{ b.amount_paid }}</strong> de ${{ b.price }}
-                    <span class="pago-tag" :class="b.payment_status">
-                      {{ b.payment_status === 'paid' ? '✓ Completo' : '⏳ Seña' }}
-                    </span>
-                  </span>
-                </div>
+            <div v-for="b in reservasCliente" :key="b.booking_id" class="pago-item">
+              <div class="pago-tipo-barra" :class="b.is_subscription ? 'barra-abono' : 'barra-suelta'"></div>
+              <div class="pago-detalle">
+                <span class="pago-concepto">
+                  {{ b.is_subscription ? 'Abono' : 'Clase' }}
+                  <span v-if="b.activity_name"> de {{ b.activity_name }}</span>
+                </span>
+                <span class="pago-fecha">{{ b.date }} · {{ b.day_of_week }} {{ b.start_time }}</span>
               </div>
-
-              <button
-                v-if="!b.is_subscription && b.payment_status === 'partial' && b.status !== 'Cancelled'"
-                class="btn-pagar-restante"
-                :disabled="loadingPago[b.booking_id]"
-                @click="pagarRestante(b)"
-              >
-                {{ loadingPago[b.booking_id] ? '...' : `Cobrar $${b.price - b.amount_paid}` }}
-              </button>
+              <div class="pago-derecha">
+                <span class="pago-estado" :class="{
+                  'estado-completo': b.status === 'Confirmed' || b.status === 'Concreted',
+                  'estado-sena': b.status === 'Pending',
+                  'estado-cancelada': b.status === 'Cancelled',
+                  'estado-ausente': b.status === 'Absent',
+                }">
+                  {{ { 'Confirmed': 'Confirmada', 'Cancelled': 'Cancelada', 'Pending': 'Pendiente', 'Concreted': 'Concretada', 'Absent': 'Ausente' }[b.status] || b.status }}
+                </span>
+                <span v-if="!b.is_subscription" class="pago-fecha">${{ b.amount_paid }} de ${{ b.price }}</span>
+                <button
+                  v-if="!b.is_subscription && b.payment_status === 'partial' && b.status !== 'Cancelled'"
+                  class="btn-cobrar-mini"
+                  :disabled="loadingPago[b.booking_id]"
+                  @click="pagarRestante(b)"
+                >
+                  {{ loadingPago[b.booking_id] ? '...' : `Cobrar $${b.price - b.amount_paid}` }}
+                </button>
+              </div>
             </div>
+          </div>
+
+          <div class="pagos-resumen">
+            <span class="pagos-resumen-label">Total reservas</span>
+            <span class="pagos-resumen-monto">{{ reservasCliente.length }}</span>
           </div>
 
           <div class="modal-actions-container">
@@ -350,27 +334,31 @@
             <p>Cuenta corriente de: <strong>{{ clienteSeleccionado?.nombre }}</strong></p>
           </header>
 
-          <div class="instancias-list">
+          <div class="pagos-list">
             <div v-if="loadingPagos" class="empty-state">Cargando pagos...</div>
             <div v-else-if="pagosCliente.length === 0" class="empty-state">No hay pagos registrados.</div>
 
-            <div v-for="p in pagosCliente" :key="p.payment_id" class="reserva-item">
-              <div class="reserva-info">
-                <div class="reserva-top">
-                  <span class="instancia-actividad">${{ p.amount.toFixed(2) }}</span>
-                  <span class="tag-abono" v-if="p.type === 'subscription'">Abono</span>
-                  <span class="tag-suelta" v-else>Clase suelta</span>
-                </div>
-                <span class="instancia-detalle">{{ new Date(p.date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
+            <div v-for="p in pagosCliente" :key="p.payment_id" class="pago-item">
+              <div class="pago-tipo-barra" :class="p.type === 'subscription' ? 'barra-abono' : 'barra-suelta'"></div>
+              <div class="pago-detalle">
+                <span class="pago-concepto">
+                  {{ p.type === 'subscription' ? 'Abono' : 'Clase' }}
+                  <span v-if="p.activity_name"> de {{ p.activity_name }}</span>
+                </span>
+                <span class="pago-fecha">{{ new Date(p.date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
               </div>
-              <span class="pago-tag" :class="p.status === 'completed' || p.status === 'paid' ? 'paid' : 'partial'">
-                {{ p.status === 'completed' || p.status === 'paid' ? '✓ Completo' : '⏳ Seña' }}
-              </span>
+              <div class="pago-derecha">
+                <span class="pago-monto">${{ p.amount.toFixed(2) }}</span>
+                <span class="pago-estado" :class="p.status === 'completed' || p.status === 'paid' ? 'estado-completo' : 'estado-sena'">
+                  {{ p.status === 'completed' || p.status === 'paid' ? 'Completo' : 'Seña' }}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div class="resumen-pago">
-            Total abonado: <strong>${{ totalPagado }}</strong>
+          <div class="pagos-resumen">
+            <span class="pagos-resumen-label">Total abonado</span>
+            <span class="pagos-resumen-monto">${{ totalPagado }}</span>
           </div>
 
           <div class="modal-actions-container">
@@ -383,7 +371,6 @@
     <transition name="fade">
       <div v-if="toastMessage" :class="['alert-toast', toastType]">{{ toastMessage }}</div>
     </transition>
-  </div>
 </template>
 
 <script setup>
@@ -392,12 +379,10 @@ import api from '../utils/api' // 🌟 CORRECCIÓN: Usamos el cliente HTTP unifi
 
 // ---- Filtros ----
 const filterSearch = ref('')
-const filterStatus = ref('')
 
 // ---- Modales y loadings generales ----
 const showCreateModal = ref(false)
 const loadingForm = ref(false)
-const loadingSuspension = ref({})
 const activeDropdown = ref(null)
 const activeAccordion = ref(null)
 
@@ -426,19 +411,15 @@ const fetchClientes = async () => {
 }
 
 const filteredClientes = computed(() => {
-  return clientes.value.filter(c => {
-    const searchLower = filterSearch.value.toLowerCase().trim()
-    if (!searchLower) return !filterStatus.value || c.estado === filterStatus.value
-    const matchNombre = c.nombre?.toLowerCase().includes(searchLower)
-    const matchDni = c.dni?.startsWith(searchLower)
-    const matchStatus = !filterStatus.value || c.estado === filterStatus.value
-    return (matchNombre || matchDni) && matchStatus
-  })
+  const searchLower = filterSearch.value.toLowerCase().trim()
+  if (!searchLower) return clientes.value
+  return clientes.value.filter(c =>
+    c.nombre?.toLowerCase().includes(searchLower) || c.dni?.startsWith(searchLower)
+  )
 })
 
 const resetFilters = () => {
   filterSearch.value = ''
-  filterStatus.value = ''
 }
 
 const toggleDropdown = (clienteId) => {
@@ -457,7 +438,6 @@ const handleSubmitForm = async () => {
       id: res.data?.id_user || res.data?.id || Date.now(),
       nombre: `${form.value.first_name.trim()} ${form.value.last_name.trim()}`,
       dni: form.value.dni,
-      estado: 'Activo'
     }
     clientes.value.unshift(nuevoCliente)
     showToast('Cliente creado con éxito.', 'success')
@@ -472,25 +452,6 @@ const handleSubmitForm = async () => {
 const closeCreateModal = () => {
   showCreateModal.value = false
   form.value = { first_name: '', last_name: '', dni: '', email: '', password: '' }
-}
-
-const toggleSuspension = async (cliente) => {
-  loadingSuspension.value[cliente.id] = true
-  try {
-    const res = await api.patch(`/admin/clientes/${cliente.id}/suspension`)
-    const index = clientes.value.findIndex(c => c.id === cliente.id)
-    if (index !== -1) clientes.value[index].estado = res.data.nuevo_estado
-    showToast(
-      res.data.nuevo_estado === 'Suspendido'
-        ? `Se ha suspendido al cliente ${cliente.nombre}`
-        : `Se levantó la suspensión para ${cliente.nombre}`,
-      res.data.nuevo_estado === 'Suspendido' ? 'error' : 'success'
-    )
-  } catch (error) {
-    showToast(error.response?.data?.detail || 'No se pudo alterar el estado del cliente', 'error')
-  } finally {
-    loadingSuspension.value[cliente.id] = false
-  }
 }
 
 const editCliente = (cliente) => alert(`Editar datos de: ${cliente.nombre}`)
@@ -514,9 +475,7 @@ const actividades = ref([])
 const filterActividad = ref('')
 const filterDia = ref('')
 const instanciaSeleccionada = ref(null)
-const amountPaid = ref(0)
 const loadingInstancias = ref(false)
-const fontLoadingReserva = ref(false)
 const loadingReserva = ref(false)
 const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
@@ -546,9 +505,13 @@ const fetchInstancias = async () => {
 }
 
 const openReservaModal = async (cliente) => {
+  await fetchSuspensiones(cliente.id)
+  if (suspensionesCliente.value.suspension_clase_libre) {
+    showToast('Este cliente está suspendido para la reserva de clases. Debe solicitar la reactivación.', 'error')
+    return
+  }
   clienteSeleccionado.value = cliente
   instanciaSeleccionada.value = null
-  amountPaid.value = 0
   filterActividad.value = ''
   filterDia.value = ''
   showReservaModal.value = true
@@ -558,29 +521,23 @@ const openReservaModal = async (cliente) => {
 
 const selectInstancia = (inst) => {
   instanciaSeleccionada.value = inst
-  amountPaid.value = 0
 }
 
-const precioMinimo = computed(() => {
-  if (!instanciaSeleccionada.value) return 0
-  return Math.round(instanciaSeleccionada.value.price * 0.5 * 100) / 100
-})
-
-// 🌟 ARREGLO DEL FLUJO: Ruta apuntada al endpoint vivo de reservas del sistema
 const submitReserva = async () => {
   if (!instanciaSeleccionada.value) return showToast('Seleccioná una instancia.', 'error')
-  if (amountPaid.value === 0) return showToast('Seleccioná el monto a cobrar.', 'error')
 
   loadingReserva.value = true
   try {
-    // 🚀 Lógica alineada con la API de FastAPI para reservar clases sueltas
-    await api.post('/bookings/', {
+    const res = await api.post(`/admin/clientes/${clienteSeleccionado.value.id}/reservar-clase`, {
       instance_id: Number(instanciaSeleccionada.value.instance_id),
-      subscription_id: null
     })
 
-    showToast('Reserva creada con éxito.', 'success')
-    showReservaModal.value = false // Cierre automático exitoso de la UI
+    if (res.data.resultado === 'lista_espera') {
+      showToast(`Sin cupos. ${clienteSeleccionado.value.nombre} anotado/a en lista de espera (posición ${res.data.position}).`, 'success')
+    } else {
+      showToast('Reserva confirmada con éxito.', 'success')
+    }
+    showReservaModal.value = false
   } catch (e) {
     showToast(e.response?.data?.detail || 'Error al crear la reserva.', 'error')
   } finally {
@@ -590,13 +547,26 @@ const submitReserva = async () => {
 
 const createReserva = (cliente) => openReservaModal(cliente)
 
+// ---- Suspensiones ----
+const suspensionesCliente = ref({ suspension_clase_libre: false, actividades_suspendidas_abono: [] })
+
+const fetchSuspensiones = async (clienteId) => {
+  try {
+    const res = await api.get(`/admin/clientes/${clienteId}/suspensiones-activas`)
+    suspensionesCliente.value = res.data
+  } catch (e) {
+    suspensionesCliente.value = { suspension_clase_libre: false, actividades_suspendidas_abono: [] }
+  }
+}
+
 // ---- Nuevo Abono ----
 const showAbonoModal = ref(false)
 const templates = ref([])
 const templatesFiltrados = ref([])
 const actividadesAbono = ref([])
 const templateSeleccionado = ref(null)
-const tipoAbono = ref('completo')
+const abonoQuote = ref(null)
+const loadingQuote = ref(false)
 const loadingTemplates = ref(false)
 const loadingAbono = ref(false)
 const filterAbonoActividad = ref('')
@@ -626,6 +596,7 @@ const fetchTemplates = async () => {
 
 const filtrarTemplates = () => {
   templateSeleccionado.value = null
+  abonoQuote.value = null
   templatesFiltrados.value = templates.value.filter(tmpl => {
     const matchActividad = !filterAbonoActividad.value || tmpl.activity_id === filterAbonoActividad.value
     const matchDia = !filterAbonoDia.value || tmpl.day_of_week === filterAbonoDia.value
@@ -633,32 +604,50 @@ const filtrarTemplates = () => {
   })
 }
 
+const fetchAbonoQuote = async (tmpl) => {
+  if (!tmpl || !clienteSeleccionado.value) return
+  loadingQuote.value = true
+  abonoQuote.value = null
+  try {
+    const res = await api.get(`/admin/clientes/${clienteSeleccionado.value.id}/abono-quote`, {
+      params: { template_id: tmpl.id }
+    })
+    abonoQuote.value = res.data
+  } catch (e) {
+    showToast(e.response?.data?.detail || 'Error al calcular el precio del abono.', 'error')
+  } finally {
+    loadingQuote.value = false
+  }
+}
+
 const openAbonoModal = async (cliente) => {
   clienteSeleccionado.value = cliente
   templateSeleccionado.value = null
-  tipoAbono.value = 'completo'
+  abonoQuote.value = null
   filterAbonoActividad.value = ''
   filterAbonoDia.value = ''
   showAbonoModal.value = true
-  await fetchTemplates()
+  await Promise.all([fetchTemplates(), fetchSuspensiones(cliente.id)])
 }
-const precioAbono = computed(() => {
-  if (!templateSeleccionado.value) return 0
-  const base = templateSeleccionado.value.price * 4
-  return tipoAbono.value === 'mitad'
-    ? Math.round(base * 0.8 * 100) / 100
-    : Math.round(base * 100) / 100
-})
+
+const seleccionarTemplate = (tmpl) => {
+  templateSeleccionado.value = tmpl
+  fetchAbonoQuote(tmpl)
+}
 
 const submitAbono = async () => {
   if (!templateSeleccionado.value) return showToast('Seleccioná un horario.', 'error')
+  if (!abonoQuote.value) return showToast('Esperá a que se calcule el precio.', 'error')
   loadingAbono.value = true
   try {
-    await api.post(`/admin/clientes/${clienteSeleccionado.value.id}/registrar-abono`, {
+    const res = await api.post(`/admin/clientes/${clienteSeleccionado.value.id}/registrar-abono`, {
       template_id: templateSeleccionado.value.id,
-      tipo: tipoAbono.value,
     })
-    showToast('Abono registrado con éxito.', 'success')
+    let msg = `Abono registrado. ${res.data.clases_reservadas} clase(s) confirmada(s) — cobradas en efectivo.`
+    if (res.data.clases_en_espera > 0) {
+      msg += ` ${res.data.clases_en_espera} clase(s) sin cupo anotadas en lista de espera: el cliente las pagará cuando se libere un lugar.`
+    }
+    showToast(msg, 'success')
     showAbonoModal.value = false
   } catch (e) {
     showToast(e.response?.data?.detail || 'Error al registrar el abono.', 'error')
@@ -718,6 +707,7 @@ const fetchPagosCliente = async (cliente) => {
     const res = await api.get(`/admin/clientes/${cliente.id}/pagos`)
     pagosCliente.value = res.data
   } catch (e) {
+    console.error('Error al cargar pagos:', e.response?.data || e.message)
     showToast('Error al cargar los pagos.', 'error')
   } finally {
     loadingPagos.value = false
@@ -844,15 +834,6 @@ input:focus { border-color: #2d658d; }
 }
 
 .client-name { font-weight: 700; color: #111827; }
-.row-suspended { background: #fffdfd; }
-.row-suspended .client-name { color: #9ca3af; text-decoration: line-through; opacity: 0.6; }
-
-.status-badge {
-  padding: 4px 10px; border-radius: 20px; font-size: 11px;
-  font-weight: 700; display: inline-block; text-transform: uppercase;
-}
-.status-badge.activo { background: #e6f4ea; color: #137333; }
-.status-badge.suspendido { background: #fce8e6; color: #c5221f; }
 
 .actions-cell { display: flex; gap: 20px; align-items: center; }
 .text-center { text-align: center; }
@@ -906,6 +887,7 @@ input:focus { border-color: #2d658d; }
 .dropdown-menu button:hover { background-color: #f3f4f6; color: #111827; }
 .dropdown-menu button.btn-delete-option { color: #dc2626; border-top: 1px solid #f3f4f6; }
 .dropdown-menu button.btn-delete-option:hover { background-color: #fef2f2; }
+.dropdown-icon { filter: grayscale(1) opacity(0.45); }
 
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -921,24 +903,30 @@ input:focus { border-color: #2d658d; }
 .form-modal-card { max-width: 480px; }
 
 .modal-large {
-  max-width: 620px;
+  max-width: 720px;
   max-height: 85vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
-.form-header { text-align: center; margin-bottom: 25px; }
+.form-header { text-align: center; margin-bottom: 14px; }
 .form-header h3 { font-size: 22px; color: #111827; font-weight: 800; margin: 0; }
 .form-header p { color: #6b7280; font-size: 13px; margin-top: 6px; }
 
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
 
-.input-group { margin-bottom: 16px; display: flex; flex-direction: column; text-align: left; }
+.input-group { margin-bottom: 8px; display: flex; flex-direction: column; text-align: left; }
 .input-group label { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
 
 .modal-actions-container { display: flex; gap: 10px; margin-top: 25px; }
+
+.suspension-warning {
+  background: #fff3cd; border: 1px solid #f59e0b; color: #92400e;
+  border-radius: 8px; padding: 10px 14px; font-size: 13px;
+  margin-top: 12px; line-height: 1.5;
+}
 
 .btn-confirm {
   display: inline-flex; align-items: center; justify-content: center;
@@ -956,11 +944,11 @@ input:focus { border-color: #2d658d; }
 .btn-cancel:hover:not(:disabled) { background: #cbd5e1; }
 .btn-cancel:disabled { cursor: not-allowed; opacity: 0.6; }
 
-.modal-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: -4px; }
 
 .instancias-list {
   display: flex; flex-direction: column; gap: 8px;
-  max-height: 280px; overflow-y: auto;
+  max-height: 340px; overflow-y: auto;
 }
 
 .instancia-item {
@@ -970,6 +958,9 @@ input:focus { border-color: #2d658d; }
 }
 .instancia-item:hover { border-color: #2d658d; background: #f0f7ff; }
 .instancia-item.selected { border-color: #2d658d; background: #e8f4fd; }
+.instancia-item.instancia-llena { border-color: #f59e0b; background: #fffbeb; }
+.instancia-item.instancia-llena:hover { border-color: #d97706; background: #fef3c7; }
+.instancia-item.instancia-llena.selected { border-color: #d97706; background: #fde68a; }
 
 .instancia-info { display: flex; flex-direction: column; gap: 4px; }
 .instancia-actividad { font-weight: 700; color: #111827; font-size: 14px; }
@@ -978,19 +969,15 @@ input:focus { border-color: #2d658d; }
 .instancia-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .instancia-precio { font-weight: 800; color: #ff6f00; font-size: 15px; }
 .instancia-cupos { font-size: 11px; color: #6b7280; }
+.instancia-cupos.sin-cupo { color: #d97706; font-weight: 700; }
 
 .pago-section { border-top: 1px solid #e5e7eb; padding-top: 16px; }
-.pago-label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px; }
 
-.pago-botones { display: flex; gap: 10px; margin-top: 8px; }
-
-.btn-pago-opcion {
-  flex: 1; padding: 10px; border: 1px solid #2d658d; border-radius: 8px;
-  background: white; color: #2d658d; font-weight: 700; cursor: pointer;
-  font-size: 13px; transition: all 0.2s;
+.info-espera {
+  font-size: 13px; font-weight: 600; color: #92400e;
+  background: #fef3c7; border: 1px solid #f59e0b;
+  border-radius: 10px; padding: 12px 16px; text-align: center;
 }
-.btn-pago-opcion:hover { background: #2d658d; color: white; }
-.btn-pago-opcion.active { background: #2d658d; color: white; }
 
 .resumen-pago {
   text-align: center; font-size: 15px; color: #374151;
@@ -1110,4 +1097,121 @@ input:focus { border-color: #2d658d; }
 
 .btn-pagar-restante:hover:not(:disabled) { opacity: 0.85; }
 .btn-pagar-restante:disabled { background: #d1d5db; cursor: not-allowed; }
+
+/* ---- Historial de Pagos ---- */
+.pagos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.pago-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  transition: background 0.15s;
+}
+
+.pago-item:hover { background: #f0f7ff; border-color: #c7dff0; }
+
+.pago-tipo-barra {
+  width: 4px;
+  border-radius: 4px;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+.barra-abono { background: #5b21b6; }
+.barra-suelta { background: #0369a1; }
+
+.pago-detalle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pago-concepto {
+  font-weight: 700;
+  font-size: 13px;
+  color: #111827;
+}
+
+.pago-fecha {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.pago-derecha {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pago-monto {
+  font-weight: 800;
+  font-size: 15px;
+  color: #111827;
+}
+
+.pago-estado {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.estado-completo { background: #e6f4ea; color: #137333; }
+.estado-sena { background: #fef9c3; color: #854d0e; }
+.estado-cancelada { background: #f3f4f6; color: #6b7280; }
+.estado-ausente { background: #fee2e2; color: #991b1b; }
+
+.btn-cobrar-mini {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: none;
+  background: #2d658d;
+  color: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-cobrar-mini:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pagos-resumen {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: #f0f7ff;
+  border: 1px solid #c7dff0;
+  border-radius: 12px;
+  margin-top: 4px;
+}
+
+.pagos-resumen-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.pagos-resumen-monto {
+  font-size: 20px;
+  font-weight: 900;
+  color: #2d658d;
+}
 </style>

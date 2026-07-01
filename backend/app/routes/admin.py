@@ -6,26 +6,19 @@ from ..schemas.user import UserRegister, UserResponse
 from ..auth_utils import get_password_hash
 from ..auth_utils import get_user_id_from_token
 from ..services import subscription_service
+from ..services.subscription_service import get_subscription_quote
 from pydantic import BaseModel
-from datetime import date
+from datetime import datetime, date as date_type
+from calendar import monthrange
 from ..models.shift_template import ShiftTemplate
 from ..models.shift_instance import ShiftInstance
 from ..models.booking import Booking
 from ..models.subscription import Subscription
 from ..models.payment import Payment
-from datetime import datetime
 from ..time_override import business_today, business_utcnow
 
 class AbonoPayload(BaseModel):
     template_id: int
-    tipo: str  # "completo" o "mitad"
-
-from datetime import datetime, date as date_type
-from calendar import monthrange
-
-class AbonoPayload(BaseModel):
-    template_id: int
-    tipo: str  # "completo" o "mitad"
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -192,10 +185,7 @@ def listar_instancias_disponibles(
         ).count()
         disponibles = inst.capacity - ocupados
 
-        if disponibles <= 0:
-            continue
-
-        # Verificar si el cliente ya tiene reserva en esta instancia
+        # Verificar si el cliente ya tiene reserva o está en lista de espera
         ya_reservado = db.query(Booking).filter(
             Booking.instance_id == inst.id,
             Booking.user_id == client_id,
@@ -205,6 +195,18 @@ def listar_instancias_disponibles(
         if ya_reservado:
             continue
 
+        from ..models.waiting_list import WaitingList
+        ya_en_espera = db.query(WaitingList).filter(
+            WaitingList.instance_id == inst.id,
+            WaitingList.user_id == client_id,
+            WaitingList.status == "waiting"
+        ).first()
+
+        if ya_en_espera:
+            continue
+
+        esta_llena = disponibles <= 0
+
         result.append({
             "instance_id": inst.id,
             "date": inst.date,
@@ -213,7 +215,8 @@ def listar_instancias_disponibles(
             "activity_id": inst.template.activity_id,
             "activity_name": inst.template.activity.name if inst.template.activity else None,
             "price": inst.template.price,
-            "cupos_disponibles": disponibles,
+            "cupos_disponibles": max(disponibles, 0),
+            "esta_llena": esta_llena,
         })
 
     return result
@@ -221,7 +224,6 @@ def listar_instancias_disponibles(
 
 class ReservaParaClientePayload(BaseModel):
     instance_id: int
-    amount_paid: float  # 50% o 100% del precio
 
 @router.post("/clientes/{client_id}/reservar-clase")
 def reservar_clase_para_cliente(
@@ -229,6 +231,9 @@ def reservar_clase_para_cliente(
     payload: ReservaParaClientePayload,
     db: Session = Depends(get_db)
 ):
+    from ..services.waiting_list_service import WaitingListService
+    from ..models.waiting_list import WaitingList
+
     cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
@@ -236,13 +241,6 @@ def reservar_clase_para_cliente(
     instancia = db.query(ShiftInstance).filter(ShiftInstance.id == payload.instance_id).first()
     if not instancia:
         raise HTTPException(status_code=404, detail="Instancia no encontrada.")
-
-    ocupados = db.query(Booking).filter(
-        Booking.instance_id == payload.instance_id,
-        Booking.status != "Cancelled"
-    ).count()
-    if ocupados >= instancia.capacity:
-        raise HTTPException(status_code=400, detail="No hay cupos disponibles.")
 
     ya_reservado = db.query(Booking).filter(
         Booking.instance_id == payload.instance_id,
@@ -252,30 +250,48 @@ def reservar_clase_para_cliente(
     if ya_reservado:
         raise HTTPException(status_code=400, detail="El cliente ya tiene una reserva en este turno.")
 
-    precio_total = instancia.template.price
-    minimo = round(precio_total * 0.5, 2)
-    if payload.amount_paid < minimo:
-        raise HTTPException(
-            status_code=400,
-            detail=f"El monto mínimo para reservar es ${minimo} (50% del precio)."
-        )
+    ocupados = db.query(Booking).filter(
+        Booking.instance_id == payload.instance_id,
+        Booking.status != "Cancelled"
+    ).count()
 
-    payment_status = "paid" if payload.amount_paid >= precio_total else "partial"
+    precio_total = instancia.template.price
+
+    if ocupados >= instancia.capacity:
+        # Sin cupo: anotar en lista de espera
+        try:
+            entry = WaitingListService.join_waiting_list_record(
+                db=db,
+                user_id=client_id,
+                instance_id=payload.instance_id,
+                entry_type="single",
+            )
+            return {
+                "resultado": "lista_espera",
+                "waiting_list_id": entry.id,
+                "position": entry.position,
+                "mensaje": f"Sin cupos disponibles. {cliente.first_name} {cliente.last_name} fue anotado/a en la lista de espera (posición {entry.position}).",
+            }
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Error al anotar en lista de espera: {str(e)}")
 
     try:
         booking = Booking(
             user_id=client_id,
             instance_id=payload.instance_id,
             status="Confirmed",
-            amount_paid=payload.amount_paid,
-            payment_status=payment_status,
+            amount_paid=precio_total,
+            payment_status="paid",
         )
         db.add(booking)
 
         payment = Payment(
             user_id=client_id,
-            amount=payload.amount_paid,
-            status=payment_status,
+            amount=precio_total,
+            status="completed",
             type="booking",
             date=business_utcnow(),
         )
@@ -285,12 +301,12 @@ def reservar_clase_para_cliente(
         db.refresh(booking)
 
         return {
+            "resultado": "confirmado",
             "booking_id": booking.id,
             "status": booking.status,
             "amount_paid": booking.amount_paid,
             "payment_status": booking.payment_status,
             "precio_total": precio_total,
-            "saldo_pendiente": round(precio_total - booking.amount_paid, 2),
         }
     except Exception as e:
         db.rollback()
@@ -385,6 +401,35 @@ def listar_reservas_cliente(client_id: int, db: Session = Depends(get_db)):
 # Registrar abono mensual para un cliente
 # -------------------------------------------------------
 
+@router.get("/clientes/{client_id}/abono-quote")
+def get_abono_quote_para_cliente(
+    client_id: int,
+    template_id: int,
+    db: Session = Depends(get_db)
+):
+    cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    quote = get_subscription_quote(db, user_id=client_id, template_id=template_id)
+    return {
+        "template_id": quote.template_id,
+        "valid_to": str(quote.valid_to),
+        "remaining_classes": quote.remaining_classes,
+        "base_amount": quote.base_amount,
+        "amount": quote.amount,
+        "discount_percent": quote.discount_percent,
+        "discount_applied": quote.discount_applied,
+        "pay_now_required": quote.pay_now_required,
+        "discount_reason": quote.discount_reason,
+        "pricing_mode": quote.pricing_mode,
+        "reservable_classes": quote.reservable_classes,
+        "waitlist_classes": quote.waitlist_classes,
+        "reservable_entries": quote.reservable_entries or [],
+        "waitlist_entries": quote.waitlist_entries or [],
+    }
+
+
 @router.post("/clientes/{client_id}/registrar-abono")
 def registrar_abono(
     client_id: int,
@@ -402,15 +447,17 @@ def registrar_abono(
     if not template.is_active:
         raise HTTPException(status_code=400, detail="Este horario no está activo.")
 
+    from ..services.waiting_list_service import WaitingListService
+
+    # Precio con las mismas reglas que el flujo del cliente
+    quote = get_subscription_quote(db, user_id=client_id, template_id=payload.template_id)
+    monto = quote.amount
+
     hoy = business_utcnow()
     mes_actual = hoy.month
     anio_actual = hoy.year
     ultimo_dia = monthrange(anio_actual, mes_actual)[1]
     valid_to = date_type(anio_actual, mes_actual, ultimo_dia)
-
-    # Calcular precio
-    base = template.price * 4
-    monto = round(base * 0.8, 2) if payload.tipo == "mitad" else round(base, 2)
 
     # Verificar que no tenga ya un abono activo para este template en este mes
     abono_existente = db.query(Subscription).filter(
@@ -422,20 +469,15 @@ def registrar_abono(
     if abono_existente:
         raise HTTPException(status_code=400, detail="El cliente ya tiene un abono activo para este horario este mes.")
 
-    # Buscar todas las instancias del mes para este template
-    instancias_del_mes = db.query(ShiftInstance).filter(
+    # Instancias desde hoy hasta fin de mes (igual que el flujo del cliente)
+    instancias = db.query(ShiftInstance).filter(
         ShiftInstance.template_id == payload.template_id,
-        ShiftInstance.date >= date_type(anio_actual, mes_actual, 1),
+        ShiftInstance.date >= hoy.date(),
         ShiftInstance.date <= valid_to,
         ShiftInstance.is_cancelled == False,
     ).all()
 
-    # Si es "mitad", tomar solo las instancias desde hoy en adelante
-    if payload.tipo == "mitad":
-        instancias_del_mes = [i for i in instancias_del_mes if i.date >= hoy.date()]
-
     try:
-        # Crear la suscripción
         subscription = Subscription(
             user_id=client_id,
             template_id=payload.template_id,
@@ -446,12 +488,11 @@ def registrar_abono(
             valid_to=valid_to,
         )
         db.add(subscription)
-        db.flush()  # necesitamos el ID para los bookings
+        db.flush()
 
-        # Crear un booking por cada instancia del mes
         bookings_creados = 0
-        for instancia in instancias_del_mes:
-            # Verificar que no tenga ya una reserva en esa instancia
+        clases_en_espera = 0
+        for instancia in instancias:
             ya_reservado = db.query(Booking).filter(
                 Booking.instance_id == instancia.id,
                 Booking.user_id == client_id,
@@ -460,26 +501,35 @@ def registrar_abono(
             if ya_reservado:
                 continue
 
-            # Verificar cupos
             ocupados = db.query(Booking).filter(
                 Booking.instance_id == instancia.id,
                 Booking.status != "Cancelled"
             ).count()
+
             if ocupados >= instancia.capacity:
-                continue
+                # Sin cupo: anotar en lista de espera con prioridad de abono
+                WaitingListService.join_waiting_list_record(
+                    db=db,
+                    user_id=client_id,
+                    instance_id=instancia.id,
+                    entry_type="subscription",
+                    subscription_id=subscription.id,
+                    commit=False,
+                )
+                clases_en_espera += 1
+            else:
+                booking = Booking(
+                    user_id=client_id,
+                    instance_id=instancia.id,
+                    subscription_id=subscription.id,
+                    status="Confirmed",
+                    amount_paid=0,
+                    payment_status="paid",
+                )
+                db.add(booking)
+                bookings_creados += 1
 
-            booking = Booking(
-                user_id=client_id,
-                instance_id=instancia.id,
-                subscription_id=subscription.id,
-                status="Confirmed",
-                amount_paid=0,
-                payment_status="paid",  # el abono ya cubre la clase
-            )
-            db.add(booking)
-            bookings_creados += 1
-
-        # Registrar el pago del abono
+        # El admin cobra en efectivo: siempre pago completo
         payment = Payment(
             user_id=client_id,
             amount=monto,
@@ -490,15 +540,21 @@ def registrar_abono(
         db.add(payment)
         db.commit()
 
+        mensaje = f"Abono registrado con éxito. Se reservaron {bookings_creados} clases."
+        if clases_en_espera:
+            mensaje += f" {clases_en_espera} clase(s) sin cupo fueron anotadas en lista de espera."
+
         return {
             "subscription_id": subscription.id,
             "template_id": payload.template_id,
-            "tipo": payload.tipo,
             "monto": monto,
+            "discount_applied": quote.discount_applied,
+            "discount_reason": quote.discount_reason,
             "month": mes_actual,
             "valid_to": valid_to,
             "clases_reservadas": bookings_creados,
-            "mensaje": f"Abono registrado con éxito. Se reservaron {bookings_creados} clases."
+            "clases_en_espera": clases_en_espera,
+            "mensaje": mensaje,
         }
     except Exception as e:
         db.rollback()
@@ -506,8 +562,37 @@ def registrar_abono(
 
 
 
+@router.get("/clientes/{client_id}/suspensiones-activas")
+def get_suspensiones_activas(client_id: int, db: Session = Depends(get_db)):
+    from ..models.suspension import Suspension
+
+    cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    suspensiones = db.query(Suspension).filter(
+        Suspension.user_id == client_id,
+        Suspension.status == "active",
+        Suspension.end_date == None,
+    ).all()
+
+    suspension_clase_libre = any(s.reason == "SUSPENSION_CLASE_LIBRE" for s in suspensiones)
+    actividades_suspendidas_abono = [
+        s.activity_id for s in suspensiones
+        if s.reason == "SUSPENSION_ABONO" and s.activity_id is not None
+    ]
+
+    return {
+        "suspension_clase_libre": suspension_clase_libre,
+        "actividades_suspendidas_abono": actividades_suspendidas_abono,
+    }
+
+
 @router.get("/clientes/{client_id}/pagos")
 def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
+    from ..models.subscription import Subscription
+    from ..models.activity import Activity
+
     cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
@@ -519,6 +604,49 @@ def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
+    # Cargamos subscriptions y bookings una sola vez para correlacionar por fecha
+    subscriptions = (
+        db.query(Subscription)
+        .filter(Subscription.user_id == client_id)
+        .all()
+    )
+    bookings = (
+        db.query(Booking)
+        .filter(Booking.user_id == client_id)
+        .all()
+    )
+
+    def _activity_for_payment(p: Payment) -> str | None:
+        try:
+            if not p.date:
+                return None
+            p_dt = p.date.replace(tzinfo=None) if hasattr(p.date, 'tzinfo') and p.date.tzinfo else p.date
+            if p.type == "subscription":
+                closest = min(
+                    (s for s in subscriptions if s.purchase_date),
+                    key=lambda s: abs(((s.purchase_date.replace(tzinfo=None) if s.purchase_date.tzinfo else s.purchase_date) - p_dt).total_seconds()),
+                    default=None,
+                )
+                if closest:
+                    try:
+                        return closest.template.activity.name
+                    except Exception:
+                        pass
+            elif p.type == "booking":
+                closest = min(
+                    (b for b in bookings if b.created_at),
+                    key=lambda b: abs(((b.created_at.replace(tzinfo=None) if b.created_at.tzinfo else b.created_at) - p_dt).total_seconds()),
+                    default=None,
+                )
+                if closest:
+                    try:
+                        return closest.instance.template.activity.name
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return None
+
     return [
         {
             "payment_id": p.id,
@@ -526,6 +654,7 @@ def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
             "status": p.status,
             "type": p.type,
             "date": p.date,
+            "activity_name": _activity_for_payment(p),
         }
         for p in pagos
     ]

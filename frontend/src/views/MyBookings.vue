@@ -2,7 +2,7 @@
   <div class="my-bookings-container">
     <header class="bookings-header">
       <h1>Mis Reservas</h1>
-      <p>Aquí puedes ver todas tus reservas y gestionarlas</p>
+      <p>Acá podés ver todas tus reservas y gestionarlas</p>
     </header>
 
     <div v-if="loading" class="loading-spinner">Cargando reservas...</div>
@@ -25,9 +25,19 @@
 
         <div class="booking-content">
           <div class="activity-section">
-            <h3 class="activity-name">{{ booking.activity_name || `Actividad ${booking.instance_id}` }}</h3>
-            <p class="activity-date">{{ formatDate(booking.date) }}</p>
+          <h3 class="activity-name">
+            {{ booking.activity_name || `Actividad ${booking.instance_id}` }}
+          </h3>
+
+          <div
+            class="booking-type-badge"
+            :class="booking.is_subscription ? 'badge-subscription' : 'badge-single'"
+          >
+            {{ booking.is_subscription ? 'ABONO' : 'CLASE SUELTA' }}
           </div>
+
+          <p class="activity-date">{{ formatDate(booking.date) }}</p>
+        </div>
 
           <div class="schedule-section">
             <div class="schedule-row">
@@ -101,14 +111,17 @@
     />
 
     <transition name="fade">
-      <div v-if="showCancelModal" class="modal-overlay" @click="showCancelModal = false">
+      <div v-if="showCancelModal" class="modal-overlay" @click="closeCancelModal">
         <div class="modal-content" @click.stop>
           <div class="modal-icon warning">⚠️</div>
           <h2>¿Cancelar reserva?</h2>
           <p>Esta acción no se puede deshacer. ¿Estás seguro de que deseas cancelar esta reserva?</p>
           <div class="modal-actions">
-            <button @click="showCancelModal = false" class="btn btn-secondary">No, mantenerla</button>
-            <button @click="confirmCancel" class="btn btn-danger">Sí, cancelar</button>
+            <button @click="closeCancelModal" class="btn btn-secondary" :disabled="cancellingBooking">No, mantenerla</button>
+            <button @click="confirmCancel" class="btn btn-danger" :disabled="cancellingBooking">
+              <span v-if="cancellingBooking" class="btn-spinner"></span>
+              <span>{{ cancellingBooking ? 'Cancelando...' : 'Sí, cancelar' }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -154,6 +167,7 @@ const successMessage = ref('')
 const errorMessage = ref('')
 const showCancelModal = ref(false)
 const bookingToCancel = ref(null)
+const cancellingBooking = ref(false)
 
 const showGatewayModal = ref(false)
 const pendingPaymentAmount = ref(0)
@@ -218,15 +232,46 @@ const getStatusLabel = (status, booking) => {
 }
 
 const getCardClass = (booking) => {
+  if (isBookingExpired(booking)) {
+    return 'status-expired'
+  }
+
   const classes = {
     'Confirmed': 'status-confirmed',
     'Pending': 'status-pending',
     'Cancelled': 'status-cancelled',
     'Attended': 'status-attended',
     'Concreted': 'status-attended',
-    'Absent': 'status-absent'       
+    'Absent': 'status-absent'
   }
+
   return classes[booking.status] || ''
+}
+
+const sortBookings = (list) => {
+  const getGroup = (booking) => {
+    if (booking.status === 'Cancelled') return 2
+    if (isBookingExpired(booking)) return 3
+    return 1
+  }
+
+  return [...list].sort((a, b) => {
+    const groupA = getGroup(a)
+    const groupB = getGroup(b)
+
+    if (groupA !== groupB) {
+      return groupA - groupB
+    }
+
+    // Parche de seguridad por si los strings fallan
+    const strA = a.date && a.start_time ? `${a.date}T${a.start_time}` : '1970-01-01T00:00:00'
+    const strB = b.date && b.start_time ? `${b.date}T${b.start_time}` : '1970-01-01T00:00:00'
+
+    const dateA = new Date(strA)
+    const dateB = new Date(strB)
+
+    return dateA - dateB
+  })
 }
 
 const fetchBookings = async () => {
@@ -234,7 +279,9 @@ const fetchBookings = async () => {
   try {
     auth.hydrateFromToken()
     const response = await api.get('/bookings/me')
-    bookings.value = response.data.bookings || response.data
+
+    const data = response.data.bookings || response.data
+    bookings.value = sortBookings(data)
   } catch (e) {
     console.error('Error al cargar reservas:', e)
     bookings.value = []
@@ -248,16 +295,35 @@ const cancelBooking = (bookingId) => {
   showCancelModal.value = true
 }
 
-const confirmCancel = async () => {
+const closeCancelModal = () => {
+  if (cancellingBooking.value) return
   showCancelModal.value = false
+}
+
+const confirmCancel = async () => {
+  if (cancellingBooking.value || !bookingToCancel.value) return
+
+  cancellingBooking.value = true
   try {
     auth.hydrateFromToken()
     const res = await api.post(`/bookings/${bookingToCancel.value}/cancel`)
     successMessage.value = res.data.message || 'Reserva cancelada exitosamente'
-    setTimeout(() => { fetchBookings() }, 1500)
+  const booking = bookings.value.find(
+    b => b.id === bookingToCancel.value
+  )
+
+  if (booking) {
+    booking.status = 'Cancelled'
+  }
+
+  bookings.value = sortBookings(bookings.value)
   } catch (e) {
     errorMessage.value = e.response?.data?.detail || 'Error al cancelar la reserva'
     console.error('Error al cancelar:', e)
+  } finally {
+    cancellingBooking.value = false
+    showCancelModal.value = false
+    bookingToCancel.value = null
   }
 }
 
@@ -349,7 +415,7 @@ async function onGatewayResult(result) {
   } catch (e) {
     successMessage.value = ''
     errorMessage.value = e.response?.data?.detail || 'Error al confirmar el pago'
-  } finally { // 🌟 ESTRUCTURA REPARADA: uvicorn y vite compilarán perfectamente ahora
+  } finally { //  ESTRUCTURA REPARADA: uvicorn y vite compilarán perfectamente ahora
     finalizingPayment.value = false
   }
 }
@@ -364,7 +430,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.my-bookings-container { padding: 40px 20px; max-width: 1200px; margin: 0 auto; background: rgba(45, 101, 141, 0.06); min-height: 100vh; }
+.my-bookings-container { padding: 40px 20px; max-width: 1200px; margin: 0 auto; background: transparent; min-height: 100vh; }
 .bookings-header { text-align: center; margin-bottom: 40px; }
 .bookings-header h1 { font-size: 2.5rem; color: #2d658d; font-weight: 800; margin: 0 0 10px; }
 .bookings-header p { color: #5a8849; margin: 0; font-size: 1.1rem; }
@@ -413,15 +479,18 @@ onMounted(() => {
 .modal-content h2 { margin: 0 0 10px; color: #0d124a; }
 .modal-content p { color: #6c757d; margin: 0 0 20px; line-height: 1.5; }
 .modal-actions { display: flex; gap: 10px; justify-content: center; }
-.btn { padding: 10px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: all 0.3s ease; text-decoration: none; display: inline-block; }
+.btn { padding: 10px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: all 0.3s ease; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn:disabled { opacity: 0.7; cursor: not-allowed; }
 .btn-primary { background: #007bff; color: white; }
 .btn-primary:hover { background: #0056b3; }
 .btn-secondary { background: #6c757d; color: white; }
-.btn-secondary:hover { background: #5a6268; }
+.btn-secondary:hover:not(:disabled) { background: #5a6268; }
 .btn-success { background: #28a745; color: white; }
 .btn-success:hover { background: #1e7e34; }
 .btn-danger { background: #dc3545; color: white; }
-.btn-danger:hover { background: #a71d2a; }
+.btn-danger:hover:not(:disabled) { background: #a71d2a; }
+.btn-spinner { width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #ffffff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .btn-sm { padding: 8px 12px; font-size: 0.85rem; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
@@ -429,4 +498,23 @@ onMounted(() => {
 .qr-text { font-size: 0.85rem; color: #6c757d; margin: 0 0 8px 0; font-weight: 600; }
 .qr-frame { display: inline-block; background: white; padding: 8px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 .qr-id-display { font-size: 0.95rem; font-weight: 700; color: #0d124a; margin-top: 8px; margin-bottom: 0; }
+.booking-type-badge {
+  display: inline-block;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.badge-subscription {
+  background: #5a8849;
+  color: white;
+}
+
+.badge-single {
+  background: #ff6f00;
+  color: white;
+}
 </style>

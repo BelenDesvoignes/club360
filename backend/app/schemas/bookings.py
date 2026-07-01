@@ -4,9 +4,10 @@ from typing import Optional
 
 class BookingCreate(BaseModel):
     instance_id: int
+    target_user_id: Optional[int] = None
 
 class BookingOut(BaseModel):
-    id: int
+    id: int 
     user_id: int
     instance_id: int
     status: str
