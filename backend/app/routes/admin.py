@@ -422,6 +422,11 @@ def get_abono_quote_para_cliente(
         "discount_applied": quote.discount_applied,
         "pay_now_required": quote.pay_now_required,
         "discount_reason": quote.discount_reason,
+        "pricing_mode": quote.pricing_mode,
+        "reservable_classes": quote.reservable_classes,
+        "waitlist_classes": quote.waitlist_classes,
+        "reservable_entries": quote.reservable_entries or [],
+        "waitlist_entries": quote.waitlist_entries or [],
     }
 
 
