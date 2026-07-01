@@ -220,33 +220,39 @@ def verify_user_qr(
     template = instance.template
     if not template or template.activity_id is None:
         raise HTTPException(status_code=500, detail="Error de configuración: Clase sin actividad válida.")
-
-    # PASO 3: Validación segmentada de Suspensiones (Híbrido col. activity_id y reason)
    
+    # PASO 3: Validación segmentada de Suspensiones (Solución Nativa SQL para evitar desajustes de modelo)
     if booking.user_id:
-        from ..models.suspension import Suspension
-        from sqlalchemy import and_
+        from sqlalchemy import text
         
-        # Traemos todas las suspensiones activas del socio para evaluar el contexto completo
-        active_suspensions = db.query(Suspension).filter(
-            and_(
-                Suspension.user_id == booking.user_id,
-                Suspension.status == "active",
-                Suspension.end_date == None
-            )
-        ).all()
+        # Traemos las suspensiones activas ejecutando SQL puro para forzar la lectura de activity_id
+        query_suspension = text("""
+            SELECT reason, activity_id 
+            FROM public.suspensions 
+            WHERE user_id = :user_id 
+              AND status = 'active' 
+              AND end_date IS NULL
+        """)
+        
+        # Ejecutamos la consulta pasándole el parámetro seguro
+        active_suspensions = db.execute(query_suspension, {"user_id": booking.user_id}).fetchall()
 
         is_clase_suelta = booking.subscription_id is None
 
         for suspension in active_suspensions:
+            # Al usar fetchall(), accedemos por nombre de columna directo: suspension.reason y suspension.activity_id
+            
             # Escenario 7: Suspensión a Clases Sueltas (Global)
             if suspension.reason == "SUSPENSION_CLASE_LIBRE" and is_clase_suelta:
                 raise HTTPException(status_code=400, detail="ERROR: CLIENTE SUSPENDIDO")
 
             # Escenario 8: Suspensión de Abono (Específica por Deporte)
-            if suspension.reason == "SUSPENSION_ABONO":
-                if template.activity_id == suspension.activity_id:
-                    raise HTTPException(status_code=400, detail="ERROR: CLIENTE SUSPENDIDO")
+            if suspension.reason == "SUSPENSION_ABONO" and not is_clase_suelta:
+                
+                #  Forzar SQL para crear activity_id: 
+                if suspension.activity_id is not None and template.activity_id is not None:
+                    if int(template.activity_id) == int(suspension.activity_id):
+                        raise HTTPException(status_code=400, detail="ERROR: CLIENTE SUSPENDIDO")
 
     # PASO 4: Reglas de Pago (Clase Suelta debe estar al 100%)
    
@@ -255,36 +261,50 @@ def verify_user_qr(
 
    
     # PASO 5: Control de Tolerancia Horaria (30 min antes / 30 min después)
-   
     try:
+        # Convertimos el string "HH:MM" del template a un objeto time
         class_time = datetime.datetime.strptime(template.start_time, "%H:%M").time()
+        # Combinamos la fecha de la instancia con el horario de inicio de la clase
         class_datetime = datetime.datetime.combine(instance.date, class_time)
     except Exception:
-        raise HTTPException(status_code=500, detail="Error interno al procesar el horario de la clase.")
+        raise HTTPException(
+            status_code=500, 
+            detail="Error interno al procesar el horario de la clase."
+        )
 
-    # 🌟 CALIBRACIÓN: Usamos la simulación del sistema para alinearnos al huso horario del club
+    # Obtenemos la hora actual del sistema/simulador
     from ..time_override import business_utcnow
     ahora = business_utcnow()
 
+    # Definimos los márgenes de tolerancia (30 minutos)
     limite_inferior = class_datetime - datetime.timedelta(minutes=30)
     limite_superior = class_datetime + datetime.timedelta(minutes=30)
 
+    # CONTROL A: Llegó demasiado temprano (Falta más de media hora)
     if ahora < limite_inferior:
         raise HTTPException(status_code=400, detail="ERROR: FUERA DE TOLERANCIA HORARIA")
         
+    # CONTROL B: Llegó demasiado tarde (Pasaron más de 30 min desde el inicio)
     if ahora > limite_superior:
-        # Penalización automática por fuera de término
+        # Penalizamos al socio pasándolo a Ausente
         booking.status = "Absent"
+        
+        # Opcional: Sumar la falta en el contador del usuario si tu modelo lo soporta
         user = db.query(User).filter(User.id_user == booking.user_id).first()
         if user and hasattr(user, 'missed_classes_count'):
             user.missed_classes_count = (user.missed_classes_count or 0) + 1
+            
         db.commit()
-        raise HTTPException(status_code=400, detail="ERROR: FUERA DE TOLERANCIA HORARIA") # Escenario 4
+        raise HTTPException(status_code=400, detail="ERROR: FUERA DE TOLERANCIA HORARIA")
+
   
     # PASO 6: Impacto Exitoso de la Asistencia (Escenarios 1 y 2)
   
+    # 1. Primero aseguramos y guardamos el cambio de estado en la reserva
     booking.status = "Concreted"
-    
+    db.commit() 
+
+    # 2. Después intentamos meter la asistencia en un bloque separado
     try:
         from ..models.attendance import Attendance
         nueva_asistencia = Attendance(
@@ -293,10 +313,11 @@ def verify_user_qr(
             is_present=True
         )
         db.add(nueva_asistencia)
-    except Exception:
+        db.commit() 
+    except Exception as e:
+        db.rollback() 
+        print(f"Aviso de testing: No se pudo insertar en Attendance ({e})")
         pass 
-
-    db.commit()
 
     return {
         "message": "REGISTRO EXITOSO", 
@@ -306,7 +327,6 @@ def verify_user_qr(
         "activity_name": template.activity.name if template.activity else "Clase"
     }
 
-
 @router.put("/instances/{instance_id}/close", response_model=dict)
 def close_class_instance(
     instance_id: int, 
@@ -315,7 +335,7 @@ def close_class_instance(
 ):
     """
     Cierre de Planilla por el Administrativo (Estrategia Manual).
-    Pasa todas las reservas 'Pending' de la clase a 'Absent'.
+    Pasa todas las reservas 'Pending' de la clase a 'Absent' y aplica suspensiones si corresponde.
     """
     staff_id = _extract_user_id(authorization)
     staff_user = db.query(User).filter(User.id_user == staff_id).first()
@@ -335,6 +355,8 @@ def close_class_instance(
         (Booking.status == "Pending") | (Booking.status.is_(None))
     ).all()
 
+    from ..models.suspension import Suspension  # Importamos el modelo que me pasaste recién
+
     count_absentees = 0
     for booking in pending_bookings:
         booking.status = "Absent"
@@ -343,6 +365,19 @@ def close_class_instance(
         user = db.query(User).filter(User.id_user == booking.user_id).first()
         if user and hasattr(user, 'missed_classes_count'):
             user.missed_classes_count = (user.missed_classes_count or 0) + 1
+            
+            # 🔥 NUEVA REGLA DE NEGOCIO: Suspensión automática al llegar a 3 o más faltas
+            if user.missed_classes_count >= 3:
+                user.is_suspended = True
+                
+                # Creamos el registro formal de la sanción en la tabla suspensions
+                nueva_suspension = Suspension(
+                    user_id=user.id_user,
+                    reason="SUSPENSION_AUTOMATICA_FALTAS",
+                    status="active"
+                    # start_date se genera automáticamente como datetime.utcnow por el default del modelo
+                )
+                db.add(nueva_suspension)
 
     if count_absentees > 0:
         db.commit()
@@ -352,7 +387,6 @@ def close_class_instance(
         "instance_id": instance_id,
         "absentees_processed": count_absentees
     }
-
 
 # =========================================================================
 # ENDPOINTS DE DEBUG DIAGNÓSTICO
