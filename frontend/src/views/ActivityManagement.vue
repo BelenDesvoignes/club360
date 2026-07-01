@@ -94,17 +94,26 @@
           <div class="control price-input-wrap">
             <span style="color:#6b7280; margin-right:4px;">$</span>
             <input 
-            type="number" 
-            v-model.number="act.editPrice" 
+            type="text" 
+            inputmode="decimal"
+            v-model="act.editPrice" 
             min="1" 
             step="0.01" 
             required
+            :disabled="savingPriceId === act.id"
             @input="sanitizePrice(act)"
+            @blur="normalizePrice(act)"
           />
           </div>
 
-          <button type="button" @click="savePrice(act)" class="price-btn">
-            Guardar
+          <button
+            type="button"
+            @click="savePrice(act)"
+            class="price-btn"
+            :disabled="savingPriceId === act.id"
+          >
+            <span v-if="savingPriceId === act.id" class="spinner price-spinner"></span>
+            <span v-else>Guardar</span>
           </button>
         </div>
       </div>
@@ -314,6 +323,7 @@ const activities = ref([])
 const activitiesBase = ref([])
 const inactiveTemplates = ref([])
 const loading = ref(false)
+const savingPriceId = ref(null)
 const isEditing = ref(false)
 const editingId = ref(null)
 const message = ref('')
@@ -372,7 +382,7 @@ const fetchActivities = async () => {
     activities.value = res.data
     activitiesBase.value = res.data.map(act => ({
       ...act,
-      editPrice: act.templates?.[0]?.price ?? 100
+      editPrice: act.price ?? act.templates?.[0]?.price ?? 100
     }))
   } catch (e) {
     console.error('Error al cargar actividades', e)
@@ -633,16 +643,58 @@ const sanitizePrice = (act) => {
   // deja solo números y punto decimal
   value = value.replace(/[^0-9.]/g, '')
 
-  // convertir a número
-  let num = parseFloat(value)
-
-  // si está vacío, NaN o menor a 1 → forzar a 1
-  if (!Number.isFinite(num) || num < 1) {
-    act.editPrice = 1
+  if (value === '') {
+    act.editPrice = ''
     return
   }
 
-  act.editPrice = num
+  const num = parseFloat(value)
+
+  if (!Number.isFinite(num)) {
+    act.editPrice = ''
+    return
+  }
+
+  act.editPrice = num < 1 ? 1 : num
+}
+
+const normalizePrice = (act) => {
+  sanitizePrice(act)
+
+  const price = Number(act.editPrice)
+
+  if (!Number.isFinite(price) || price < 1) {
+    act.editPrice = 1
+  }
+}
+
+const savePrice = async (act) => {
+  normalizePrice(act)
+
+  const price = Number(act.editPrice)
+
+  if (!Number.isFinite(price) || price < 1) {
+    showMessage('El precio debe ser mayor o igual a 1.', 'error')
+    return
+  }
+
+  savingPriceId.value = act.id
+
+  try {
+    await api.patch(`/activities/${act.id}/price`, null, {
+      params: { price }
+    })
+    await fetchActivities()
+    showMessage(`Precio de ${act.name} actualizado`, 'success')
+  } catch (e) {
+    console.error(e)
+    showMessage(
+      e.response?.data?.detail || e.response?.data?.message || 'No se pudo actualizar el precio.',
+      'error'
+    )
+  } finally {
+    savingPriceId.value = null
+  }
 }
 
 
@@ -866,10 +918,26 @@ select:disabled {
   cursor: pointer;
   font-size: 13px;
   white-space: nowrap;
+  min-width: 78px;
+  min-height: 35px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .price-btn:hover {
   opacity: 0.85;
+}
+
+.price-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.price-spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
 }
 
 /* tabla */

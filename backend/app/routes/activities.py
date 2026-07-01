@@ -215,12 +215,9 @@ def update_activity_price(
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = None
 ):
-    print("➡️ Precio recibido:", price)
-
     activity = db.query(Activity).filter(Activity.id == activity_id).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
-    print("➡️ Actividad encontrada:", activity.name)
 
     if price < 1:
         raise HTTPException(status_code=400, detail="El valor debe ser mayor o igual que 1")
@@ -230,10 +227,6 @@ def update_activity_price(
     for t in templates:
         t.price = price
     db.commit()
-    print("➡️ Precio actualizado en actividad y templates")
-
-    print("➡️ Tipo de business_today:", type(business_today()))
-    print("➡️ Valor de business_today:", business_today())
 
     filtro_fecha = business_today().date() if isinstance(business_today(), datetime) else business_today()
 
@@ -257,14 +250,10 @@ def update_activity_price(
 
 
     for user in inscriptos:
-        try:
-            background_tasks.add_task(
-                send_price_update,
-                email=user.email,
-                nombre=user.first_name,
-                actividad=activity.name,
-                nuevo_precio=activity.price
-            )
-            print("➡️ Mail agendado para:", user.email)
-        except Exception as e:
-            print("Error enviando mail a", user.email, ":", e)
+        background_tasks.add_task(
+            send_price_update,
+            email=user.email,
+            nombre=user.first_name,
+            actividad=activity.name,
+            nuevo_precio=activity.price
+        )
