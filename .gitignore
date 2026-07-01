@@ -80,6 +80,11 @@ target/
 
 # Environment files
 .env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
 
 # IPython
 profile_default/

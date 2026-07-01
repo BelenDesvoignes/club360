@@ -238,11 +238,14 @@
           <div v-if="templateSeleccionado" class="pago-section">
             <div v-if="loadingQuote" class="empty-state">Calculando precio...</div>
             <div v-else-if="abonoQuote" class="resumen-quote">
-              <p v-if="abonoQuote.discount_applied" class="descuento-info">
+              <p v-if="abonoQuote.discount_applied && abonoQuote.pricing_mode !== 'available_only'" class="descuento-info">
                 {{ abonoQuote.discount_reason }}
               </p>
-              <p v-else class="descuento-info sin-descuento">{{ abonoQuote.discount_reason }}</p>
+              <p v-else-if="abonoQuote.pricing_mode !== 'available_only'" class="descuento-info sin-descuento">{{ abonoQuote.discount_reason }}</p>
               <p class="clases-info">Clases restantes del mes: <strong>{{ abonoQuote.remaining_classes }}</strong></p>
+              <p v-if="abonoQuote.waitlist_classes > 0" class="clases-info">
+                Clases en lista de espera: <strong>{{ abonoQuote.waitlist_classes }}</strong>
+              </p>
             </div>
           </div>
 
@@ -900,21 +903,21 @@ input:focus { border-color: #2d658d; }
 .form-modal-card { max-width: 480px; }
 
 .modal-large {
-  max-width: 620px;
+  max-width: 720px;
   max-height: 85vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
-.form-header { text-align: center; margin-bottom: 25px; }
+.form-header { text-align: center; margin-bottom: 14px; }
 .form-header h3 { font-size: 22px; color: #111827; font-weight: 800; margin: 0; }
 .form-header p { color: #6b7280; font-size: 13px; margin-top: 6px; }
 
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
 
-.input-group { margin-bottom: 16px; display: flex; flex-direction: column; text-align: left; }
+.input-group { margin-bottom: 8px; display: flex; flex-direction: column; text-align: left; }
 .input-group label { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
 
 .modal-actions-container { display: flex; gap: 10px; margin-top: 25px; }
@@ -941,11 +944,11 @@ input:focus { border-color: #2d658d; }
 .btn-cancel:hover:not(:disabled) { background: #cbd5e1; }
 .btn-cancel:disabled { cursor: not-allowed; opacity: 0.6; }
 
-.modal-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: -4px; }
 
 .instancias-list {
   display: flex; flex-direction: column; gap: 8px;
-  max-height: 280px; overflow-y: auto;
+  max-height: 340px; overflow-y: auto;
 }
 
 .instancia-item {

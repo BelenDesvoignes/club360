@@ -243,7 +243,7 @@ def calculate_subscription_price(
     discount_reason = "Sin descuento."
 
     if pricing_mode == "available_only":
-        discount_reason = "Se cobraron solo las clases donde tenés tu cupo asegurado."
+        discount_reason = "Se cobran solo las clases donde tenés tu cupo asegurado."
     elif today.day >= 15:
         if class_count <= 1:
             discount_reason = "Sin descuento: solo queda una clase disponible."
