@@ -7,7 +7,7 @@ class BookingCreate(BaseModel):
     target_user_id: Optional[int] = None
 
 class BookingOut(BaseModel):
-    id: int
+    id: int 
     user_id: int
     instance_id: int
     status: str
