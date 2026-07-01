@@ -50,9 +50,13 @@
                     type="text"
                     inputmode="numeric"
                     pattern="[0-9]*"
+                    min="1"
+                    max="100"
+                    maxlength="3"
                     autocomplete="off"
                     v-model="form.shifts[0].capacity"
                     @input="sanitizeCapacity(form.shifts[0])"
+                    @blur="normalizeCapacity(form.shifts[0])"
                     required
                   />
                 </div>
@@ -337,13 +341,28 @@ const sanitizeCapacity = (shift) => {
   // deja solo números
   value = value.replace(/\D/g, '')
 
-  // si queda vacío o es 0, fuerza 1
-  if (value === '' || Number(value) < 1) {
+  if (value === '') {
+    shift.capacity = ''
+    return
+  }
+
+  const capacity = parseInt(value, 10)
+  shift.capacity = Math.min(Math.max(capacity, 1), 100)
+}
+
+const normalizeCapacity = (shift) => {
+  sanitizeCapacity(shift)
+
+  const capacity = Number(shift.capacity)
+
+  if (!Number.isFinite(capacity) || capacity < 1) {
     shift.capacity = 1
     return
   }
 
-  shift.capacity = parseInt(value, 10)
+  if (capacity > 100) {
+    shift.capacity = 100
+  }
 }
 
 // ── fetch ─────────────────────────────────────────────────────────────────────
@@ -396,7 +415,7 @@ const flatActivities = computed(() => {
   activities.value.forEach(act => {
     ;(act.templates || []).forEach(temp => {
       list.push({
-        id: act.id,
+        activityId: act.id,
         templateId: temp.id,
         name: act.name,
         court: act.court,
@@ -413,16 +432,17 @@ const flatActivities = computed(() => {
 // ── turnos: crear / editar ────────────────────────────────────────────────────
 const handleSubmit = async () => {
   const currentShift = form.value.shifts[0]
-  sanitizeCapacity(currentShift)
+  normalizeCapacity(currentShift)
 
   const capacity = Number(currentShift.capacity)
 
   if (
     !Number.isFinite(capacity) ||
     !Number.isInteger(capacity) ||
-    capacity < 1
+    capacity < 1 ||
+    capacity > 100
   ) {
-    showMessage('El cupo debe ser un número válido mayor o igual a 1.', 'error')
+    showMessage('El cupo debe ser un número válido entre 1 y 100.', 'error')
     return
   }
 
@@ -443,7 +463,12 @@ const handleSubmit = async () => {
     }
 
     if (isEditing.value) {
-      await api.put(`/activities/${editingId.value}`, payload)
+      await api.put(`/shifts/templates/${editingId.value}`, {
+        activity_id: payload.shifts[0].activity_id,
+        day_of_week: payload.shifts[0].day_of_week,
+        start_time: payload.shifts[0].start_time,
+        capacity
+      })
       showMessage('Turno actualizado', 'success')
     } else {
       await api.post('/activities/', payload)
@@ -466,13 +491,14 @@ const handleSubmit = async () => {
 const editMode = (item) => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
   isEditing.value = true
-  editingId.value = item.id
+  editingId.value = item.templateId
 
   form.value = {
     name: item.name,
     court: item.court,
     shifts: [{
       id: item.templateId,
+      activity_id: item.activityId,
       day_of_week: item.day,
       start_time: item.time,
       capacity: item.capacity
@@ -484,8 +510,8 @@ const cancelEdit = () => {
   isEditing.value = false
   editingId.value = null
   form.value = {
-    name: '',
-    court: '',
+    name: defaultActivity,
+    court: activityMap[defaultActivity],
     shifts: [{ day_of_week: 'Lunes', start_time: '18:00', capacity: 20 }]
   }
 }
