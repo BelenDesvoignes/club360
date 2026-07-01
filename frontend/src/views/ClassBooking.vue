@@ -37,7 +37,7 @@
     </header>
 
     <!-- Paso 1: elegir deporte -->
-    <div v-if="!selectedSportId && !loading && !userSuspended" class="sports-step">
+    <div v-if="!selectedSportId && !loading" class="sports-step">
       <div class="sports-grid">
         <button
           v-for="sport in sports"
@@ -64,10 +64,10 @@
     </div>
 
     <!-- Paso 2: tipo de reserva + filtro por día (solo si ya eligió deporte) -->
-    <div v-if="selectedSportId && !userSuspended" class="reservation-controls">
-      <div class="reserve-type">
-        <button type="button" :class="{active: reservationType === 'class'}" @click="reservationType = 'class'">Reserva Única</button>
-        <button type="button" :class="{active: reservationType === 'subscription'}" @click="reservationType = 'subscription'">Reservar Abono</button>
+    <div v-if="selectedSportId" class="reservation-controls">
+      <div v-if="hasVisibleReservationOptions" class="reserve-type">
+        <button v-if="canShowSingleClassReservation" type="button" :class="{active: reservationType === 'class'}" @click="reservationType = 'class'">Reserva Única</button>
+        <button v-if="canShowSubscriptionReservation" type="button" :class="{active: reservationType === 'subscription'}" @click="reservationType = 'subscription'">Reservar Abono</button>
 
 
 
@@ -170,24 +170,9 @@
     </div>
 
 
-    <!-- Advertencia si está suspendido -->
-    <div v-if="userSuspended" class="suspension-warning">
-      <div class="warning-icon">🚫</div>
-      <div class="warning-content">
-        <h3>Tu cuenta está suspendida</h3>
-        <p>Debes solicitar reactivación para poder hacer nuevas reservas. Contacta al soporte para resolver esto.</p>
-      </div>
-    </div>
-
-
     <div v-if="loading" class="loading-spinner">Cargando clases disponibles...</div>
 
     <div v-else-if="isRefreshing" class="loading-refresh">Actualizando...</div>
-
-    <div v-else-if="userSuspended" class="suspended-block">
-      <p>No puedes hacer reservas mientras tu cuenta esté suspendida.</p>
-    </div>
-
 
     <div v-else-if="selectedSportId" class="classes-grid">
       <div
@@ -487,7 +472,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -529,7 +514,7 @@ const successMessage = ref('')
 const subscriptionSuccessDetails = ref(null)
 const errorMessage = ref('')
 const isRefreshing = ref(false)
-const userSuspended = ref(false)
+const activeSuspensions = ref([])
 const isUserAbonado = ref(false)
 const subscriptionPurchasedThisMonth = ref(false)
 const waitlistedInstanceIds = ref(new Set())
@@ -583,6 +568,49 @@ const selectedSportId = ref(null)
 
 const sports = computed(() => groupedActivities.value.map(a => ({ activity_id: a.activity_id, activity_name: a.activity_name })))
 
+const sameActivityId = (left, right) => String(left ?? '') === String(right ?? '')
+
+const hasActiveClassFreeSuspension = computed(() => activeSuspensions.value.some(
+  s => s.reason === 'SUSPENSION_CLASE_LIBRE'
+))
+
+const hasSelectedSportSubscriptionSuspension = computed(() => {
+  if (!selectedSportId.value) return false
+  return activeSuspensions.value.some(s =>
+    s.reason === 'SUSPENSION_ABONO' && sameActivityId(s.activity_id, selectedSportId.value)
+  )
+})
+
+const canShowSingleClassReservation = computed(() => !hasActiveClassFreeSuspension.value)
+const canShowSubscriptionReservation = computed(() => !hasSelectedSportSubscriptionSuspension.value)
+const hasVisibleReservationOptions = computed(() => canShowSingleClassReservation.value || canShowSubscriptionReservation.value)
+const reservationWarningMessage = computed(() => {
+  if (!selectedSportId.value) return ''
+  if (!hasVisibleReservationOptions.value) {
+    return 'No tenés opciones de reserva disponibles para este deporte.'
+  }
+  if (!canShowSingleClassReservation.value) {
+    return 'La Reserva Única está bloqueada por una suspensión de clase libre.'
+  }
+  if (!canShowSubscriptionReservation.value) {
+    return 'Reservar Abono está bloqueado para este deporte por una suspensión de abono.'
+  }
+  return ''
+})
+
+const ensureReservationTypeAllowed = () => {
+  if (!selectedSportId.value) return
+  if (reservationType.value === 'class' && !canShowSingleClassReservation.value && canShowSubscriptionReservation.value) {
+    reservationType.value = 'subscription'
+    return
+  }
+  if (reservationType.value === 'subscription' && !canShowSubscriptionReservation.value && canShowSingleClassReservation.value) {
+    reservationType.value = 'class'
+  }
+}
+
+watch([selectedSportId, canShowSingleClassReservation, canShowSubscriptionReservation], ensureReservationTypeAllowed)
+
 const sportHeroStyle = (name) => {
   const normalized = String(name || '').toLowerCase()
 
@@ -613,8 +641,9 @@ const sportHeroStyle = (name) => {
 
 const selectSport = (sportId) => {
   selectedSportId.value = sportId
-  reservationType.value = 'class'
+  reservationType.value = canShowSingleClassReservation.value ? 'class' : 'subscription'
   selectedWeekday.value = 'all'
+  fetchSuspensions().then(ensureReservationTypeAllowed)
 }
 
 const canJoinWaitlist = (instance) => {
@@ -647,6 +676,9 @@ const clearSport = () => {
 }
 
 const visibleActivities = computed(() => {
+  if (reservationType.value === 'class' && !canShowSingleClassReservation.value) return []
+  if (reservationType.value === 'subscription' && !canShowSubscriptionReservation.value) return []
+
   const dayFilter = selectedWeekday.value
   const base = selectedSportId.value
     ? groupedActivities.value.filter(a => a.activity_id === selectedSportId.value)
@@ -877,23 +909,31 @@ const fetchActivities = async () => {
   }
 }
 
-const checkUserStatus = async () => {
+const fetchSuspensions = async () => {
   try {
     auth.hydrateFromToken()
     const token = auth.token || localStorage.getItem('token')
     
-    if (!token) return
+    if (!token) {
+      activeSuspensions.value = []
+      return []
+    }
     
-    const res = await axios.get('/subscriptions/me/status', {
+    const res = await axios.get('/payments/me/suspensions', {
       headers: {
         Authorization: `Bearer ${token}`
       }
     })
 
-    userSuspended.value = Boolean(res.data?.suspended)
+    activeSuspensions.value = Array.isArray(res.data)
+      ? res.data.filter(s => String(s.status || '').toLowerCase() === 'active')
+      : []
+    return activeSuspensions.value
   } catch (e) {
-    if (handleAuthError(e)) return
-    console.error('Error al verificar estado:', e)
+    if (handleAuthError(e)) return []
+    console.error('Error al verificar suspensiones:', e)
+    activeSuspensions.value = []
+    return []
   }
 }
 
@@ -970,6 +1010,7 @@ const selectInstanceForBooking = async (instance) => {
 
 const selectTemplateForSubscription = async (template, activity_name) => {
   if (bookingInProgress.value || subscriptionTemplateInProgress.value) return
+  if (!canShowSubscriptionReservation.value) return
 
   subscriptionTemplateInProgress.value = template.id
   try {
@@ -1314,6 +1355,8 @@ const confirmBooking = async () => {
       return
     }
 
+    if (!canShowSingleClassReservation.value) return
+
     const price = Number(selectedInstance.value?.template?.price || 0)
     if (!Number.isFinite(price) || price <= 0) {
       errorMessage.value = 'No se pudo determinar el precio de la clase.'
@@ -1407,11 +1450,10 @@ const joinWaitlist = async (instance) => {
 
 onMounted(() => {
   loading.value = true
-  Promise.all([fetchActivities(), fetchInstances()])
+  Promise.all([fetchActivities(), fetchInstances(), fetchSuspensions()])
     .finally(() => {
       loading.value = false
     })
-  checkUserStatus()
   fetchMyBookings({ showRefresh: true })
 })
 </script>
