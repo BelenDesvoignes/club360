@@ -18,3 +18,4 @@ class Suspension(Base):
     status = Column(String, default="active")  # active, lifted
 
     user = relationship("User", back_populates="suspensions")
+    activity = relationship("Activity")

@@ -612,7 +612,7 @@ const ensureReservationTypeAllowed = () => {
 watch([selectedSportId, canShowSingleClassReservation, canShowSubscriptionReservation], ensureReservationTypeAllowed)
 
 const sportHeroStyle = (name) => {
-  const normalized = String(name || '').toLowerCase()
+  const normalized = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
   const base = {
     backgroundSize: 'cover',
