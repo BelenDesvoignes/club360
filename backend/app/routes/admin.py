@@ -557,6 +557,32 @@ def registrar_abono(
 
 
 
+@router.get("/clientes/{client_id}/suspensiones-activas")
+def get_suspensiones_activas(client_id: int, db: Session = Depends(get_db)):
+    from ..models.suspension import Suspension
+
+    cliente = db.query(User).filter(User.id_user == client_id, User.role == UserRole.CLIENT).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    suspensiones = db.query(Suspension).filter(
+        Suspension.user_id == client_id,
+        Suspension.status == "active",
+        Suspension.end_date == None,
+    ).all()
+
+    suspension_clase_libre = any(s.reason == "SUSPENSION_CLASE_LIBRE" for s in suspensiones)
+    actividades_suspendidas_abono = [
+        s.activity_id for s in suspensiones
+        if s.reason == "SUSPENSION_ABONO" and s.activity_id is not None
+    ]
+
+    return {
+        "suspension_clase_libre": suspension_clase_libre,
+        "actividades_suspendidas_abono": actividades_suspendidas_abono,
+    }
+
+
 @router.get("/clientes/{client_id}/pagos")
 def listar_pagos_cliente(client_id: int, db: Session = Depends(get_db)):
     from ..models.subscription import Subscription

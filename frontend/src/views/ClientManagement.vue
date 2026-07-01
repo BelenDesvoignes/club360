@@ -17,14 +17,7 @@
           />
         </div>
 
-        <div class="filter-group">
-          <label>Filtrar por estado</label>
-          <select v-model="filterStatus" @change="fetchInstancias">
-            <option value="">Todos los estados</option>
-            <option value="Activo">Activo</option>
-            <option value="Suspendido">Suspendido</option>
-          </select>
-        </div>
+
 
         <div class="actions-group">
           <button @click="showCreateModal = true" class="btn-primary-action">+ Nuevo Cliente</button>
@@ -37,18 +30,14 @@
             <tr>
               <th>Nombre y Apellido</th>
               <th>DNI</th>
-              <th>Estado</th>
               <th class="text-center">Acciones</th>
             </tr>
           </thead>
           <tbody>
             <template v-for="cliente in filteredClientes" :key="cliente.id">
-              <tr :class="{ 'row-suspended': cliente.estado === 'Suspendido' }">
+              <tr>
                 <td><span class="client-name">{{ cliente.nombre }}</span></td>
                 <td>{{ cliente.dni }}</td>
-                <td>
-                  <span class="status-badge" :class="cliente.estado.toLowerCase()">{{ cliente.estado }}</span>
-                </td>
                 <td class="actions-cell justify-center">
                   <button
                     @click="toggleAccordion(cliente.id)"
@@ -261,8 +250,16 @@
             Total a cobrar: <strong>${{ abonoQuote.amount }}</strong>
           </div>
 
+          <div v-if="templateSeleccionado && suspensionesCliente.actividades_suspendidas_abono.includes(templateSeleccionado.activity_id)" class="suspension-warning">
+            Este cliente está suspendido para reservar abonos de <strong>{{ templateSeleccionado.activity_name }}</strong>. Debe solicitar la reactivación.
+          </div>
+
           <div class="modal-actions-container">
-            <button class="btn-confirm" @click="submitAbono" :disabled="loadingAbono || !templateSeleccionado || !abonoQuote || loadingQuote">
+            <button
+              class="btn-confirm"
+              @click="submitAbono"
+              :disabled="loadingAbono || !templateSeleccionado || !abonoQuote || loadingQuote || suspensionesCliente.actividades_suspendidas_abono.includes(templateSeleccionado?.activity_id)"
+            >
               {{ loadingAbono ? 'Guardando...' : 'Confirmar Abono' }}
             </button>
             <button class="btn-cancel" @click="showAbonoModal = false">Cancelar</button>
@@ -379,7 +376,6 @@ import api from '../utils/api' // 🌟 CORRECCIÓN: Usamos el cliente HTTP unifi
 
 // ---- Filtros ----
 const filterSearch = ref('')
-const filterStatus = ref('')
 
 // ---- Modales y loadings generales ----
 const showCreateModal = ref(false)
@@ -412,19 +408,15 @@ const fetchClientes = async () => {
 }
 
 const filteredClientes = computed(() => {
-  return clientes.value.filter(c => {
-    const searchLower = filterSearch.value.toLowerCase().trim()
-    if (!searchLower) return !filterStatus.value || c.estado === filterStatus.value
-    const matchNombre = c.nombre?.toLowerCase().includes(searchLower)
-    const matchDni = c.dni?.startsWith(searchLower)
-    const matchStatus = !filterStatus.value || c.estado === filterStatus.value
-    return (matchNombre || matchDni) && matchStatus
-  })
+  const searchLower = filterSearch.value.toLowerCase().trim()
+  if (!searchLower) return clientes.value
+  return clientes.value.filter(c =>
+    c.nombre?.toLowerCase().includes(searchLower) || c.dni?.startsWith(searchLower)
+  )
 })
 
 const resetFilters = () => {
   filterSearch.value = ''
-  filterStatus.value = ''
 }
 
 const toggleDropdown = (clienteId) => {
@@ -443,7 +435,6 @@ const handleSubmitForm = async () => {
       id: res.data?.id_user || res.data?.id || Date.now(),
       nombre: `${form.value.first_name.trim()} ${form.value.last_name.trim()}`,
       dni: form.value.dni,
-      estado: 'Activo'
     }
     clientes.value.unshift(nuevoCliente)
     showToast('Cliente creado con éxito.', 'success')
@@ -511,6 +502,11 @@ const fetchInstancias = async () => {
 }
 
 const openReservaModal = async (cliente) => {
+  await fetchSuspensiones(cliente.id)
+  if (suspensionesCliente.value.suspension_clase_libre) {
+    showToast('Este cliente está suspendido para la reserva de clases. Debe solicitar la reactivación.', 'error')
+    return
+  }
   clienteSeleccionado.value = cliente
   instanciaSeleccionada.value = null
   filterActividad.value = ''
@@ -547,6 +543,18 @@ const submitReserva = async () => {
 }
 
 const createReserva = (cliente) => openReservaModal(cliente)
+
+// ---- Suspensiones ----
+const suspensionesCliente = ref({ suspension_clase_libre: false, actividades_suspendidas_abono: [] })
+
+const fetchSuspensiones = async (clienteId) => {
+  try {
+    const res = await api.get(`/admin/clientes/${clienteId}/suspensiones-activas`)
+    suspensionesCliente.value = res.data
+  } catch (e) {
+    suspensionesCliente.value = { suspension_clase_libre: false, actividades_suspendidas_abono: [] }
+  }
+}
 
 // ---- Nuevo Abono ----
 const showAbonoModal = ref(false)
@@ -616,7 +624,7 @@ const openAbonoModal = async (cliente) => {
   filterAbonoActividad.value = ''
   filterAbonoDia.value = ''
   showAbonoModal.value = true
-  await fetchTemplates()
+  await Promise.all([fetchTemplates(), fetchSuspensiones(cliente.id)])
 }
 
 const seleccionarTemplate = (tmpl) => {
@@ -823,15 +831,6 @@ input:focus { border-color: #2d658d; }
 }
 
 .client-name { font-weight: 700; color: #111827; }
-.row-suspended { background: #fffdfd; }
-.row-suspended .client-name { color: #9ca3af; text-decoration: line-through; opacity: 0.6; }
-
-.status-badge {
-  padding: 4px 10px; border-radius: 20px; font-size: 11px;
-  font-weight: 700; display: inline-block; text-transform: uppercase;
-}
-.status-badge.activo { background: #e6f4ea; color: #137333; }
-.status-badge.suspendido { background: #fce8e6; color: #c5221f; }
 
 .actions-cell { display: flex; gap: 20px; align-items: center; }
 .text-center { text-align: center; }
@@ -919,6 +918,12 @@ input:focus { border-color: #2d658d; }
 .input-group label { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
 
 .modal-actions-container { display: flex; gap: 10px; margin-top: 25px; }
+
+.suspension-warning {
+  background: #fff3cd; border: 1px solid #f59e0b; color: #92400e;
+  border-radius: 8px; padding: 10px 14px; font-size: 13px;
+  margin-top: 12px; line-height: 1.5;
+}
 
 .btn-confirm {
   display: inline-flex; align-items: center; justify-content: center;
